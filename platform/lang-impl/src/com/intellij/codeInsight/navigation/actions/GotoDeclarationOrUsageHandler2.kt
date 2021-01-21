@@ -7,16 +7,12 @@ import com.intellij.codeInsight.navigation.CtrlMouseInfo
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationOnlyHandler2.gotoDeclaration
 import com.intellij.codeInsight.navigation.impl.*
 import com.intellij.featureStatistics.FeatureUsageTracker
-import com.intellij.find.FindBundle
 import com.intellij.find.actions.ShowUsagesAction.showUsages
-import com.intellij.find.usages.SearchTarget
-import com.intellij.find.usages.impl.symbolSearchTargets
-import com.intellij.model.Symbol
-import com.intellij.navigation.chooseTargetPopup
+import com.intellij.find.actions.TargetVariant
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.actionSystem.ex.ActionUtil.underModalProgress
-import com.intellij.openapi.actionSystem.impl.SimpleDataContext.getSimpleContext
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.project.DumbService
@@ -55,48 +51,33 @@ object GotoDeclarationOrUsageHandler2 : CodeInsightActionHandler {
       }
     }
     catch (e: IndexNotReadyException) {
-      DumbService.getInstance(project).showDumbModeNotification("Navigation is not available here during index update")
+      DumbService.getInstance(project).showDumbModeNotification(
+        CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update")
+      )
       return
     }
 
     when (actionResult) {
       null -> notifyNowhereToGo(project, editor, file, offset)
       is GTDUActionResult.GTD -> {
-        GotoDeclarationAction.recordGTD()
+        GTDUCollector.recordPerformed(GTDUCollector.GTDUChoice.GTD)
         gotoDeclaration(editor, file, actionResult.gtdActionResult)
       }
       is GTDUActionResult.SU -> {
-        GotoDeclarationAction.recordSU()
-        showUsages(project, editor, file, actionResult.targets)
+        GTDUCollector.recordPerformed(GTDUCollector.GTDUChoice.SU)
+        showUsages(project, editor, file, actionResult.targetVariants)
       }
     }
   }
 
-  private fun showUsages(project: Project, editor: Editor, file: PsiFile, targetSymbols: List<Symbol>) {
-    val searchTargets = symbolSearchTargets(project, targetSymbols)
-    chooseTargetAndShowUsages(project, editor, file, searchTargets)
-  }
-
-  private fun chooseTargetAndShowUsages(project: Project, editor: Editor, file: PsiFile, searchTargets: List<SearchTarget>) {
+  private fun showUsages(project: Project, editor: Editor, file: PsiFile, searchTargets: List<TargetVariant>) {
     require(searchTargets.isNotEmpty())
-    val contextMap: Map<String, Any> = mapOf(
-      CommonDataKeys.PSI_FILE.name to file,
-      CommonDataKeys.EDITOR.name to editor
-    )
-    val dataContext = getSimpleContext(contextMap, DataContext.EMPTY_CONTEXT, true)
-    val singleTarget = searchTargets.singleOrNull()
-    if (singleTarget != null) {
-      showUsages(project, dataContext, singleTarget)
-    }
-    else {
-      val popup = chooseTargetPopup(
-        FindBundle.message("show.usages.ambiguous.title"),
-        searchTargets, SearchTarget::presentation
-      ) {
-        showUsages(project, dataContext, it)
-      }
-      popup.showInBestPositionFor(dataContext)
-    }
+    val dataContext = SimpleDataContext.builder()
+      .add(CommonDataKeys.PSI_FILE, file)
+      .add(CommonDataKeys.EDITOR, editor)
+      .add(PlatformDataKeys.CONTEXT_COMPONENT, editor.contentComponent)
+      .build()
+    showUsages(project, dataContext, searchTargets)
   }
 
   @TestOnly

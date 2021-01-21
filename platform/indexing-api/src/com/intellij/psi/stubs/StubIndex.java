@@ -1,8 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
 package com.intellij.psi.stubs;
 
 import com.intellij.openapi.application.ApplicationManager;
@@ -73,19 +69,6 @@ public abstract class StubIndex {
   public <K> boolean processAllKeys(@NotNull StubIndexKey<K, ?> indexKey, @NotNull Processor<? super K> processor,
                                     @NotNull GlobalSearchScope scope, @Nullable IdFilter idFilter) {
     return processAllKeys(indexKey, Objects.requireNonNull(scope.getProject()), processor);
-  }
-
-  /**
-   * @deprecated use {@link #getElements(StubIndexKey, Object, Project, GlobalSearchScope, Class)}
-   */
-  @Deprecated
-  @NotNull
-  public <Key, Psi extends PsiElement> Collection<Psi> safeGet(@NotNull StubIndexKey<Key, Psi> indexKey,
-                                                               @NotNull Key key,
-                                                               @NotNull final Project project,
-                                                               @Nullable GlobalSearchScope scope,
-                                                               @NotNull Class<Psi> requiredClass) {
-    return getElements(indexKey, key, project, scope, requiredClass);
   }
 
   @NotNull

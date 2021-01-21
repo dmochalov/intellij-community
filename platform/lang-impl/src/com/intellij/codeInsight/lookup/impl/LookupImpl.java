@@ -16,7 +16,6 @@ import com.intellij.featureStatistics.FeatureUsageTracker;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.injected.editor.DocumentWindow;
 import com.intellij.injected.editor.EditorWindow;
-import com.intellij.internal.statistic.service.fus.collectors.UIEventId;
 import com.intellij.internal.statistic.service.fus.collectors.UIEventLogger;
 import com.intellij.lang.LangBundle;
 import com.intellij.lang.injection.InjectedLanguageManager;
@@ -55,6 +54,7 @@ import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.CollectConsumer;
 import com.intellij.util.ExceptionUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.Advertiser;
 import com.intellij.util.ui.EDT;
 import com.intellij.util.ui.accessibility.AccessibleContextUtil;
 import com.intellij.util.ui.accessibility.ScreenReader;
@@ -71,6 +71,7 @@ import javax.swing.event.ListSelectionListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -107,7 +108,6 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   private final long myCreatedTimestamp;
   private long myStampShown = 0;
   private boolean myShown = false;
-  private boolean myDisposed = false;
   private boolean myHidden = false;
   private boolean mySelectionTouched;
   private LookupFocusDegree myLookupFocusDegree = LookupFocusDegree.FOCUSED;
@@ -137,7 +137,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
 
     DaemonCodeAnalyzer.getInstance(myProject).disableUpdateByTimer(this);
 
-    myCellRenderer = new LookupCellRenderer(this);
+    myCellRenderer = new LookupCellRenderer(this, myEditor.getContentComponent());
     myList.setCellRenderer(myCellRenderer);
 
     myList.setFocusable(false);
@@ -147,7 +147,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     // a new top level frame just got the focus. This is important to prevent screen readers
     // from announcing the title of the top level frame when the list is shown (or hidden),
     // as they usually do when a new top-level frame receives the focus.
-    AccessibleContextUtil.setParent((Component)myList, myEditor.getContentComponent());
+    AccessibleContextUtil.setParent(myList, myEditor.getContentComponent());
 
     myList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     myList.setBackground(LookupCellRenderer.BACKGROUND_COLOR);
@@ -298,8 +298,8 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     return s != null && s.contains(CompletionUtil.DUMMY_IDENTIFIER_TRIMMED);
   }
 
-  public void updateLookupWidth(LookupElement item) {
-    myCellRenderer.updateLookupWidth(item, LookupElementPresentation.renderElement(item));
+  public void updateLookupWidth() {
+    myCellRenderer.scheduleUpdateLookupWidthFromVisibleItems();
   }
 
   public void requestResize() {
@@ -515,7 +515,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     LOG.assertTrue(!ApplicationManager.getApplication().isWriteAccessAllowed(), "finishLookup should be called without a write action");
     final PsiFile file = getPsiFile();
     boolean writableOk = file == null || FileModificationService.getInstance().prepareFileForWrite(file);
-    if (myDisposed) { // ensureFilesWritable could close us by showing a dialog
+    if (isLookupDisposed()) { // ensureFilesWritable could close us by showing a dialog
       return;
     }
 
@@ -527,7 +527,6 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   }
 
   void finishLookupInWritableFile(char completionChar, @Nullable LookupElement item) {
-    //noinspection deprecation,unchecked
     if (item == null || !item.isValid() || item instanceof EmptyLookupItem) {
       hideWithItemSelected(null, completionChar);
       return;
@@ -537,7 +536,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       return;
     }
 
-    if (myDisposed) { // DeferredUserLookupValue could close us in any way
+    if (isLookupDisposed()) { // DeferredUserLookupValue could close us in any way
       return;
     }
 
@@ -560,7 +559,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       });
     }
 
-    if (myDisposed) { // any document listeners could close us
+    if (isLookupDisposed()) { // any document listeners could close us
       return;
     }
 
@@ -610,6 +609,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     return myOffsets.getLookupOriginalStart();
   }
 
+  @Override
   public boolean performGuardedChange(Runnable change) {
     checkValid();
 
@@ -623,7 +623,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       myEditor.getDocument().stopGuardedBlockChecking();
       myGuardedChanges--;
     }
-    if (!result || myDisposed) {
+    if (!result || isLookupDisposed()) {
       hideLookup(false);
       return false;
     }
@@ -780,10 +780,6 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     if (editorComponent.isShowing()) {
       Disposer.register(this, new UiNotifyConnector(editorComponent, new Activatable() {
         @Override
-        public void showNotify() {
-        }
-
-        @Override
         public void hideNotify() {
           hideLookup(false);
         }
@@ -829,6 +825,17 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
         return true;
       }
     }.installOn(myList);
+
+    addPrefixChangeListener(new PrefixChangeListener() {
+      @Override
+      public void afterAppend(char c) {
+        myCellRenderer.scheduleUpdateLookupWidthFromVisibleItems();
+      }
+    }, this);
+  }
+
+  protected boolean suppressHidingOnDocumentChanged() {
+    return false;
   }
 
   @Override
@@ -1034,6 +1041,22 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     return myList.getLastVisibleIndex();
   }
 
+  List<LookupElement> getVisibleItems() {
+    ApplicationManager.getApplication().assertIsDispatchThread();
+
+    var itemsCount = myList.getItemsCount();
+    if (!myShown || itemsCount == 0) return Collections.emptyList();
+
+    synchronized (myUiLock) {
+      int lowerItemIndex = myList.getFirstVisibleIndex();
+      int higherItemIndex = myList.getLastVisibleIndex();
+      if (lowerItemIndex < 0 || higherItemIndex <= 0) return Collections.emptyList();
+
+      return getListModel().toList().subList(lowerItemIndex, Math.min(higherItemIndex + 1, itemsCount));
+    }
+  }
+
+
   @Override
   public List<String> getAdvertisements() {
     return myAdComponent.getAdvertisements();
@@ -1054,7 +1077,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   }
 
   private void doHide(final boolean fireCanceled, final boolean explicitly) {
-    if (myDisposed) {
+    if (isLookupDisposed()) {
       LOG.error(formatDisposeTrace());
     }
     else {
@@ -1065,7 +1088,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
 
         Disposer.dispose(this);
         ToolTipManager.sharedInstance().unregisterComponent(myList);
-        assert myDisposed;
+        assert isLookupDisposed();
       }
       catch (Throwable e) {
         LOG.error(e);
@@ -1088,14 +1111,9 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   public void dispose() {
     ApplicationManager.getApplication().assertIsDispatchThread();
     assert myHidden;
-    if (myDisposed) {
-      LOG.error(formatDisposeTrace());
-      return;
-    }
 
     myOffsets.disposeMarkers();
     disposeTrace = new Throwable();
-    myDisposed = true;
     if (LOG.isDebugEnabled()) {
       LOG.debug("Disposing lookup:", disposeTrace);
     }
@@ -1139,11 +1157,11 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   }
 
   public boolean isLookupDisposed() {
-    return myDisposed;
+    return disposeTrace != null;
   }
 
   public void checkValid() {
-    if (myDisposed) {
+    if (isLookupDisposed()) {
       throw new AssertionError("Disposed at: " + formatDisposeTrace());
     }
   }
@@ -1162,7 +1180,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       return;
     }
 
-    UIEventLogger.logUIEvent(UIEventId.LookupShowElementActions);
+    UIEventLogger.LookupShowElementActions.log(myProject);
 
     Rectangle itemBounds = getCurrentItemBounds();
     Rectangle visibleRect = SwingUtilities.convertRectangle(myList, myList.getVisibleRect(), getComponent());

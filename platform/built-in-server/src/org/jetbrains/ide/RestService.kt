@@ -16,6 +16,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.io.BufferExposingByteArrayOutputStream
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtilRt
@@ -31,6 +32,7 @@ import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.*
+import org.jetbrains.annotations.NonNls
 import org.jetbrains.builtInWebServer.isSignedRequest
 import org.jetbrains.io.addCommonHeaders
 import org.jetbrains.io.addNoCache
@@ -55,6 +57,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * @see [Best Practices for Designing a Pragmatic REST API](http://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api).
  */
+@Suppress("HardCodedStringLiteral")
 abstract class RestService : HttpRequestHandler() {
   companion object {
     @JvmField
@@ -165,6 +168,7 @@ abstract class RestService : HttpRequestHandler() {
   /**
    * Use human-readable name or UUID if it is an internal service.
    */
+  @NlsSafe
   protected abstract fun getServiceName(): String
 
   override fun isSupported(request: FullHttpRequest): Boolean {
@@ -270,7 +274,12 @@ abstract class RestService : HttpRequestHandler() {
     var isTrusted = false
     ApplicationManager.getApplication().invokeAndWait({
                                                         AppIcon.getInstance().requestAttention(null, true)
-                                                        isTrusted = showYesNoDialog(IdeBundle.message("warning.use.rest.api", getServiceName(), host ?: "unknown host"), "title.use.rest.api")
+                                                        val message = if (host != null) {
+                                                          IdeBundle.message("warning.use.rest.api.0.and.trust.host.1", getServiceName(), host)
+                                                        } else {
+                                                          IdeBundle.message("warning.use.rest.api.0.and.trust.host.unknown", getServiceName())
+                                                        }
+                                                        isTrusted = showYesNoDialog(message, "title.use.rest.api")
                                                         if (host != null) {
                                                           trustedOrigins.put(host, isTrusted)
                                                         }
@@ -282,6 +291,7 @@ abstract class RestService : HttpRequestHandler() {
    * Return error or send response using [sendOk], [send]
    */
   @Throws(IOException::class)
+  @NonNls
   abstract fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String?
 }
 

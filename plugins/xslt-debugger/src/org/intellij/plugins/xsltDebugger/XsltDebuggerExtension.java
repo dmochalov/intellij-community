@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.intellij.plugins.xsltDebugger;
 
 import com.intellij.diagnostic.logging.AdditionalTabComponent;
@@ -40,7 +39,6 @@ import com.intellij.util.PlatformIcons;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.lang.JavaVersion;
 import com.intellij.util.net.NetUtils;
-import gnu.trove.THashMap;
 import org.intellij.lang.xpath.xslt.XsltSupport;
 import org.intellij.lang.xpath.xslt.impl.XsltChecker;
 import org.intellij.lang.xpath.xslt.run.XsltRunConfiguration;
@@ -51,7 +49,6 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,7 +62,7 @@ import java.util.jar.Manifest;
  * Extension for XPathView that hooks into the execution of XSLT-scripts. Manages the creation of the XSLT-Debugger UI
  * and ensures the debugged process is started with the required JVM properties.
  */
-public class XsltDebuggerExtension extends XsltRunnerExtension {
+public final class XsltDebuggerExtension extends XsltRunnerExtension {
   private static final Logger LOG = Logger.getInstance(XsltDebuggerExtension.class.getName());
 
   public static final Key<XsltChecker.LanguageLevel> VERSION = Key.create("VERSION");
@@ -114,13 +111,13 @@ public class XsltDebuggerExtension extends XsltRunnerExtension {
     final Sdk jdk = configuration.getEffectiveJDK();
     assert jdk != null;
     final JavaVersion version = JavaVersion.tryParse(jdk.getVersionString());
-    if (version == null || version.feature < 5 || version.feature > 8) {  // todo: get rid of PortableRemoteObject usages in debugger
-      throw new CantRunException("The XSLT Debugger requires Java 1.5 - 1.8 to run");
+    if (version == null || version.feature < 5) {
+      throw new CantRunException(XsltDebuggerBundle.message("dialog.message.xslt.debugger.requires.java.to.run"));
     }
 
     // TODO: fix and remove
     if (configuration.getOutputType() != XsltRunConfiguration.OutputType.CONSOLE) {
-      throw new CantRunException("XSLT Debugger requires Output Type == CONSOLE");
+      throw new CantRunException(XsltDebuggerBundle.message("dialog.message.xslt.debugger.requires.output.type.console"));
     }
 
     try {
@@ -129,7 +126,7 @@ public class XsltDebuggerExtension extends XsltRunnerExtension {
       extensionData.putUserData(PORT, port);
     } catch (IOException e) {
       LOG.info(e);
-      throw new CantRunException("Unable to find a free network port");
+      throw new CantRunException(XsltDebuggerBundle.message("dialog.message.unable.to.find.free.network.port"));
     }
 
     String token = UUID.randomUUID().toString();
@@ -151,10 +148,7 @@ public class XsltDebuggerExtension extends XsltRunnerExtension {
       addPathToClasspath(parameters, getPluginEngineDirInSources().resolve("lib/rmi-stubs.jar"));
     }
 
-    File trove4j = new File(PathUtil.getJarPathForClass(THashMap.class));
-    parameters.getClassPath().addTail(trove4j.getAbsolutePath());
-
-    String type = parameters.getVMParametersList().getPropertyValue("xslt.transformer.type");
+    String type = parameters.getVMParametersList().getPropertyValue("xslt.transformer.type"); //NON-NLS
     if ("saxon".equalsIgnoreCase(type)) {
       addPathToClasspath(parameters, findSaxonJar(xsltDebuggerClassesRoot, SAXON_6_JAR));
     }
@@ -167,11 +161,11 @@ public class XsltDebuggerExtension extends XsltRunnerExtension {
         addXalan(parameters, xsltDebuggerClassesRoot);
       }
       else if (!xalanPresent) {
-        throw new CantRunException("Unsupported Xalan version is present in classpath.");
+        throw new CantRunException(XsltDebuggerBundle.message("dialog.message.unsupported.xalan.version.present.in.classpath"));
       }
     }
     else if (type != null) {
-      throw new CantRunException("Unsupported Transformer type '" + type + "'");
+      throw new CantRunException(XsltDebuggerBundle.message("dialog.message.unsupported.transformer.type", type));
     }
     else if (StringUtil.toLowerCase(parameters.getClassPath().getPathsString()).contains("xalan")) {
       if (isValidXalanPresent(parameters) == Boolean.TRUE) {
@@ -272,7 +266,7 @@ public class XsltDebuggerExtension extends XsltRunnerExtension {
   }
 
   private static Path findSaxonJar(Path xsltDebuggerClassesRoot, String jarFile) {
-    Path transformerFile = xsltDebuggerClassesRoot.getParent().resolve("lib/rt").resolve(jarFile);
+    Path transformerFile = xsltDebuggerClassesRoot.getParent().resolve("rt").resolve(jarFile);
     if (!Files.exists(transformerFile)) {
       //running from sources
       Path libDir = getPluginEngineDirInSources().resolve("impl/lib");

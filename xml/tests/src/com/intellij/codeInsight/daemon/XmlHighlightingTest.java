@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.daemon;
 
 import com.intellij.application.options.XmlSettings;
@@ -8,21 +8,18 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.analysis.XmlHighlightVisitor;
 import com.intellij.codeInsight.daemon.impl.analysis.XmlPathReferenceInspection;
 import com.intellij.codeInsight.daemon.impl.analysis.XmlUnboundNsPrefixInspection;
-import com.intellij.codeInsight.daemon.impl.quickfix.AddXsiSchemaLocationForExtResourceAction;
 import com.intellij.codeInsight.lookup.LookupManager;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.htmlInspections.*;
 import com.intellij.ide.DataManager;
-import com.intellij.ide.highlighter.DTDFileType;
-import com.intellij.ide.highlighter.HighlighterFactory;
-import com.intellij.ide.highlighter.XHtmlFileType;
-import com.intellij.ide.highlighter.XmlHighlighterFactory;
+import com.intellij.ide.highlighter.*;
 import com.intellij.javaee.ExternalResourceManagerEx;
 import com.intellij.javaee.ExternalResourceManagerExImpl;
 import com.intellij.javaee.UriUtil;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.lang.ant.dom.AntResolveInspection;
 import com.intellij.model.psi.PsiSymbolReference;
+import com.intellij.model.psi.PsiSymbolService;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -47,6 +44,7 @@ import com.intellij.psi.impl.include.FileIncludeManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.*;
 import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.testFramework.propertyBased.MadTestingUtil;
 import com.intellij.util.Processor;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xml.XmlAttributeDescriptor;
@@ -55,7 +53,6 @@ import com.intellij.xml.XmlElementDescriptor;
 import com.intellij.xml.actions.validate.ValidateXmlActionHandler;
 import com.intellij.xml.impl.schema.XmlElementDescriptorImpl;
 import com.intellij.xml.util.*;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -68,6 +65,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static com.intellij.model.psi.PsiSymbolReference.getReferenceText;
 
@@ -200,6 +199,10 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
   }
 
   public void testSvg() throws Exception {
+    doTest(getFullRelativeTestName(".svg"), true, false);
+  }
+
+  public void testSvg20() throws Exception {
     doTest(getFullRelativeTestName(".svg"), true, false);
   }
 
@@ -1145,7 +1148,7 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
   public void testSpecifyXsiSchemaLocationQuickFix() throws Exception {
     configureByFile(BASE_PATH + "web-app_2_4.xsd");
     final String testName = getTestName(false);
-    final String actionName = XmlBundle.message(AddXsiSchemaLocationForExtResourceAction.KEY);
+    final String actionName = XmlBundle.message("xml.intention.add.xsi.schema.location.for.external.resource");
     doTestWithQuickFix(BASE_PATH + testName, actionName, false);
     doTestWithQuickFix(BASE_PATH + testName + "2", actionName, false);
     doTestWithQuickFix(BASE_PATH + testName + "3", actionName, false);
@@ -1237,6 +1240,20 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
     });
   }
 
+  public void testBigPrologHighlightingPerformance() {
+    MadTestingUtil.enableAllInspections(myProject);
+    configureByText(XmlFileType.INSTANCE,
+                    "<!DOCTYPE rules [\n" +
+                    IntStream.range(0, 10000).mapToObj(i -> "<!ENTITY pnct" + i + " \"x\">\n").collect(Collectors.joining()) +
+                    "]>\n" +
+                    "<rules/>");
+    PlatformTestUtil
+      .startPerformanceTest("highlighting", 4_500, () -> doHighlighting())
+      .setup(() -> getPsiManager().dropPsiCaches())
+      .usesAllCPUCores()
+      .assertTiming();
+  }
+
   public void testDocBookHighlighting2() throws Exception {
     doManyFilesFromSeparateDirTest("http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd", "docbookx.dtd", null);
   }
@@ -1264,7 +1281,7 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
     List<VirtualFile> files = new ArrayList<>(6);
     files.add(findVirtualFile(BASE_PATH + getTestName(false) + ".xml"));
 
-    final Set<VirtualFile> usedFiles = new THashSet<>();
+    final Set<VirtualFile> usedFiles = new HashSet<>();
     final String base = BASE_PATH + getTestName(false) + "Schemas/";
 
     for(String[] pair:urls) {
@@ -2059,7 +2076,10 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
 
     List<? extends PsiSymbolReference> list = Registry.is("ide.symbol.url.references")
                                               ? PlatformTestUtil.collectUrlReferences(myFile)
-                                              : PlatformTestUtil.collectWebReferences(myFile);
+                                              : ContainerUtil.map(
+                                                PlatformTestUtil.collectWebReferences(myFile),
+                                                PsiSymbolService.getInstance()::asSymbolReference
+                                              );
     assertEquals(2, list.size());
 
     Collections.sort(list, Comparator.comparingInt(o -> o.getRangeInElement().getLength()));

@@ -1,9 +1,9 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.debugger.actions;
 
-import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.DebuggerManagerEx;
+import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.impl.DebuggerContextImpl;
@@ -22,7 +22,8 @@ import com.intellij.unscramble.ThreadState;
 import com.intellij.util.SmartList;
 import com.intellij.xdebugger.XDebugSession;
 import com.sun.jdi.*;
-import gnu.trove.TIntObjectHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -30,8 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ThreadDumpAction extends DumbAwareAction implements AnAction.TransparentUpdate {
-
+public final class ThreadDumpAction extends DumbAwareAction implements AnAction.TransparentUpdate {
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
     final Project project = e.getProject();
@@ -158,7 +158,7 @@ public class ThreadDumpAction extends DumbAwareAction implements AnAction.Transp
         final List<StackFrame> frames = threadReference.frames();
         hasEmptyStack = frames.size() == 0;
 
-        final TIntObjectHashMap<List<ObjectReference>> lockedAt = new TIntObjectHashMap<>();
+        final Int2ObjectOpenHashMap<List<ObjectReference>> lockedAt = new Int2ObjectOpenHashMap<>();
         if (vmProxy.canGetMonitorFrameInfo()) {
           for (Object m : threadReference.ownedMonitorsAndFrames()) {
             if (m instanceof MonitorInfo) { // see JRE-937
@@ -277,11 +277,9 @@ public class ThreadDumpAction extends DumbAwareAction implements AnAction.Transp
     }
   }
 
-  public static String renderLocation(final Location location) {
-    return JavaDebuggerBundle.message("export.threads.stackframe.format",
-                                      DebuggerUtilsEx.getLocationMethodQName(location),
-                                      DebuggerUtilsEx.getSourceName(location, e -> "Unknown Source"),
-                                      DebuggerUtilsEx.getLineNumber(location, false));
+  public static @NonNls String renderLocation(final Location location) {
+    return "at "+DebuggerUtilsEx.getLocationMethodQName(location)+
+           "("+DebuggerUtilsEx.getSourceName(location, e -> "Unknown Source")+":"+DebuggerUtilsEx.getLineNumber(location, false)+")";
   }
 
   private static String threadName(ThreadReference threadReference) {

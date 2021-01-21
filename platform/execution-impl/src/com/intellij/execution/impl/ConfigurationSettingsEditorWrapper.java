@@ -10,12 +10,14 @@ import com.intellij.execution.configurations.WithoutOwnBeforeRunSteps;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.execution.ui.RunConfigurationFragmentedEditor;
 import com.intellij.execution.ui.RunnerAndConfigurationSettingsEditor;
+import com.intellij.execution.ui.TargetAwareRunConfigurationEditor;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.DataKey;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SettingsEditor;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.HideableDecorator;
@@ -26,13 +28,14 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
 
 public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<RunnerAndConfigurationSettings>
-  implements BeforeRunStepsPanel.StepsBeforeRunListener {
+  implements BeforeRunStepsPanel.StepsBeforeRunListener, TargetAwareRunConfigurationEditor {
   public static final DataKey<ConfigurationSettingsEditorWrapper> CONFIGURATION_EDITOR_KEY = DataKey.create("ConfigurationSettingsEditor");
   @NonNls private static final String EXPAND_PROPERTY_KEY = "ExpandBeforeRunStepsPanel";
 
@@ -41,6 +44,8 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
 
   private JPanel myBeforeLaunchContainer;
   private JBCheckBox myIsAllowRunningInParallelCheckBox;
+  private JPanel myRCStoragePanel;
+  private final @Nullable RunConfigurationStorageUi myRCStorageUi;
   private JPanel myDisclaimerPanel;
   private JLabel myDisclaimerLabel;
   private JLabel myCreateNewRCLabel;
@@ -57,7 +62,17 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
     return myEditor.selectTabAndGetEditor(editorClass);
   }
 
-  private ConfigurationSettingsEditorWrapper(@NotNull RunnerAndConfigurationSettings settings, SettingsEditor<RunConfiguration> configurationEditor) {
+  private ConfigurationSettingsEditorWrapper(@NotNull RunnerAndConfigurationSettings settings,
+                                             @NotNull SettingsEditor<RunConfiguration> configurationEditor) {
+    Project project = settings.getConfiguration().getProject();
+    // RunConfigurationStorageUi for non-template settings is managed by com.intellij.execution.impl.SingleConfigurationConfigurable
+    myRCStorageUi = !project.isDefault() && settings.isTemplate()
+                    ? new RunConfigurationStorageUi(project, () -> fireEditorStateChanged())
+                    : null;
+    if (myRCStorageUi != null) {
+      myRCStoragePanel.add(myRCStorageUi.createComponent());
+    }
+
     myEditor = new ConfigurationSettingsEditor(settings, configurationEditor);
     myEditor.addSettingsEditorListener(editor -> fireStepsBeforeRunChanged());
     Disposer.register(this, myEditor);
@@ -89,7 +104,12 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
     myBeforeLaunchContainer.setVisible(!(settings.getConfiguration() instanceof WithoutOwnBeforeRunSteps));
 
     myIsAllowRunningInParallelCheckBox.setSelected(settings.getConfiguration().isAllowRunningInParallel());
-    myIsAllowRunningInParallelCheckBox.setVisible(settings.isTemplate() && settings.getFactory().getSingletonPolicy().isPolicyConfigurable());
+    myIsAllowRunningInParallelCheckBox.setVisible(settings.isTemplate() &&
+                                                  settings.getFactory().getSingletonPolicy().isPolicyConfigurable());
+
+    if (myRCStorageUi != null) {
+      myRCStorageUi.reset(settings);
+    }
 
     myDisclaimerPanel.setVisible(settings.isTemplate() && ProjectManager.getInstance().getOpenProjects().length != 0);
   }
@@ -118,6 +138,11 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
   public void applyEditorTo(@NotNull final RunnerAndConfigurationSettings settings) throws ConfigurationException {
     myEditor.applyEditorTo(settings);
     doApply((RunnerAndConfigurationSettingsImpl)settings, false);
+
+    if (myRCStorageUi != null) {
+      // editing a template run configuration
+      myRCStorageUi.apply(settings);
+    }
   }
 
   @NotNull
@@ -178,7 +203,7 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
   private void createUIComponents() {
     myDisclaimerLabel = new JLabel(ExecutionBundle.message("template.disclaimer"), AllIcons.General.Warning, SwingConstants.LEADING);
     myDisclaimerLabel.setBorder(JBUI.Borders.emptyBottom(2));
-    myCreateNewRCLabel = new LinkLabel(ExecutionBundle.message("create.configuration"), null, new LinkListener() {
+    myCreateNewRCLabel = new LinkLabel<>(ExecutionBundle.message("create.configuration"), null, new LinkListener<>() {
       @Override
       public void linkSelected(LinkLabel aSource, Object aLinkData) {
         RunConfigurationCreator creator =
@@ -190,12 +215,25 @@ public final class ConfigurationSettingsEditorWrapper extends SettingsEditor<Run
     });
   }
 
+  @Override
+  public void targetChanged(String targetName) {
+    myEditor.targetChanged(targetName);
+  }
+
+  private static void createConfiguration(JComponent component, RunnerAndConfigurationSettings settings) {
+    RunConfigurationCreator creator = DataManager.getInstance().getDataContext(component).getData(RunConfigurationCreator.KEY);
+    if (creator != null) {
+      creator.createNewConfiguration(settings.getFactory());
+    }
+  }
+
   public static SettingsEditor<RunnerAndConfigurationSettings> createWrapper(@NotNull RunnerAndConfigurationSettings settings) {
     SettingsEditor<?> configurationEditor = settings.getConfiguration().getConfigurationEditor();
     //noinspection unchecked
     return configurationEditor instanceof RunConfigurationFragmentedEditor<?>
            ? new RunnerAndConfigurationSettingsEditor(settings,
-                                                      (RunConfigurationFragmentedEditor<RunConfigurationBase<?>>)configurationEditor)
+                                                      (RunConfigurationFragmentedEditor<RunConfigurationBase<?>>)configurationEditor,
+                                                      (component) -> createConfiguration(component, settings))
            : new ConfigurationSettingsEditorWrapper(settings, (SettingsEditor<RunConfiguration>)configurationEditor);
   }
 }

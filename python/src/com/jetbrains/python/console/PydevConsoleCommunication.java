@@ -10,6 +10,7 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -29,11 +30,14 @@ import com.jetbrains.python.console.pydev.PydevCompletionVariant;
 import com.jetbrains.python.debugger.*;
 import com.jetbrains.python.debugger.containerview.PyViewNumericContainerAction;
 import com.jetbrains.python.debugger.pydev.GetVariableCommand;
+import com.jetbrains.python.debugger.pydev.dataviewer.DataViewerCommandBuilder;
+import com.jetbrains.python.debugger.pydev.dataviewer.DataViewerCommandResult;
 import com.jetbrains.python.debugger.settings.PyDebuggerSettings;
 import com.jetbrains.python.parsing.console.PythonConsoleData;
 import org.apache.thrift.TException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,6 +49,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import static com.jetbrains.python.console.PydevConsoleCommunicationUtil.*;
+import static com.jetbrains.python.debugger.pydev.dataviewer.DataViewerCommandResult.ResultType.UNHANDLED_ERROR;
 
 /**
  * Communication with Python console backend using Thrift services.
@@ -303,23 +308,31 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
     ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
     indicator.setText(createRuntimeMessage(PyBundle.message("console.getting.completion")));
     return ApplicationUtil.runWithCheckCanceled(
-      () ->
-      {
-        try {
-          if (myDebugCommunication != null && myDebugCommunication.isSuspended()) {
-            return myDebugCommunication.getCompletions(text, actTok);
-          }
-          else {
-            List<CompletionOption> fromServer = getPythonConsoleBackendClient().getCompletions(text, actTok);
-            return ContainerUtil.map(fromServer, option -> toPydevCompletionVariant(option));
-          }
-        }
-        catch (PythonUnhandledException e) {
-          LOG.warn("Completion error in Python Console: " + e.traceback);
-          return Collections.emptyList();
-        }
+      () -> {
+        return doGetCompletions(text, actTok);
       },
       indicator);
+  }
+
+  private List<PydevCompletionVariant> doGetCompletions(String text, String actTok) throws Exception {
+    try {
+      if (myDebugCommunication != null && myDebugCommunication.isSuspended()) {
+        return myDebugCommunication.getCompletions(text, actTok);
+      }
+      else {
+        List<CompletionOption> fromServer = getPythonConsoleBackendClient().getCompletions(text, actTok);
+        return ContainerUtil.map(fromServer, option -> toPydevCompletionVariant(option));
+      }
+    }
+    catch (PythonUnhandledException e) {
+      LOG.warn("Completion error in Python Console: " + e.traceback);
+      return Collections.emptyList();
+    }
+  }
+
+  @TestOnly
+  public List<PydevCompletionVariant> gerCompletionVariants(String text, String actTok) throws Exception {
+    return doGetCompletions(text, actTok);
   }
 
   @NotNull
@@ -329,7 +342,7 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
   }
 
   private <T> void executeBackgroundTaskSuppressException(Callable<T> task,
-                                                          String userVisibleMessage,
+                                                          @NlsContexts.ProgressTitle String userVisibleMessage,
                                                           String errorLogMessage) {
     try {
       executeBackgroundTask(task, false, userVisibleMessage, errorLogMessage);
@@ -340,7 +353,10 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
   }
 
   @Nullable
-  private <T> T executeBackgroundTask(Callable<T> task, boolean waitForResult, String userVisibleMessage, String errorLogMessage)
+  private <T> T executeBackgroundTask(Callable<T> task,
+                                      boolean waitForResult,
+                                      @NlsContexts.ProgressTitle String userVisibleMessage,
+                                      String errorLogMessage)
     throws PyDebuggerException {
     final FutureResult<T> future = new FutureResult<>();
     new Task.Backgroundable(myProject, userVisibleMessage, false) {
@@ -388,7 +404,7 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
       // add temporary value to avoid repeated requests for the same expression
       myPrevNameToDescription = Pair.create(text, "");
     }
-    if (ApplicationManager.getApplication().isDispatchThread()) {
+    if (ApplicationManager.getApplication().isDispatchThread() && !ApplicationManager.getApplication().isUnitTestMode()) {
       throw new PyDebuggerException("Documentation in Python Console shouldn't be called from Dispatch Thread!");
     }
 
@@ -542,13 +558,14 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
       catch (CommunicationClosedException | PyConsoleProcessFinishedException | TException e) {
         for (PyAsyncValue<String> asyncValue : pyAsyncValues) {
           PyDebugValue value = asyncValue.getDebugValue();
-          XValueNode node = value.getLastNode();
-          if (node != null && !node.isObsolete()) {
-            if (e.getMessage().startsWith("Timeout") || e.getMessage().startsWith("Console already exited")) {
-              value.updateNodeValueAfterLoading(node, " ", "", PyVariableViewSettings.LOADING_TIMED_OUT);
-            }
-            else {
-              LOG.error(e);
+          for (XValueNode node : value.getValueNodes()) {
+            if (node != null && !node.isObsolete()) {
+              if (e.getMessage().startsWith("Timeout") || e.getMessage().startsWith("Console already exited")) {
+                value.updateNodeValueAfterLoading(node, " ", "", PyBundle.message("debugger.variables.view.loading.timed.out"));
+              }
+              else {
+                LOG.error(e);
+              }
             }
           }
         }
@@ -633,6 +650,32 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
     }
   }
 
+  @Override
+  public DataViewerCommandResult executeDataViewerCommand(DataViewerCommandBuilder builder) throws PyDebuggerException {
+    if (!isCommunicationClosed()) {
+      return executeBackgroundTask(
+        () -> {
+          try {
+            getPythonConsoleBackendClient().execDataViewerAction(
+              builder.getVar().getName(),
+              builder.getAction().name(),
+              builder.getArgs() == null? "" :String.join("\t", builder.getArgs())
+            );
+
+            return DataViewerCommandResult.makeSuccessResult("Export successful");
+          }
+          catch (PythonUnhandledException e) {
+            return DataViewerCommandResult.errorFromExportTraceback(e.getTraceback());
+          }
+        },
+        true,
+        PyBundle.message("console.executing.dataviewer.command"),
+        "Error in DataViewer command:"
+      );
+    }
+    return DataViewerCommandResult.makeErrorResult(UNHANDLED_ERROR, "Console communication is closed");
+  }
+
   @Nullable
   @Override
   public XSourcePosition getSourcePositionForName(String name, String parentType) {
@@ -653,7 +696,10 @@ public abstract class PydevConsoleCommunication extends AbstractConsoleCommunica
    * @param extraEnvs
    * @throws Exception if connection fails
    */
-  public void connectToDebugger(int localPort, @Nullable String debuggerHost, @NotNull Map<String, Boolean> dbgOpts, @NotNull Map<String, String> extraEnvs)
+  public void connectToDebugger(int localPort,
+                                @Nullable String debuggerHost,
+                                @NotNull Map<String, Boolean> dbgOpts,
+                                @NotNull Map<String, String> extraEnvs)
     throws Exception {
     if (waitingForInput) {
       throw new Exception("Can't connect debugger now, waiting for input");

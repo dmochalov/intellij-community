@@ -206,6 +206,25 @@ public class PythonHighlightingTest extends PyTestCase {
     doTest();
   }
 
+  // PY-33235
+  public void testNestedFunction() {
+    EditorColorsScheme scheme = createTemporaryColorScheme();
+
+    TextAttributesKey xKey = TextAttributesKey.find("PY.CLASS_DEFINITION");
+    TextAttributes xAttributes = new TextAttributes(Color.blue, Color.black, Color.white, EffectType.BOXED, Font.BOLD);
+    scheme.setAttributes(xKey, xAttributes);
+
+    xKey = TextAttributesKey.find("PY.FUNC_DEFINITION");
+    xAttributes = new TextAttributes(Color.red, Color.black, Color.white, EffectType.BOXED, Font.BOLD);
+    scheme.setAttributes(xKey, xAttributes);
+
+    xKey = TextAttributesKey.find("PY.NESTED_FUNC_DEFINITION");
+    xAttributes = new TextAttributes(Color.green, Color.blue, Color.white, EffectType.BOXED, Font.BOLD);
+    scheme.setAttributes(xKey, xAttributes);
+
+    doTest();
+  }
+
   public void testAsync() {
     doTest(LanguageLevel.PYTHON35, true, true);
   }
@@ -467,6 +486,16 @@ public class PythonHighlightingTest extends PyTestCase {
   // PY-36004
   public void testNamedUnicode() {
     doTest(LanguageLevel.PYTHON38, false, false);
+  }
+
+  // PY-36478
+  public void testAssignmentExpressionAsATarget() {
+    doTest(LanguageLevel.getLatest(), false, false);
+  }
+
+  // PY-43619
+  public void testAssignmentExpressionInAnIterable() {
+    doTest(LanguageLevel.getLatest(), false, false);
   }
 
   @NotNull

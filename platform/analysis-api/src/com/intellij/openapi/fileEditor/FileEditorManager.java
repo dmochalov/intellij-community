@@ -16,6 +16,7 @@ import java.util.List;
 
 public abstract class FileEditorManager {
   public static final Key<Boolean> USE_CURRENT_WINDOW = Key.create("OpenFile.searchForOpen");
+  public static final Key<Boolean> USE_MAIN_WINDOW = Key.create("OpenFile.useMainWindow");
 
   public static FileEditorManager getInstance(@NotNull Project project) {
     return project.getComponent(FileEditorManager.class);
@@ -192,13 +193,6 @@ public abstract class FileEditorManager {
   }
 
   /**
-   * @deprecated Use {@link FileEditorManagerListener#FILE_EDITOR_MANAGER} instead
-   */
-  @Deprecated
-  public void addFileEditorManagerListener(@NotNull FileEditorManagerListener listener, @NotNull Disposable parentDisposable) {
-  }
-
-  /**
    * Removes specified {@code listener}
    *
    * @param listener listener to be removed
@@ -213,7 +207,11 @@ public abstract class FileEditorManager {
    *
    * @return opened file editors
    */
-  public abstract @NotNull List<FileEditor> openEditor(@NotNull OpenFileDescriptor descriptor, boolean focusEditor);
+  public @NotNull List<FileEditor> openEditor(@NotNull OpenFileDescriptor descriptor, boolean focusEditor) {
+    return openFileEditor(descriptor, focusEditor);
+  }
+
+  public abstract @NotNull List<FileEditor> openFileEditor(@NotNull FileEditorNavigatable descriptor, boolean focusEditor);
 
   /**
    * Returns the project with which the file editor manager is associated.

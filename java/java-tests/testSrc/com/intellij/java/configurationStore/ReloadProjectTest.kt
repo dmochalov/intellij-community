@@ -4,26 +4,26 @@ package com.intellij.java.configurationStore
 import com.intellij.configurationStore.StoreReloadManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ex.PathManagerEx
+import com.intellij.openapi.module.ConfigurationErrorDescription
 import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.module.impl.ProjectLoadingErrorsHeadlessNotifier
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VfsUtilCore
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.testFramework.ApplicationRule
-import com.intellij.testFramework.PlatformTestUtil
-import com.intellij.testFramework.TemporaryDirectory
-import com.intellij.testFramework.createOrLoadProject
-import kotlinx.coroutines.runBlocking
+import com.intellij.packaging.artifacts.ArtifactManager
+import com.intellij.packaging.impl.elements.FileCopyPackagingElement
+import com.intellij.testFramework.*
+import com.intellij.testFramework.configurationStore.copyFilesAndReloadProject
+import com.intellij.util.CommonProcessors
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
-import java.nio.file.Path
 import java.nio.file.Paths
 
-class ReloadProjectTest : LoadProjectBase() {
+class ReloadProjectTest {
   companion object {
     @JvmField
     @ClassRule
@@ -32,16 +32,17 @@ class ReloadProjectTest : LoadProjectBase() {
 
   @JvmField
   @Rule
-  val myTempDirectory = TemporaryDirectory()
+  val tempDirectory = TemporaryDirectory()
 
-  override val tempDirectory: TemporaryDirectory
-    get() = myTempDirectory
+  @JvmField
+  @Rule
+  val disposable = DisposableRule()
 
-  override val testDataRoot
+  private val testDataRoot
     get() = Paths.get(PathManagerEx.getCommunityHomePath()).resolve("java/java-tests/testData/reloading")
 
   @Test
-  internal fun `reload module with module library`() {
+  fun `reload module with module library`() {
     loadProjectAndCheckResults("removeModuleWithModuleLibrary/before") { project ->
       val base = Paths.get(project.basePath!!)
       FileUtil.copyDir(testDataRoot.resolve("removeModuleWithModuleLibrary/after").toFile(), base.toFile())
@@ -66,10 +67,46 @@ class ReloadProjectTest : LoadProjectBase() {
     }
   }
 
+  @Test
+  fun `add module from subdirectory`() {
+    loadProjectAndCheckResults("addModuleFromSubDir/initial") { project ->
+      val module = ModuleManager.getInstance(project).modules.single()
+      assertThat(module.name).isEqualTo("foo")
+      copyFilesAndReload(project, "addModuleFromSubDir/update")
+      assertThat(ModuleManager.getInstance(project).modules).hasSize(2)
+    }
+  }
+
+  @Test
+  fun `change artifact`() {
+    loadProjectAndCheckResults("changeArtifact/initial") { project ->
+      val artifact = ArtifactManager.getInstance(project).artifacts.single()
+      assertThat(artifact.name).isEqualTo("a")
+      assertThat((artifact.rootElement.children.single() as FileCopyPackagingElement).filePath).endsWith("/a.txt")
+      copyFilesAndReload(project, "changeArtifact/update")
+      val artifact2 = ArtifactManager.getInstance(project).artifacts.single()
+      assertThat(artifact2.name).isEqualTo("a")
+      assertThat((artifact2.rootElement.children.single() as FileCopyPackagingElement).filePath).endsWith("/bbb.txt")
+    }
+  }
+
+  @Test
+  fun `change iml file content to invalid xml`() {
+    val errors = ArrayList<ConfigurationErrorDescription>()
+    ProjectLoadingErrorsHeadlessNotifier.setErrorHandler(errors::add, disposable.disposable)
+    loadProjectAndCheckResults("changeImlContentToInvalidXml/initial") { project ->
+      copyFilesAndReload(project, "changeImlContentToInvalidXml/update")
+      assertThat(ModuleManager.getInstance(project).modules.single().name).isEqualTo("foo")
+      assertThat(errors.single().description).contains("foo.iml")
+    }
+
+  }
+
   private suspend fun copyFilesAndReload(project: Project, relativePath: String) {
-    val base = Paths.get(project.basePath!!)
-    FileUtil.copyDir(testDataRoot.resolve(relativePath).toFile(), base.toFile())
-    VfsUtil.markDirtyAndRefresh(false, true, true, VfsUtil.findFile(base, true))
-    StoreReloadManager.getInstance().reloadChangedStorageFiles()
+    copyFilesAndReloadProject(project, testDataRoot.resolve(relativePath))
+  }
+
+  private fun loadProjectAndCheckResults(testDataDirName: String, checkProject: suspend (Project) -> Unit) {
+    return loadProjectAndCheckResults(listOf(testDataRoot.resolve(testDataDirName)), tempDirectory, checkProject)
   }
 }

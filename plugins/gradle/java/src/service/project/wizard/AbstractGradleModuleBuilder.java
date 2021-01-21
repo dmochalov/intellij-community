@@ -21,11 +21,13 @@ import com.intellij.openapi.externalSystem.model.project.ModuleSdkData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.model.project.ProjectId;
 import com.intellij.openapi.externalSystem.service.project.ExternalProjectRefreshCallback;
+import com.intellij.openapi.externalSystem.service.project.manage.ExternalProjectsManagerImpl;
 import com.intellij.openapi.externalSystem.service.project.wizard.AbstractExternalModuleBuilder;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.*;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
@@ -50,6 +52,7 @@ import com.intellij.util.io.PathKt;
 import org.gradle.util.GradleVersion;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.gradle.codeInspection.GradleInspectionBundle;
 import org.jetbrains.plugins.gradle.frameworkSupport.BuildScriptDataBuilder;
 import org.jetbrains.plugins.gradle.frameworkSupport.KotlinBuildScriptDataBuilder;
 import org.jetbrains.plugins.gradle.model.data.GradleSourceSetData;
@@ -243,10 +246,12 @@ public abstract class AbstractGradleModuleBuilder extends AbstractExternalModule
   }
 
   private void reloadProject(@NotNull Project project) {
-    ImportSpecBuilder importSpec = new ImportSpecBuilder(project, GradleConstants.SYSTEM_ID);
-    importSpec.createDirectoriesForEmptyContentRoots();
-    importSpec.callback(new ConfigureGradleModuleCallback(importSpec));
-    ExternalSystemUtil.refreshProject(PathKt.getSystemIndependentPath(rootProjectPath), importSpec);
+    ExternalProjectsManagerImpl.getInstance(project).runWhenInitialized(() -> {
+      ImportSpecBuilder importSpec = new ImportSpecBuilder(project, GradleConstants.SYSTEM_ID);
+      importSpec.createDirectoriesForEmptyContentRoots();
+      importSpec.callback(new ConfigureGradleModuleCallback(importSpec));
+      ExternalSystemUtil.refreshProject(PathKt.getSystemIndependentPath(rootProjectPath), importSpec);
+    });
   }
 
   private void createWrapper(@NotNull Project project, @NotNull GradleVersion gradleVersion, @NotNull Runnable callback) {
@@ -427,7 +432,7 @@ public abstract class AbstractGradleModuleBuilder extends AbstractExternalModule
     catch (IOException e) {
       LOG.warn(String.format("Unexpected exception on applying template %s config", GradleConstants.SYSTEM_ID.getReadableName()), e);
       throw new ConfigurationException(
-        e.getMessage(), String.format("Can't apply %s template config text", GradleConstants.SYSTEM_ID.getReadableName())
+        e.getMessage(), GradleInspectionBundle.message("dialog.title.can.t.apply.template.config.text", GradleConstants.SYSTEM_ID.getReadableName())
       );
     }
   }
@@ -442,7 +447,7 @@ public abstract class AbstractGradleModuleBuilder extends AbstractExternalModule
     catch (IOException e) {
       LOG.warn(String.format("Unexpected exception on appending template %s config", GradleConstants.SYSTEM_ID.getReadableName()), e);
       throw new ConfigurationException(
-        e.getMessage(), String.format("Can't append %s template config text", GradleConstants.SYSTEM_ID.getReadableName())
+        e.getMessage(), GradleInspectionBundle.message("dialog.title.can.t.append.template.config.text", GradleConstants.SYSTEM_ID.getReadableName())
       );
     }
   }
@@ -465,10 +470,10 @@ public abstract class AbstractGradleModuleBuilder extends AbstractExternalModule
 
     VirtualFile virtualFile = VfsUtil.findFile(file, true);
     if (virtualFile == null) {
-      throw new ConfigurationException(String.format("Can't create configuration file '%s'", file));
+      throw new ConfigurationException(GradleInspectionBundle.message("dialog.message.can.t.create.configuration.file", file));
     }
     if (virtualFile.isDirectory()) {
-      throw new ConfigurationException(String.format("Configuration file is a directory '%s'", file));
+      throw new ConfigurationException(GradleInspectionBundle.message("dialog.message.configuration.file.directory", file));
     }
     VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile);
     return virtualFile;

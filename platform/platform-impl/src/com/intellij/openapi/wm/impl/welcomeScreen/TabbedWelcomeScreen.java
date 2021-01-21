@@ -1,50 +1,60 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl.welcomeScreen;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.openapi.wm.WelcomeScreenCustomization;
 import com.intellij.openapi.wm.WelcomeScreenTab;
 import com.intellij.openapi.wm.WelcomeTabFactory;
 import com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy;
 import com.intellij.ui.CardLayoutPanel;
+import com.intellij.ui.UIBundle;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
-import com.intellij.ui.components.JBSlidingPanel;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.UiNotifyConnector;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.accessibility.Accessible;
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
+import java.util.Objects;
 
-import static com.intellij.openapi.wm.impl.welcomeScreen.WelcomeScreenComponentFactory.createSmallLogo;
-import static com.intellij.openapi.wm.impl.welcomeScreen.WelcomeScreenUIManager.getMainTabListBackground;
-
-public class TabbedWelcomeScreen extends AbstractWelcomeScreen {
-  private final JBSlidingPanel mySlidingPanel = new JBSlidingPanel();
-
+public final class TabbedWelcomeScreen extends AbstractWelcomeScreen {
+  private final JBList<WelcomeScreenTab> tabList;
   TabbedWelcomeScreen() {
-    mySlidingPanel.add("root", this);
-    setBackground(getMainTabListBackground());
+    setBackground(WelcomeScreenUIManager.getMainTabListBackground());
 
     CardLayoutPanel<WelcomeScreenTab, WelcomeScreenTab, JPanel> centralPanel = createCardPanel();
 
     DefaultListModel<WelcomeScreenTab> mainListModel = new DefaultListModel<>();
-    WelcomeTabFactory.WELCOME_TAB_FACTORY_EP.getExtensionList().forEach(it -> mainListModel.addElement(it.createWelcomeTab(this)));
+    for (WelcomeTabFactory tabFactory : WelcomeTabFactory.WELCOME_TAB_FACTORY_EP.getExtensionList()) {
+      mainListModel.addElement(tabFactory.createWelcomeTab(this));
+    }
 
-    JBList<WelcomeScreenTab> tabList = createListWithTabs(mainListModel);
-    tabList.addListSelectionListener(e -> centralPanel.select(tabList.getSelectedValue(), true));
+    tabList = createListWithTabs(mainListModel);
+    tabList.addListSelectionListener(e -> {
+      centralPanel.select(tabList.getSelectedValue(), true);
+      WelcomeScreenEventCollector.logTabSelected(tabList.getSelectedValue());
+    });
+    tabList.getAccessibleContext().setAccessibleName(UIBundle.message("welcome.screen.welcome.screen.categories.accessible.name"));
 
-    JComponent logoComponent = createSmallLogo();
+    JComponent logoComponent = WelcomeScreenComponentFactory.createSmallLogo();
+    logoComponent.setFocusable(false);
     logoComponent.setBorder(JBUI.Borders.emptyLeft(16));
 
     JPanel leftPanel = new NonOpaquePanel();
     leftPanel.add(logoComponent, BorderLayout.NORTH);
     leftPanel.add(tabList, BorderLayout.CENTER);
+
+    JComponent quickAccessPanel = createQuickAccessPanel(this);
+    quickAccessPanel.setBorder(JBUI.Borders.empty(5, 10));
+    leftPanel.add(quickAccessPanel, BorderLayout.SOUTH);
     leftPanel.setPreferredSize(new Dimension(JBUI.scale(196), leftPanel.getPreferredSize().height));
 
     add(leftPanel, BorderLayout.WEST);
@@ -54,29 +64,46 @@ public class TabbedWelcomeScreen extends AbstractWelcomeScreen {
     if (!mainListModel.isEmpty()) {
       tabList.setSelectedIndex(0);
       JComponent firstShownPanel = mainListModel.get(0).getAssociatedComponent();
-      UiNotifyConnector.doWhenFirstShown(firstShownPanel, () -> IdeFocusManager.getGlobalInstance()
-        .requestFocus(IdeFocusTraversalPolicy.getPreferredFocusedComponent(firstShownPanel), true));
+      UiNotifyConnector.doWhenFirstShown(firstShownPanel, () -> {
+        IdeFocusManager.getGlobalInstance()
+          .requestFocus(IdeFocusTraversalPolicy.getPreferredFocusedComponent(firstShownPanel), true);
+        WelcomeScreenEventCollector.logWelcomeScreenShown();
+      });
     }
   }
 
+  @Override
+  public void dispose() {
+    super.dispose();
+    WelcomeScreenEventCollector.logWelcomeScreenHide();
+  }
+
   @NotNull
-  private static JBList<WelcomeScreenTab> createListWithTabs(@Nullable DefaultListModel<WelcomeScreenTab> mainListModel) {
-    JBList<WelcomeScreenTab> tabList = new JBList<WelcomeScreenTab>(mainListModel) {
+  private static JBList<WelcomeScreenTab> createListWithTabs(@NotNull DefaultListModel<WelcomeScreenTab> mainListModel) {
+    JBList<WelcomeScreenTab> tabList = new JBList<>(mainListModel) {
       @Override
       public int locationToIndex(Point location) {
         int i = super.locationToIndex(location);
         return (i == -1 || !getCellBounds(i, i).contains(location)) ? -1 : i;
       }
     };
-    tabList.setBackground(getMainTabListBackground());
+    tabList.setBackground(WelcomeScreenUIManager.getMainTabListBackground());
     tabList.setBorder(JBUI.Borders.emptyLeft(16));
     tabList.setCellRenderer(new MyCellRenderer());
     return tabList;
   }
 
-  @NotNull
-  private static CardLayoutPanel<WelcomeScreenTab, WelcomeScreenTab, JPanel> createCardPanel() {
-    return new CardLayoutPanel<WelcomeScreenTab, WelcomeScreenTab, JPanel>() {
+  private static JComponent createQuickAccessPanel(@NotNull Disposable parentDisposable) {
+    JPanel quickAccessPanel = new NonOpaquePanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    WelcomeScreenCustomization.WELCOME_SCREEN_CUSTOMIZATION.getExtensionsIfPointIsRegistered().stream()
+      .map(c -> c.createQuickAccessComponent(parentDisposable))
+      .filter(Objects::nonNull)
+      .forEach(quickAccessPanel::add);
+    return quickAccessPanel;
+  }
+
+  private static @NotNull CardLayoutPanel<WelcomeScreenTab, WelcomeScreenTab, JPanel> createCardPanel() {
+    return new CardLayoutPanel<>() {
       @Override
       protected WelcomeScreenTab prepare(WelcomeScreenTab key) {
         return key;
@@ -84,7 +111,7 @@ public class TabbedWelcomeScreen extends AbstractWelcomeScreen {
 
       @Override
       protected JPanel create(WelcomeScreenTab screenTab) {
-        return UI.Panels.simplePanel(screenTab.getAssociatedComponent());
+        return JBUI.Panels.simplePanel(screenTab.getAssociatedComponent());
       }
     };
   }
@@ -94,44 +121,45 @@ public class TabbedWelcomeScreen extends AbstractWelcomeScreen {
     return null;
   }
 
-  @Override
-  public JComponent getWelcomePanel() {
-    return mySlidingPanel;
-  }
-
-  @Override
-  public void setupFrame(JFrame frame) {
-  }
-
-  private static class MyCellRenderer extends CellRendererPane implements ListCellRenderer<WelcomeScreenTab> {
-
+  private static final class MyCellRenderer extends CellRendererPane implements ListCellRenderer<WelcomeScreenTab> {
     @Override
     public Component getListCellRendererComponent(JList<? extends WelcomeScreenTab> list,
                                                   WelcomeScreenTab value,
                                                   int index,
                                                   boolean isSelected,
                                                   boolean cellHasFocus) {
-      JComponent keyComponent = value.getKeyComponent();
+      JComponent keyComponent = value.getKeyComponent(list);
       JPanel wrappedPanel = JBUI.Panels.simplePanel(keyComponent);
-      UIUtil.setBackgroundRecursively(wrappedPanel, isSelected ? UIUtil.getListSelectionBackground(cellHasFocus): getMainTabListBackground());
+      UIUtil.setBackgroundRecursively(wrappedPanel, isSelected ? UIUtil.getListSelectionBackground(cellHasFocus): WelcomeScreenUIManager
+        .getMainTabListBackground());
       UIUtil.setForegroundRecursively(wrappedPanel, UIUtil.getListForeground(isSelected, cellHasFocus));
+      if (value instanceof Accessible) {
+        wrappedPanel.getAccessibleContext().setAccessibleName(((Accessible)value).getAccessibleContext().getAccessibleName());
+      }
       return wrappedPanel;
     }
   }
 
-  public abstract static class DefaultWelcomeScreenTab implements WelcomeScreenTab {
-
-    private final JComponent myKeyComponent;
+  public abstract static class DefaultWelcomeScreenTab implements WelcomeScreenTab, Accessible {
+    protected final JComponent myKeyComponent;
     private JComponent myAssociatedComponent;
+    private final JBLabel myLabel;
+    private final WelcomeScreenEventCollector.TabType myType;
 
     public DefaultWelcomeScreenTab(@NotNull @Nls String tabName) {
-      myKeyComponent = JBUI.Panels.simplePanel().addToLeft(new JBLabel(tabName)).withBackground(getMainTabListBackground())
+      this(tabName, WelcomeScreenEventCollector.TabType.TabNavOther);
+    }
+
+    DefaultWelcomeScreenTab(@NotNull @Nls String tabName, @NotNull WelcomeScreenEventCollector.TabType tabType) {
+      myLabel = new JBLabel(tabName);
+      myType = tabType;
+      myKeyComponent = JBUI.Panels.simplePanel().addToLeft(myLabel).withBackground(WelcomeScreenUIManager.getMainTabListBackground())
         .withBorder(JBUI.Borders.empty(8, 0));
     }
 
     @Override
     @NotNull
-    public JComponent getKeyComponent() {
+    public JComponent getKeyComponent(@NotNull JComponent parent) {
       return myKeyComponent;
     }
 
@@ -144,6 +172,23 @@ public class TabbedWelcomeScreen extends AbstractWelcomeScreen {
       return myAssociatedComponent;
     }
 
+    WelcomeScreenEventCollector.TabType getType() {
+      return myType;
+    }
+
+    @Override
+    public AccessibleContext getAccessibleContext() {
+      return myLabel.getAccessibleContext();
+    }
+
     protected abstract JComponent buildComponent();
+  }
+
+  public int getSelectedIndex(){
+    return tabList.getSelectedIndex();
+  }
+
+  public void setSelectedIndex(int idx){
+    tabList.setSelectedIndex(idx);
   }
 }

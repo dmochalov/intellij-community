@@ -6,6 +6,7 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.AboutPopupDescriptionProvider;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.IdeBundle;
+import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.Disposable;
@@ -16,6 +17,7 @@ import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointName;
+import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.ui.DialogWrapper;
@@ -24,6 +26,7 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
@@ -38,9 +41,12 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.Alarm;
 import com.intellij.util.MathUtil;
+import com.intellij.util.PlatformUtils;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.*;
 import com.intellij.util.ui.accessibility.AccessibleContextUtil;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -82,7 +88,7 @@ public final class AboutPopup {
     ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
 
     final PopupPanel panel = new PopupPanel(new BorderLayout());
-    Icon image = IconLoader.getIcon(appInfo.getAboutImageUrl());
+    Icon image = IconLoader.getIcon(appInfo.getAboutImageUrl(), AboutPopup.class);
     if (appInfo.showLicenseeInfo()) {
       final InfoSurface infoSurface = new InfoSurface(image, showDebugInfo);
       infoSurface.setPreferredSize(new Dimension(image.getIconWidth(), image.getIconHeight()));
@@ -172,13 +178,13 @@ public final class AboutPopup {
       appendLast();
 
       String buildInfo = IdeBundle.message("about.box.build.number", appInfo.getBuild().asString());
-      Calendar cal = appInfo.getBuildDate();
-      String buildDate = "";
+      Date timestamp = appInfo.getBuildDate().getTime();
       if (appInfo.getBuild().isSnapshot()) {
-        buildDate = new SimpleDateFormat("HH:mm, ").format(cal.getTime());
+        buildInfo += IdeBundle.message("about.box.build.date.time", DateFormatUtil.formatAboutDialogDate(timestamp), new SimpleDateFormat("HH:mm").format(timestamp));
       }
-      buildDate += DateFormatUtil.formatAboutDialogDate(cal.getTime());
-      buildInfo += IdeBundle.message("about.box.build.date", buildDate);
+      else {
+        buildInfo += IdeBundle.message("about.box.build.date", DateFormatUtil.formatAboutDialogDate(timestamp));
+      }
       myLines.add(new AboutBoxLine(buildInfo));
       appendLast();
 
@@ -356,7 +362,7 @@ public final class AboutPopup {
 
       Font labelFont = JBFont.label();
       if (SystemInfo.isWindows) {
-        labelFont = JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 14);
+        labelFont = JBUI.Fonts.create("Segoe UI", 14);
       }
 
       int startFontSize = 14;
@@ -397,7 +403,7 @@ public final class AboutPopup {
         g2.setFont(JBUI.Fonts.miniFont());
       }
       else {
-        g2.setFont(JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 12));
+        g2.setFont(JBUI.Fonts.create("Segoe UI", 12));
       }
 
       g2.setColor(createColor(appInfo.getAboutForeground()));
@@ -421,9 +427,13 @@ public final class AboutPopup {
       }
     }
 
-    private static @NotNull String getCopyrightText() {
+    private static @NotNull @Nls String getCopyrightText() {
       ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
-      return "Copyright © " + appInfo.getCopyrightStart() + '–' + Calendar.getInstance(Locale.US).get(Calendar.YEAR) + ' ' + appInfo.getCompanyName();
+      // Copyright message should not be translated
+      @NlsSafe
+      String copyrightText = String.format(Locale.ROOT,
+        "Copyright © %s–%d %s", appInfo.getCopyrightStart(), Calendar.getInstance(Locale.US).get(Calendar.YEAR), appInfo.getCompanyName());
+      return copyrightText;
     }
 
     private @NotNull TextRenderer createTextRenderer(Graphics2D g) {
@@ -640,8 +650,9 @@ public final class AboutPopup {
     protected class AccessibleInfoSurface extends AccessibleJPanel {
       @Override
       public String getAccessibleName() {
-        String text = "System Information\n" + getText() + "\n" + getCopyrightText();
-        return AccessibleContextUtil.replaceLineSeparatorsWithPunctuation(text);
+        String text = IdeBundle.message("about.popup.system.info", getText(), getCopyrightText());
+        @NlsSafe String result = AccessibleContextUtil.replaceLineSeparatorsWithPunctuation(text);
+        return result;
       }
     }
   }
@@ -667,10 +678,19 @@ public final class AboutPopup {
       extraInfo += "Registry: " + registryKeys + "\n";
     }
 
-    String nonBundledPlugins = Arrays.stream(PluginManagerCore.getPlugins()).filter(p -> !p.isBundled() && p.isEnabled())
-      .map(p -> p.getPluginId().getIdString()).collect(StringUtil.joining());
+    String nonBundledPlugins = PluginManagerCore.getLoadedPlugins().stream()
+      .filter(p -> !p.isBundled())
+      .map(p -> p.getPluginId().getIdString() + " (" + p.getVersion() + ")")
+      .collect(StringUtil.joining());
     if (!StringUtil.isEmpty(nonBundledPlugins)) {
       extraInfo += "Non-Bundled Plugins: " + nonBundledPlugins;
+    }
+
+    if (PlatformUtils.isIntelliJ()) {
+      IdeaPluginDescriptor kotlinPlugin = PluginManagerCore.getPlugin(PluginId.findId("org.jetbrains.kotlin"));
+      if (kotlinPlugin != null) {
+        extraInfo += "\nKotlin: " + kotlinPlugin.getVersion();
+      }
     }
 
     if (SystemInfo.isUnix && !SystemInfo.isMac) {
@@ -706,15 +726,12 @@ public final class AboutPopup {
       @Override
       public String getAccessibleName() {
         ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
-        return "About " + appInfo.getFullApplicationName();
+        return IdeBundle.message("about.popup.about.app", appInfo.getFullApplicationName());
       }
 
       @Override
       public String getAccessibleDescription() {
-        if (myInfoSurface != null) {
-          return "Press Copy key to copy system information to clipboard";
-        }
-        return null;
+        return myInfoSurface != null ? IdeBundle.message("press.copy.key.to.copy.system.information.to.clipboard") : null;
       }
 
       @Override
@@ -724,16 +741,12 @@ public final class AboutPopup {
 
       @Override
       public int getAccessibleActionCount() {
-        if(myInfoSurface != null)
-          return 1;
-        return 0;
+        return myInfoSurface != null ? 1 : 0;
       }
 
       @Override
       public String getAccessibleActionDescription(int i) {
-        if (i == 0 && myInfoSurface != null)
-          return "Copy system information to clipboard";
-        return null;
+        return i == 0 && myInfoSurface != null ? IdeBundle.message("copy.system.information.to.clipboard") : null;
       }
 
       @Override
@@ -763,7 +776,7 @@ public final class AboutPopup {
         viewer.setFocusable(true);
         viewer.addHyperlinkListener(new BrowserHyperlinkListener());
 
-        String resultHtmlText = getScaledHtmlText();
+        @NonNls String resultHtmlText = getScaledHtmlText();
         if (StartupUiUtil.isUnderDarcula()) {
           resultHtmlText = resultHtmlText.replaceAll("779dbd", "5676a0");
         }
@@ -792,7 +805,7 @@ public final class AboutPopup {
         final Pattern pattern = Pattern.compile("(\\d+)px");
         final Matcher matcher = pattern.matcher(htmlText);
 
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
           matcher.appendReplacement(sb, JBUIScale.scale(Integer.parseInt(matcher.group(1))) + "px");
         }
@@ -803,10 +816,16 @@ public final class AboutPopup {
     };
 
     ourPopup.cancel();
-    dialog.setTitle(String.format("Third-Party Software Used by %s %s",
-                                  ApplicationNamesInfo.getInstance().getFullProductName(),
-                                  ApplicationInfo.getInstance().getFullVersion()));
+    dialog.setTitle(IdeBundle.message("dialog.title.third.party.software",
+                                      ApplicationNamesInfo.getInstance().getFullProductName(),
+                                      ApplicationInfo.getInstance().getFullVersion()));
     dialog.setSize(JBUIScale.scale(750), JBUIScale.scale(650));
     dialog.show();
+  }
+
+  public static @NotNull @NlsSafe String getAboutText() {
+    ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
+    InfoSurface infoSurface = new InfoSurface(IconLoader.getIcon(appInfo.getAboutImageUrl(), AboutPopup.class), false);
+    return infoSurface.getText();
   }
 }

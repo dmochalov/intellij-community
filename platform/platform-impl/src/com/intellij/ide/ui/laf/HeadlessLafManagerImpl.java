@@ -12,8 +12,8 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
-public class HeadlessLafManagerImpl extends LafManager {
-  public HeadlessLafManagerImpl() {
+final class HeadlessLafManagerImpl extends LafManager {
+  HeadlessLafManagerImpl() {
     UIDefaults defaults = UIManager.getLookAndFeelDefaults();
     defaults.put("OptionButtonUI", BasicOptionButtonUI.class.getCanonicalName());
     defaults.put("LinkButtonUI", DefaultLinkButtonUI.class.getName());
@@ -26,23 +26,31 @@ public class HeadlessLafManagerImpl extends LafManager {
   }
 
   @Override
-  public UIManager.LookAndFeelInfo getCurrentLookAndFeel(@NotNull LafType type) {
+  public UIManager.LookAndFeelInfo getCurrentLookAndFeel() {
     return null;
   }
 
   @Override
-  public LafReference getLookAndFeelReference(@NotNull LafType type) {
+  public LafReference getLookAndFeelReference() {
     return null;
   }
 
   @Override
-  public void setLookAndFeelReference(@NotNull LafType type, @NotNull LafReference lafReference) { }
+  public ListCellRenderer<LafReference> getLookAndFeelCellRenderer() {
+    return null;
+  }
+
+  @Override
+  @NotNull
+  public JComponent getSettingsToolbar() {
+    return new JComponent() {};
+  }
 
   @Override
   public void setCurrentLookAndFeel(UIManager.@NotNull LookAndFeelInfo lookAndFeelInfo, boolean lockEditorScheme) { }
 
   @Override
-  public CollectionComboBoxModel<LafReference> getLafComboBoxModel(@NotNull LafManager.LafType type) {
+  public CollectionComboBoxModel<LafReference> getLafComboBoxModel() {
     return new CollectionComboBoxModel<>();
   }
 
@@ -58,9 +66,23 @@ public class HeadlessLafManagerImpl extends LafManager {
   public void repaintUI() { }
 
   @Override
-  public boolean isAutoDetect() {
+  public boolean getAutodetect() {
     return false;
   }
+
+  @Override
+  public void setAutodetect(boolean value) {}
+
+  @Override
+  public boolean getAutodetectSupported() {
+    return false;
+  }
+
+  @Override
+  public void setPreferredDarkLaf(UIManager.@NotNull LookAndFeelInfo myPreferredDarkLaf) { }
+
+  @Override
+  public void setPreferredLightLaf(UIManager.@NotNull LookAndFeelInfo myPreferredLightLaf) { }
 
   @Override
   public void addLafManagerListener(@NotNull LafManagerListener listener) { }

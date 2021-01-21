@@ -6,6 +6,7 @@ import com.intellij.codeInsight.highlighting.HighlightManagerImpl;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.hint.HintManagerImpl;
 import com.intellij.codeInsight.hint.HintUtil;
+import com.intellij.concurrency.ConcurrentCollectionFactory;
 import com.intellij.find.*;
 import com.intellij.find.findUsages.FindUsagesManager;
 import com.intellij.find.impl.livePreview.SearchResults;
@@ -53,7 +54,6 @@ import com.intellij.ui.LightweightHint;
 import com.intellij.ui.ReplacePromptDialog;
 import com.intellij.usages.ChunkExtractor;
 import com.intellij.usages.impl.SyntaxHighlighterOverEditorHighlighter;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.IntObjectMap;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.ImmutableCharSequence;
@@ -446,10 +446,9 @@ public final class FindManagerImpl extends FindManager {
 
       if (findmodel.isRegularExpressions()) {
         newStringToFind = StringUtil.replace(s, "\\n", "\n"); // temporary convert back escaped symbols
-        newStringToFind = newStringToFind.replaceAll( "\n", "\\\\n\\\\s*"); // add \\s* for convenience
+        newStringToFind = newStringToFind.replaceAll( "\n", "\\\\n");
       } else {
         newStringToFind = StringUtil.escapeToRegexp(s);
-        newStringToFind = newStringToFind.replaceAll("\\\\n\\s*", "\\\\n\\\\s*");
         model.setRegularExpressions(true);
       }
       model.setStringToFind(newStringToFind);
@@ -548,7 +547,7 @@ public final class FindManagerImpl extends FindManager {
     }
 
     FileType ftype = file.getFileType();
-    Language lang = LanguageUtil.getLanguageForPsi(myProject, file);
+    Language lang = LanguageUtil.getLanguageForPsi(myProject, file, ftype);
 
     SoftReference<CommentsLiteralsSearchData> currentThreadDataRef = data.get();
     CommentsLiteralsSearchData currentThreadData = currentThreadDataRef == null ? null : currentThreadDataRef.get();
@@ -767,10 +766,10 @@ public final class FindManagerImpl extends FindManager {
 
       if (!ApplicationManager.getApplication().isHeadlessEnvironment() &&
           ourReportedPatterns.put(stringToFind.hashCode(), Boolean.TRUE) == null) {
-        String content = stringToFind + " produced stack overflow when matching content of the file";
+        String content = FindBundle.message("notification.content.regular.expression.soe", stringToFind, file.getPresentableUrl());
         LOG.info(content);
         GROUP.createNotification(FindBundle.message("notification.title.regular.expression.failed.to.match"),
-                                     content + " " + file.getPath(),
+                                 content,
                                  NotificationType.ERROR,
                                  null
                                    ).notify(myProject);
@@ -779,7 +778,8 @@ public final class FindManagerImpl extends FindManager {
     }
   }
 
-  private static final IntObjectMap<Boolean> ourReportedPatterns = ContainerUtil.createConcurrentIntObjectMap();
+  private static final IntObjectMap<Boolean> ourReportedPatterns =
+    ConcurrentCollectionFactory.createConcurrentIntObjectMap();
 
   private static Matcher compileRegExp(FindModel model, CharSequence text) {
     Pattern pattern = model.compileRegExp();
@@ -850,7 +850,8 @@ public final class FindManagerImpl extends FindManager {
     if (foundString.isEmpty() || toReplace.isEmpty()) return toReplace;
     StringBuilder buffer = new StringBuilder();
 
-    if (Character.isUpperCase(foundString.charAt(0))) {
+    char firstChar = foundString.charAt(0);
+    if (Character.isUpperCase(firstChar)) {
       buffer.append(Character.toUpperCase(toReplace.charAt(0)));
     }
     else {
@@ -876,12 +877,18 @@ public final class FindManagerImpl extends FindManager {
 
     boolean isTailUpper = true;
     boolean isTailLower = true;
+    boolean isTailChecked = false;
     for (int i = 1; i < foundString.length(); i++) {
       char foundChar = foundString.charAt(i);
       if (!Character.isLetter(foundChar)) continue;
       isTailUpper &= Character.isUpperCase(foundChar);
       isTailLower &= Character.isLowerCase(foundChar);
+      isTailChecked = true;
       if (!isTailUpper && !isTailLower) break;
+    }
+    if (!isTailChecked) {
+      isTailUpper = Character.isLetter(firstChar) && Character.isUpperCase(firstChar);
+      isTailLower = Character.isLetter(firstChar) && Character.isLowerCase(firstChar);
     }
 
     if (isTailUpper && (isReplacementLowercase || isReplacementUppercase)) {
@@ -955,12 +962,6 @@ public final class FindManagerImpl extends FindManager {
   }
 
   @Override
-  public boolean findNextUsageInEditor(@NotNull FileEditor fileEditor) {
-    if (!(fileEditor instanceof TextEditor)) return false;
-    return findNextUsageInFile(((TextEditor) fileEditor).getEditor(), SearchResults.Direction.DOWN);
-  }
-
-  @Override
   public boolean findNextUsageInEditor(@NotNull Editor editor) {
     return findNextUsageInFile(editor, SearchResults.Direction.DOWN);
   }
@@ -985,12 +986,6 @@ public final class FindManagerImpl extends FindManager {
       return myFindUsagesManager.findNextUsageInFile(editor);
     }
     return myFindUsagesManager.findPreviousUsageInFile(editor);
-  }
-
-  @Override
-  public boolean findPreviousUsageInEditor(@NotNull FileEditor fileEditor) {
-    if (!(fileEditor instanceof TextEditor)) return false;
-    return findNextUsageInFile(((TextEditor) fileEditor).getEditor(), SearchResults.Direction.UP);
   }
 
   private static boolean highlightNextHighlighter(RangeHighlighter[] highlighters, Editor editor, int offset, boolean isForward, boolean secondPass) {
@@ -1021,6 +1016,7 @@ public final class FindManagerImpl extends FindManager {
       }
       editor.getScrollingModel().scrollToCaret(scrollType);
       editor.putUserData(HIGHLIGHTER_WAS_NOT_FOUND_KEY, null);
+      EditorSearchSession.logSelectionUpdate();
       return true;
     }
 

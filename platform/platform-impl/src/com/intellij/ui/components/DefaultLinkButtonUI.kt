@@ -6,6 +6,7 @@ import com.intellij.util.ui.JBInsets
 import com.intellij.ide.ui.laf.darcula.DarculaLaf.isAltPressed
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
+import org.jetbrains.annotations.NonNls
 import java.awt.Cursor
 import java.awt.FontMetrics
 import java.awt.Graphics
@@ -84,15 +85,15 @@ class DefaultLinkButtonUI : BasicButtonUI() {
       textBounds.x += offset
       textBounds.y += offset
 
-      val underlined = isUnderlined(button)
+      val hovered = isHovered(button)
       val view = button.getClientProperty(BasicHTML.propertyKey) as? View
       if (view == null) {
         g.color = button.foreground
         val index = if (isEnabled(button) && isAltPressed()) button.displayedMnemonicIndex else -1
         UIUtilities.drawStringUnderlineCharAt(button, g, text, index, textBounds.x, textBounds.y + fm.ascent)
-        if (underlined) g.fillRect(textBounds.x, textBounds.y + fm.ascent + 1, textBounds.width, 1)
+        if (hovered) g.fillRect(textBounds.x, textBounds.y + fm.ascent + 1, textBounds.width, 1)
       }
-      else if (underlined) {
+      else if (hovered) {
         if (cached == null) {
           cached = createUnderlinedView(button, text)
         }
@@ -142,7 +143,9 @@ private fun isEnabled(button: AbstractButton) = button.model?.isEnabled ?: false
 private fun isHovered(button: AbstractButton) = button.model?.isRollover ?: false
 private fun isPressed(button: AbstractButton) = button.model?.let { it.isArmed && it.isPressed } ?: false
 private fun isVisited(button: AbstractButton) = (button as? ActionLink)?.visited ?: false
-private fun isUnderlined(button: AbstractButton) = isHovered(button) || button.isFocusPainted && button.hasFocus()
+
+@Suppress("unused") // TODO: support dotted border for focused links
+private fun isFocused(button: AbstractButton) = button.isFocusPainted && button.hasFocus()
 
 // provide dynamic foreground color
 
@@ -192,6 +195,7 @@ private fun readSafely(text: String, read: (StringReader) -> Unit) {
   }
 }
 
+@NonNls
 private const val underlineStyles = """
 p { margin-top: 0; margin-bottom: 0; margin-left: 0; margin-right: 0; text-decoration: underline }
 body { margin-top: 0; margin-bottom: 0; margin-left: 0; margin-right: 0; text-decoration: underline }

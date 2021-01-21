@@ -2,6 +2,7 @@
 package org.jetbrains.plugins.groovy.lang.psi.impl.synthetic;
 
 import com.intellij.lang.Language;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.PsiImplUtil;
@@ -31,7 +32,7 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
   private final GrLightAnnotationArgumentList myAnnotationArgList;
 
   private final String myQualifiedName;
-  private final PsiAnnotationOwner myOwner;
+  private PsiAnnotationOwner myOwner;
   private final PsiElement myContext;
   private final GrLightClassReferenceElement myRef;
 
@@ -161,10 +162,14 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
     }
   }
 
-  public void addAttribute(@Nullable String name, @NotNull String value) {
+  public void addAttribute(@NlsSafe @Nullable String name, @NlsSafe @NotNull String value) {
     GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(getProject());
     String text = name != null ? name + "=" + value : value;
     myAnnotationArgList.addAttribute(factory.createAnnotationAttribute(text, this));
+  }
+
+  public void setOwner(@NotNull PsiAnnotationOwner owner) {
+    this.myOwner = owner;
   }
 
   private final class GrLightAnnotationArgumentList extends LightElement implements GrAnnotationArgumentList {

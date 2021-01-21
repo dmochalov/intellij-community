@@ -4,6 +4,7 @@ package com.intellij.util.ui;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.HashingStrategy;
 import com.intellij.util.containers.OrderedSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -60,7 +61,7 @@ public abstract class CollectionModelEditor<T, E extends CollectionItemEditor<T>
     return false;
   }
 
-  public void processModifiedItems(@NotNull BiPredicate<T, T> processor) {
+  public void processModifiedItems(@NotNull BiPredicate<? super T, ? super T> processor) {
     // don't want to expose TObjectObjectProcedure - avoid implementation details
     helper.process(processor);
   }
@@ -75,7 +76,7 @@ public abstract class CollectionModelEditor<T, E extends CollectionItemEditor<T>
   }
 
   protected final class ModelHelper {
-    final OrderedSet<T> originalItems = new OrderedSet<>(ContainerUtil.identityStrategy());
+    final OrderedSet<T> originalItems = new OrderedSet<>(HashingStrategy.identity());
 
     private final Map<T, T> modifiedToOriginal = new IdentityHashMap<>();
     private final Map<T, T> originalToModified = new IdentityHashMap<>();
@@ -121,7 +122,7 @@ public abstract class CollectionModelEditor<T, E extends CollectionItemEditor<T>
       return !modifiedToOriginal.isEmpty();
     }
 
-    public void process(@NotNull BiPredicate<T, T> procedure) {
+    public void process(@NotNull BiPredicate<? super T, ? super T> procedure) {
       for (Map.Entry<T, T> entry : modifiedToOriginal.entrySet()) {
         T key = entry.getKey();
         T value = entry.getValue();

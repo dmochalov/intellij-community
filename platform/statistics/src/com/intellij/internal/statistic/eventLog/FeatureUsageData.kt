@@ -2,6 +2,7 @@
 package com.intellij.internal.statistic.eventLog
 
 import com.intellij.codeWithMe.ClientId
+import com.intellij.internal.statistic.collectors.fus.ActionPlaceHolder
 import com.intellij.internal.statistic.eventLog.StatisticsEventEscaper.escapeFieldName
 import com.intellij.internal.statistic.utils.PluginInfo
 import com.intellij.internal.statistic.utils.StatisticsUtil
@@ -77,8 +78,7 @@ class FeatureUsageData {
    * Project data is added automatically for project state collectors and project-wide counter events.
    *
    * @see com.intellij.internal.statistic.service.fus.collectors.ProjectUsagesCollector
-   * @see com.intellij.internal.statistic.service.fus.collectors.FUCounterUsageLogger.logEvent(Project, String, String)
-   * @see com.intellij.internal.statistic.service.fus.collectors.FUCounterUsageLogger.logEvent(Project, String, String, FeatureUsageData)
+   * @see com.intellij.internal.statistic.eventLog.events.EventId.log(Project)
    */
   fun addProject(project: Project?): FeatureUsageData {
     if (project != null) {
@@ -87,7 +87,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["version:regexp#version"])
   fun addVersionByString(@NonNls version: String?): FeatureUsageData {
     if (version == null) {
       data["version"] = "unknown"
@@ -98,30 +97,11 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["version:regexp#version"])
   fun addVersion(@NonNls version: Version?): FeatureUsageData {
     data["version"] = if (version != null) "${version.major}.${version.minor}" else "unknown.format"
     return this
   }
 
-  /**
-   * Group by OS will be available without adding OS explicitly to event data.
-   */
-  @Deprecated("Don't add OS to event data")
-  @FeatureUsageDataBuilder(additionalDataFields = ["os:enum#os"])
-  fun addOS(): FeatureUsageData {
-    data["os"] = getOS()
-    return this
-  }
-
-  private fun getOS(): String {
-    if (SystemInfo.isWindows) return "Windows"
-    if (SystemInfo.isMac) return "Mac"
-    return if (SystemInfo.isLinux) "Linux" else "Other"
-  }
-
-  @FeatureUsageDataBuilder(additionalDataFields = ["plugin:util#plugin", "plugin_type:util#plugin_type",
-    "plugin_version:util#plugin_version"])
   fun addPluginInfo(info: PluginInfo?): FeatureUsageData {
     info?.let {
       addPluginInfoTo(info, data)
@@ -129,7 +109,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["lang:util#lang"])
   fun addLanguage(@NonNls id: String?): FeatureUsageData {
     id?.let {
       addLanguage(Language.findLanguageByID(id))
@@ -137,12 +116,10 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["lang:util#lang"])
   fun addLanguage(language: Language?): FeatureUsageData {
     return addLanguageInternal("lang", language)
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["current_file:util#current_file"])
   fun addCurrentFile(language: Language?): FeatureUsageData {
     return addLanguageInternal("current_file", language)
   }
@@ -160,7 +137,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["input_event:util#shortcut"])
   fun addInputEvent(event: InputEvent?, @NonNls place: String?): FeatureUsageData {
     val inputEvent = ShortcutDataProvider.getInputEventText(event, place)
     if (inputEvent != null && StringUtil.isNotEmpty(inputEvent)) {
@@ -169,7 +145,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["input_event:util#shortcut"])
   fun addInputEvent(event: AnActionEvent?): FeatureUsageData {
     val inputEvent = ShortcutDataProvider.getActionEventText(event)
     if (inputEvent != null && StringUtil.isNotEmpty(inputEvent)) {
@@ -178,7 +153,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["input_event:util#shortcut"])
   fun addInputEvent(event: KeyEvent): FeatureUsageData {
     val inputEvent = ShortcutDataProvider.getKeyEventText(event)
     if (inputEvent != null && StringUtil.isNotEmpty(inputEvent)) {
@@ -187,7 +161,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["input_event:util#shortcut"])
   fun addInputEvent(event: MouseEvent): FeatureUsageData {
     val inputEvent = ShortcutDataProvider.getMouseEventText(event)
     if (inputEvent != null && StringUtil.isNotEmpty(inputEvent)) {
@@ -196,12 +169,11 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["place:util#place"])
   fun addPlace(@NonNls place: String?): FeatureUsageData {
     if (place == null) return this
 
     var reported = ActionPlaces.UNKNOWN
-    if (isCommonPlace(place)) {
+    if (isCommonPlace(place) || ActionPlaceHolder.isCustomActionPlace(place)) {
       reported = place
     }
     else if (ActionPlaces.isPopupPlace(place)) {
@@ -215,13 +187,11 @@ class FeatureUsageData {
     return ActionPlaces.isCommonPlace(place) || ActionPlaces.TOOLWINDOW_POPUP == place
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["file_path:util#hash"])
   fun addAnonymizedPath(@NonNls path: String?): FeatureUsageData {
     data["file_path"] = path?.let { EventLogConfiguration.anonymize(path) } ?: "undefined"
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["anonymous_id:util#hash"])
   fun addAnonymizedId(@NonNls id: String): FeatureUsageData {
     data["anonymous_id"] = EventLogConfiguration.anonymize(id)
     return this
@@ -232,7 +202,6 @@ class FeatureUsageData {
     return this
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["value::0"])
   fun addValue(value: Any): FeatureUsageData {
     if (value is String || value is Boolean || value is Int || value is Long || value is Float || value is Double) {
       return addDataInternal("value", value)
@@ -240,12 +209,10 @@ class FeatureUsageData {
     return addData("value", value.toString())
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["enabled:enum#boolean"])
   fun addEnabled(enabled: Boolean): FeatureUsageData {
     return addData("enabled", enabled)
   }
 
-  @FeatureUsageDataBuilder(additionalDataFields = ["count:regexp#integer"])
   fun addCount(count: Int): FeatureUsageData {
     return addData("count", count)
   }
@@ -299,6 +266,15 @@ class FeatureUsageData {
    * @param key key can contain "-", "_", latin letters or digits. All not allowed symbols will be replaced with "_" or "?".
    */
   fun addData(@NonNls key: String, value: List<String>): FeatureUsageData {
+    return addDataInternal(key, value)
+  }
+
+  /**
+   * The data reported by this method will be available ONLY for ad-hoc analysis.
+   *
+   * @param key key can contain "-", "_", latin letters or digits. All not allowed symbols will be replaced with "_" or "?".
+   */
+  internal fun addListLongData(@NonNls key: String, value: List<Long>): FeatureUsageData {
     return addDataInternal(key, value)
   }
 

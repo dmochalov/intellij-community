@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.jshell;
 
 import com.intellij.execution.ExecutionBundle;
@@ -21,6 +21,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.compiler.JavaCompilerBundle;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
@@ -140,13 +141,13 @@ public final class JShellHandler {
     return contentFile != null? contentFile.getUserData(MARKER_KEY) : null;
   }
 
-  public static JShellHandler create(@NotNull final Project project,
-                                     @NotNull final VirtualFile contentFile,
-                                     @Nullable Module module,
-                                     @Nullable Sdk alternateSdk) throws Exception{
+  public static @NotNull JShellHandler create(@NotNull final Project project,
+                                              @NotNull final VirtualFile contentFile,
+                                              @Nullable Module module,
+                                              @Nullable Sdk alternateSdk) throws Exception{
     final OSProcessHandler processHandler = launchProcess(project, module, alternateSdk);
 
-    final String title = "JShell " + contentFile.getNameWithoutExtension();
+    final String title = JShellDiagnostic.TITLE + " " + contentFile.getNameWithoutExtension();
 
     final ConsoleViewImpl consoleView = new MyConsoleView(project);
     final RunContentDescriptor descriptor = new RunContentDescriptor(consoleView, processHandler, new JPanel(new BorderLayout()), title);
@@ -281,7 +282,7 @@ public final class JShellHandler {
   }
 
   private static String findFrontEndLibrary() {
-    final String path = PathManager.getResourceRoot(JShellHandler.class.getClassLoader(), "/com/intellij/execution/jshell/frontend/Marker.class");
+    final String path = PathManager.getResourceRoot(JShellHandler.class.getClassLoader(), "com/intellij/execution/jshell/frontend/Marker.class");
     return path != null? path : JSHELL_FRONTEND_JAR;
   }
 
@@ -343,7 +344,7 @@ public final class JShellHandler {
     finally {
       renderResponse(request, response, stdOut.toString());
     }
-    return response;
+    return null;
   }
 
   private void renderResponse(Request request, @Nullable Response response, String stdOut) {
@@ -360,7 +361,7 @@ public final class JShellHandler {
               droppedCount++;
             }
           }
-          JShellDiagnostic.notifyInfo("Dropped " + droppedCount + " code snippets", myProject);
+          JShellDiagnostic.notifyInfo(JavaCompilerBundle.message("jshell.dropped.x.code.snippets", droppedCount), myProject);
         }
         else {
           for (Event event : events) {

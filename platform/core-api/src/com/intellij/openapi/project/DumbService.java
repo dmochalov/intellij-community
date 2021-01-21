@@ -14,7 +14,10 @@ import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.NlsContexts.PopupContent;
 import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.messages.Topic;
-import org.jetbrains.annotations.*;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.ArrayList;
@@ -104,7 +107,7 @@ public abstract class DumbService {
     return result.get();
   }
 
-  public @Nullable <T> T tryRunReadActionInSmartMode(@NotNull Computable<T> task, @Nullable String notification) {
+  public @Nullable <T> T tryRunReadActionInSmartMode(@NotNull Computable<T> task, @Nullable @PopupContent String notification) {
     if (ApplicationManager.getApplication().isReadAccessAllowed()) {
       try {
         return task.compute();
@@ -147,7 +150,9 @@ public abstract class DumbService {
         r.run();
         return true;
       });
-      if (success) break;
+      if (success) {
+        break;
+      }
     }
   }
 
@@ -257,7 +262,7 @@ public abstract class DumbService {
   public abstract JComponent wrapGently(@NotNull JComponent dumbUnawareContent, @NotNull Disposable parentDisposable);
 
   /**
-   * Adds a "Results might be incomplete while indexing." decorator to a given component during dumb mode.
+   * Adds a "Results might be incomplete during indexing." decorator to a given component during dumb mode.
    *
    * @param dumbAwareContent - a component to wrap
    * @param updateRunnable - an action to execute when dumb mode state changed or user explicitly request reload panel
@@ -291,8 +296,7 @@ public abstract class DumbService {
 
   /**
    * Shows balloon about indexing blocking those actions until it is hidden (by key input, mouse event, etc.) or indexing stops.
-   * @param balloonText
-   * @param runWhenSmartAndBalloonStillShowing — will be executed in smart mode on EDT, balloon won't be dismissed by user's actions
+   * @param runWhenSmartAndBalloonStillShowing will be executed in smart mode on EDT, balloon won't be dismissed by user's actions
    */
   public abstract void showDumbModeActionBalloon(@NotNull @PopupContent String balloonText,
                                                  @NotNull Runnable runWhenSmartAndBalloonStillShowing);
@@ -392,12 +396,12 @@ public abstract class DumbService {
    *
    * @param activityName the text (a noun phrase) to display as a reason for the indexing being paused
    */
-  public abstract void suspendIndexingAndRun(@NotNull @Nls(capitalization = Nls.Capitalization.Sentence) String activityName,
+  public abstract void suspendIndexingAndRun(@NotNull @NlsContexts.ProgressText String activityName,
                                              @NotNull Runnable activity);
 
   /**
    * Checks whether {@link #isDumb()} is true for the current project and if it's currently suspended by user or a {@link #suspendIndexingAndRun} call.
-   * This should be called inside read action. The momentary system state is returned: there are no guarantees that the result won't change
+   * This should be called inside read action. The momentary system state is returned: there are no guarantees that the result won't change
    * in the next line of the calling code.
    */
   public abstract boolean isSuspendedDumbMode();

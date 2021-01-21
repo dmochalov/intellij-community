@@ -1,13 +1,14 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.diff;
 
-import gnu.trove.TIntArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.TestOnly;
 
 import java.util.Arrays;
 import java.util.BitSet;
 
-class Reindexer {
+final class Reindexer {
   private final int[][] myOldIndices = new int[2][];
   private final int[] myOriginalLengths = new int[]{-1, -1};
   private final int[] myDiscardedLengths = new int[]{-1, -1};
@@ -40,8 +41,8 @@ class Reindexer {
   private int[] discard(int[] needed, int[] toDiscard, int arrayIndex) {
     myOriginalLengths[arrayIndex] = toDiscard.length;
     int[] sorted1 = createSorted(needed);
-    TIntArrayList discarded = new TIntArrayList(toDiscard.length);
-    TIntArrayList oldIndices = new TIntArrayList(toDiscard.length);
+    IntList discarded = new IntArrayList(toDiscard.length);
+    IntList oldIndices = new IntArrayList(toDiscard.length);
     for (int i = 0; i < toDiscard.length; i++) {
       int index = toDiscard[i];
       if (Arrays.binarySearch(sorted1, index) >= 0) {
@@ -49,14 +50,13 @@ class Reindexer {
         oldIndices.add(i);
       }
     }
-    myOldIndices[arrayIndex] = oldIndices.toNativeArray();
+    myOldIndices[arrayIndex] = oldIndices.toIntArray();
     myDiscardedLengths[arrayIndex] = discarded.size();
-    return discarded.toNativeArray();
+    return discarded.toIntArray();
   }
 
   private static int[] createSorted(int[] ints1) {
-    int[] sorted1 = new int[ints1.length];
-    System.arraycopy(ints1, 0, sorted1, 0, ints1.length);
+    int[] sorted1 = ints1.clone();
     Arrays.sort(sorted1);
     return sorted1;
   }

@@ -354,15 +354,16 @@ class AppUIExecutorTest : LightPlatformTestCase() {
       job.join()
       queue.add("end")
 
-      assertOrderedEquals(queue,
-                          "start",
-                          "coroutine start",
-                          "before yield",
-                          "disposing",
-                          "disposable.beforeTreeDispose()",
-                          "coroutine yield caught JobCancellationException",
-                          "disposable.dispose()",
-                          "end")
+      assertOrderedEquals(queue,(
+                          "start\n" +
+                          "coroutine start\n" +
+                          "before yield\n" +
+                          "disposing\n" +
+                          "disposable.beforeTreeDispose()\n" +
+                          "refuse to run already disposed\n" +
+                          "disposable.dispose()\n" +
+                          "coroutine yield caught JobCancellationException\n" +
+                          "end").split("\n"))
     }.joinNonBlocking()
   }
 
@@ -375,7 +376,6 @@ class AppUIExecutorTest : LightPlatformTestCase() {
       "constraintDisposable.beforeTreeDispose()",
       "constraintDisposable.dispose()",
       "refuse to run already disposed",
-      "[context: !outer + inner] after receive disposed",  // channel.receive() is atomic
       "[context: !outer + inner] coroutine yield caught JobCancellationException",
       "[context: !outer + !inner] end")
     ) { queue, constraintDisposable, _ ->
@@ -396,7 +396,6 @@ class AppUIExecutorTest : LightPlatformTestCase() {
       "constraintDisposable.beforeTreeDispose()",
       "constraintDisposable.dispose()",
       "refuse to run already disposed",
-      "[context: !outer + inner] after receive disposed",  // channel.receive() is atomic
       "[context: !outer + inner] coroutine yield caught JobCancellationException",
       "[context: !outer + !inner] end")
     ) { queue, constraintDisposable, anotherDisposable ->
@@ -414,7 +413,6 @@ class AppUIExecutorTest : LightPlatformTestCase() {
       "disposing anotherDisposable",
       "anotherDisposable.beforeTreeDispose()",
       "anotherDisposable.dispose()",
-      "[context: outer + inner] after receive disposed",
       "[context: outer + inner] coroutine yield caught JobCancellationException",
       "[context: !outer + !inner] end")
     ) { queue, _, anotherDisposable ->

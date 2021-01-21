@@ -17,6 +17,7 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -59,7 +60,7 @@ public final class LiveTemplateSettingsEditor extends JPanel {
   private final Editor myTemplateEditor;
 
   private JComboBox myExpandByCombo;
-  private final String myDefaultShortcutItem;
+  private final @NlsContexts.ListItem String myDefaultShortcutItem;
   private JCheckBox myCbReformat;
 
   private JButton myEditVariablesButton;
@@ -279,11 +280,8 @@ public final class LiveTemplateSettingsEditor extends JPanel {
 
   private JPanel createShortContextPanel() {
     JLabel ctxLabel = new JBLabel();
-    ActionLink change = new ActionLink();
-    change.setText("Change");
-    change.setIcon(AllIcons.General.LinkDropTriangle);
-    change.setIconTextGap(JBUIScale.scale(1));
-    change.setHorizontalTextPosition(SwingConstants.LEADING);
+    ActionLink change = new ActionLink(CodeInsightBundle.message("link.change.context"));
+    change.setDropDownLinkIcon();
 
     final Runnable updateLabel = () -> {
       myExpandByCombo.setEnabled(isExpandableFromEditor());
@@ -300,7 +298,7 @@ public final class LiveTemplateSettingsEditor extends JPanel {
           ownName = StringUtil.decapitalize(ownName);
         }
         if (type instanceof EverywhereContextType) {
-          ownName = "Other";
+          ownName = CodeInsightBundle.message("dialog.edit.template.context.other");
         }
         if (sb.length() > 0) {
           sb.append(oldPrefix.equals(prefix) ? ", " : "; ");
@@ -312,12 +310,12 @@ public final class LiveTemplateSettingsEditor extends JPanel {
         sb.append(ownName);
       }
 
-      String contexts = "Applicable in " + sb;
+      String contexts = CodeInsightBundle.message("dialog.edit.template.applicable.in.contexts", sb.toString());
       change.setText(CodeInsightBundle.message("link.change.context"));
 
       final boolean noContexts = sb.length() == 0;
       if (noContexts) {
-        contexts = "No applicable contexts";
+        contexts = CodeInsightBundle.message("dialog.edit.template.no.applicable.contexts");
         ctxLabel.setIcon(AllIcons.General.BalloonWarning);
         change.setText(CodeInsightBundle.message("link.define.context"));
       }
@@ -356,7 +354,7 @@ public final class LiveTemplateSettingsEditor extends JPanel {
   }
 
   @NotNull
-  private static String presentableName(TemplateContextType type) {
+  private static @NlsContexts.Label String presentableName(TemplateContextType type) {
     return UIUtil.removeMnemonic(type.getPresentableName());
   }
 
@@ -586,19 +584,19 @@ public final class LiveTemplateSettingsEditor extends JPanel {
     return map;
   }
 
-  private static String getSpace() {
+  private static @NlsContexts.ListItem String getSpace() {
     return CodeInsightBundle.message("template.shortcut.space");
   }
 
-  private static String getTab() {
+  private static @NlsContexts.ListItem String getTab() {
     return CodeInsightBundle.message("template.shortcut.tab");
   }
 
-  private static String getEnter() {
+  private static @NlsContexts.ListItem String getEnter() {
     return CodeInsightBundle.message("template.shortcut.enter");
   }
 
-  private static String getNone() {
+  private static @NlsContexts.ListItem String getNone() {
     return CodeInsightBundle.message("template.shortcut.none");
   }
 }

@@ -1,22 +1,23 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.progress;
 
-import com.google.common.util.concurrent.AtomicDouble;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.containers.hash.LinkedHashMap;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @ApiStatus.Internal
 public final class ConcurrentTasksProgressManager {
   private final ProgressIndicator myParent;
   private final int myTotalWeight;
-  private final AtomicDouble myTotalFraction;
+  private final AtomicLong myTotalFraction;
   private final Object myLock = new Object();
-  private final LinkedHashMap<SubTaskProgressIndicator, String> myText2Stack = new LinkedHashMap<>();
+  private final LinkedHashMap<SubTaskProgressIndicator, @NlsContexts.ProgressDetails String> myText2Stack = new LinkedHashMap<>();
   private final AtomicInteger myRemainingTotalWeight;
 
   public ConcurrentTasksProgressManager(ProgressIndicator parent, int totalWeight) {
@@ -25,7 +26,7 @@ public final class ConcurrentTasksProgressManager {
     }
     myParent = parent;
     myTotalWeight = totalWeight;
-    myTotalFraction = new AtomicDouble();
+    myTotalFraction = new AtomicLong();
     myRemainingTotalWeight = new AtomicInteger(totalWeight);
   }
 
@@ -46,15 +47,24 @@ public final class ConcurrentTasksProgressManager {
   }
 
   void updateTaskFraction(double taskDeltaFraction, int taskWeight) {
-    double newFraction = myTotalFraction.addAndGet(taskDeltaFraction * taskWeight / myTotalWeight);
-    myParent.setFraction(newFraction);
+    double delta = taskDeltaFraction * taskWeight / myTotalWeight;
+    while (true) {
+      long current = myTotalFraction.get();
+      double currentVal = Double.longBitsToDouble(current);
+      double nextVal = currentVal + delta;
+      long next = Double.doubleToRawLongBits(nextVal);
+      if (myTotalFraction.compareAndSet(current, next)) {
+        myParent.setFraction(nextVal);
+        break;
+      }
+    }
   }
 
-  public void setText(@NotNull String text) {
+  public void setText(@NotNull @NlsContexts.ProgressText String text) {
     myParent.setText(text);
   }
 
-  void setText2(@NotNull SubTaskProgressIndicator subTask, @Nullable String text) {
+  void setText2(@NotNull SubTaskProgressIndicator subTask, @Nullable @NlsContexts.ProgressDetails String text) {
     if (text != null) {
       synchronized (myLock) {
         myText2Stack.put(subTask, text);

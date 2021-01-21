@@ -148,13 +148,10 @@ public class InferNullityAnnotationsAction extends BaseAnalysisAction {
                                                  @NotNull String annoFQN, final @NlsContexts.DialogTitle String title) {
     final Library annotationsLib = LibraryUtil.findLibraryByClass(annoFQN, project);
     if (annotationsLib != null) {
-      String message = "Module" + (modulesWithoutAnnotations.size() == 1 ? " " : "s ");
-      message += StringUtil.join(modulesWithoutAnnotations, Module::getName, ", ");
-      message += (modulesWithoutAnnotations.size() == 1 ? " doesn't" : " don't");
-      message += " refer to the existing '" +
-                 annotationsLib.getName() +
-                 "' library with IntelliJ IDEA nullity annotations. Would you like to add the dependenc";
-      message += (modulesWithoutAnnotations.size() == 1 ? "y" : "ies") + " now?";
+      String message = JavaBundle.message("dialog.message.modules.dont.refer.to.existing.annotations.library",
+                                          modulesWithoutAnnotations.size(),
+                                          StringUtil.join(modulesWithoutAnnotations, Module::getName, ", "),
+                                          annotationsLib.getName());
       if (Messages.showOkCancelDialog(project, message, title, Messages.getErrorIcon()) == Messages.OK) {
         ApplicationManager.getApplication().runWriteAction(() -> {
           for (Module module : modulesWithoutAnnotations) {
@@ -278,7 +275,7 @@ public class InferNullityAnnotationsAction extends BaseAnalysisAction {
     final Usage[] usages = convertUsagesRef.get();
 
     final UsageViewPresentation presentation = new UsageViewPresentation();
-    presentation.setTabText("Infer Nullity Preview");
+    presentation.setTabText(JavaBundle.message("tab.title.infer.nullity.preview"));
     presentation.setShowReadOnlyStatusAsRed(true);
     presentation.setShowCancelButton(true);
     presentation.setUsagesString(RefactoringBundle.message("usageView.usagesText"));

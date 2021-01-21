@@ -17,6 +17,7 @@ import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.ui.panel.ComponentPanelBuilder
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.NlsContexts.*
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.*
@@ -24,9 +25,12 @@ import com.intellij.ui.components.*
 import com.intellij.ui.components.fields.ExpandableTextField
 import com.intellij.util.Function
 import com.intellij.util.execution.ParametersListUtil
+import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.StatusText
 import com.intellij.util.ui.UIUtil
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.Nls
+import org.jetbrains.annotations.NonNls
 import java.awt.Component
 import java.awt.Dimension
 import java.awt.event.ActionEvent
@@ -37,6 +41,7 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.*
 import javax.swing.event.DocumentEvent
+import javax.swing.text.JTextComponent
 import kotlin.jvm.internal.CallableReference
 import kotlin.reflect.KMutableProperty0
 
@@ -92,14 +97,14 @@ inline fun <reified T : Any> KMutableProperty0<T?>.toNullableBinding(defaultValu
 }
 
 class ValidationInfoBuilder(val component: JComponent) {
-  fun error(@Nls message: String): ValidationInfo = ValidationInfo(message, component)
-  fun warning(@Nls message: String): ValidationInfo = ValidationInfo(message, component).asWarning().withOKEnabled()
+  fun error(@DialogMessage message: String): ValidationInfo = ValidationInfo(message, component)
+  fun warning(@DialogMessage message: String): ValidationInfo = ValidationInfo(message, component).asWarning().withOKEnabled()
 }
 
 interface CellBuilder<out T : JComponent> {
   val component: T
 
-  fun comment(text: String, maxLineLength: Int = 70, forComponent: Boolean = false): CellBuilder<T>
+  fun comment(@DetailedDescription text: String, maxLineLength: Int = 70, forComponent: Boolean = false): CellBuilder<T>
   fun commentComponent(component: JComponent, forComponent: Boolean = false): CellBuilder<T>
   fun focused(): CellBuilder<T>
   fun withValidationOnApply(callback: ValidationInfoBuilder.(T) -> ValidationInfo?): CellBuilder<T>
@@ -137,7 +142,10 @@ interface CellBuilder<out T : JComponent> {
   fun enabled(isEnabled: Boolean)
   fun enableIf(predicate: ComponentPredicate): CellBuilder<T>
 
-  fun withErrorOnApplyIf(message: String, callback: (T) -> Boolean): CellBuilder<T> {
+  fun visible(isVisible: Boolean)
+  fun visibleIf(predicate: ComponentPredicate): CellBuilder<T>
+
+  fun withErrorOnApplyIf(@DialogMessage message: String, callback: (T) -> Boolean): CellBuilder<T> {
     withValidationOnApply { if (callback(it)) error(message) else null }
     return this
   }
@@ -146,6 +154,8 @@ interface CellBuilder<out T : JComponent> {
   fun shouldSaveOnApply(): Boolean
 
   fun withLargeLeftGap(): CellBuilder<T>
+
+  fun withLeftGap(): CellBuilder<T>
 
   @Deprecated("Prefer not to use hardcoded values")
   fun withLeftGap(gapLeft: Int): CellBuilder<T>
@@ -173,8 +183,8 @@ fun <T : JScrollPane> CellBuilder<T>.noGrowY(): CellBuilder<T> {
   return this
 }
 
-fun <T : JTextField> CellBuilder<T>.withTextBinding(modelBinding: PropertyBinding<String>): CellBuilder<T> {
-  return withBinding(JTextField::getText, JTextField::setText, modelBinding)
+fun <T : JTextComponent> CellBuilder<T>.withTextBinding(modelBinding: PropertyBinding<String>): CellBuilder<T> {
+  return withBinding(JTextComponent::getText, JTextComponent::setText, modelBinding)
 }
 
 fun <T : AbstractButton> CellBuilder<T>.withSelectedBinding(modelBinding: PropertyBinding<Boolean>): CellBuilder<T> {
@@ -212,7 +222,7 @@ abstract class Cell : BaseBuilder {
   val pushY = CCFlags.pushY
   val push = CCFlags.push
 
-  fun label(@Nls text: String,
+  fun label(@Label text: String,
             style: UIUtil.ComponentStyle? = null,
             fontColor: UIUtil.FontColor? = null,
             bold: Boolean = false): CellBuilder<JLabel> {
@@ -220,7 +230,14 @@ abstract class Cell : BaseBuilder {
     return component(label)
   }
 
-  fun link(@Nls text: String,
+  fun label(@Label text: String,
+            font: JBFont,
+            fontColor: UIUtil.FontColor? = null): CellBuilder<JLabel> {
+    val label = Label(text, fontColor = fontColor, font = font)
+    return component(label)
+  }
+
+  fun link(@LinkLabel text: String,
            style: UIUtil.ComponentStyle? = null,
            action: () -> Unit): CellBuilder<JComponent> {
     val result = Link(text, action = action)
@@ -228,28 +245,28 @@ abstract class Cell : BaseBuilder {
     return component(result)
   }
 
-  fun browserLink(@Nls text: String, url: String): CellBuilder<JComponent> {
+  fun browserLink(@LinkLabel text: String, url: String): CellBuilder<JComponent> {
     val result = HyperlinkLabel()
     result.setHyperlinkText(text)
     result.setHyperlinkTarget(url)
     return component(result)
   }
 
-  fun buttonFromAction(@Nls text: String, actionPlace: String, action: AnAction): CellBuilder<JButton> {
+  fun buttonFromAction(@Button text: String, @NonNls actionPlace: String, action: AnAction): CellBuilder<JButton> {
     val button = JButton(BundleBase.replaceMnemonicAmpersand(text))
     button.addActionListener { ActionUtil.invokeAction(action, button, actionPlace, null, null) }
     return component(button)
   }
 
-  fun button(@Nls text: String, actionListener: (event: ActionEvent) -> Unit): CellBuilder<JButton> {
+  fun button(@Button text: String, actionListener: (event: ActionEvent) -> Unit): CellBuilder<JButton> {
     val button = JButton(BundleBase.replaceMnemonicAmpersand(text))
     button.addActionListener(actionListener)
     return component(button)
   }
 
-  inline fun checkBox(@Nls text: String,
+  inline fun checkBox(@Checkbox text: String,
                       isSelected: Boolean = false,
-                      comment: String? = null,
+                      @DetailedDescription comment: String? = null,
                       crossinline actionListener: (event: ActionEvent, component: JCheckBox) -> Unit): CellBuilder<JBCheckBox> {
     return checkBox(text, isSelected, comment)
       .applyToComponent {
@@ -258,47 +275,47 @@ abstract class Cell : BaseBuilder {
   }
 
   @JvmOverloads
-  fun checkBox(@Nls text: String,
+  fun checkBox(@Checkbox text: String,
                isSelected: Boolean = false,
-               comment: String? = null): CellBuilder<JBCheckBox> {
+               @DetailedDescription comment: String? = null): CellBuilder<JBCheckBox> {
     val result = JBCheckBox(text, isSelected)
     return result(comment = comment)
   }
 
-  fun checkBox(@Nls text: String, prop: KMutableProperty0<Boolean>, comment: String? = null): CellBuilder<JBCheckBox> {
+  fun checkBox(@Checkbox text: String, prop: KMutableProperty0<Boolean>, @DetailedDescription comment: String? = null): CellBuilder<JBCheckBox> {
     return checkBox(text, prop.toBinding(), comment)
   }
 
-  fun checkBox(@Nls text: String, getter: () -> Boolean, setter: (Boolean) -> Unit, comment: String? = null): CellBuilder<JBCheckBox> {
+  fun checkBox(@Checkbox text: String, getter: () -> Boolean, setter: (Boolean) -> Unit, @DetailedDescription comment: String? = null): CellBuilder<JBCheckBox> {
     return checkBox(text, PropertyBinding(getter, setter), comment)
   }
 
-  private fun checkBox(@Nls text: String,
+  private fun checkBox(@Checkbox text: String,
                        modelBinding: PropertyBinding<Boolean>,
-                       comment: String?): CellBuilder<JBCheckBox> {
+                       @DetailedDescription comment: String?): CellBuilder<JBCheckBox> {
     val component = JBCheckBox(text, modelBinding.get())
     return component(comment = comment).withSelectedBinding(modelBinding)
   }
 
-  fun checkBox(@Nls text: String,
+  fun checkBox(@Checkbox text: String,
                property: GraphProperty<Boolean>,
-               comment: String? = null): CellBuilder<JBCheckBox> {
+               @DetailedDescription comment: String? = null): CellBuilder<JBCheckBox> {
     val component = JBCheckBox(text, property.get())
     return component(comment = comment).withGraphProperty(property).applyToComponent { component.bind(property) }
   }
 
-  open fun radioButton(@Nls text: String, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
+  open fun radioButton(@RadioButton text: String, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
     val component = JBRadioButton(text)
     component.putClientProperty(UNBOUND_RADIO_BUTTON, true)
     return component(comment = comment)
   }
 
-  open fun radioButton(@Nls text: String, getter: () -> Boolean, setter: (Boolean) -> Unit, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
+  open fun radioButton(@RadioButton text: String, getter: () -> Boolean, setter: (Boolean) -> Unit, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
     val component = JBRadioButton(text, getter())
     return component(comment = comment).withSelectedBinding(PropertyBinding(getter, setter))
   }
 
-  open fun radioButton(@Nls text: String, prop: KMutableProperty0<Boolean>, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
+  open fun radioButton(@RadioButton text: String, prop: KMutableProperty0<Boolean>, @Nls comment: String? = null): CellBuilder<JBRadioButton> {
     val component = JBRadioButton(text, prop.get())
     return component(comment = comment).withSelectedBinding(prop.toBinding())
   }
@@ -358,6 +375,21 @@ abstract class Cell : BaseBuilder {
       .applyToComponent { bind(property) }
   }
 
+  fun textArea(prop: KMutableProperty0<String>, rows: Int? = null, columns: Int? = null): CellBuilder<JBTextArea> = textArea(prop.toBinding(), rows, columns)
+
+  fun textArea(getter: () -> String, setter: (String) -> Unit, rows: Int? = null, columns: Int? = null) = textArea(PropertyBinding(getter, setter), rows, columns)
+
+  fun textArea(binding: PropertyBinding<String>, rows: Int? = null, columns: Int? = null): CellBuilder<JBTextArea> {
+    return component(JBTextArea(binding.get(), rows ?: 0, columns ?: 0))
+      .withTextBinding(binding)
+  }
+
+  fun textArea(property: GraphProperty<String>, rows: Int? = null, columns: Int? = null): CellBuilder<JBTextArea> {
+    return textArea(property::get, property::set, rows, columns)
+      .withGraphProperty(property)
+      .applyToComponent { bind(property) }
+  }
+
   fun intTextField(prop: KMutableProperty0<Int>, columns: Int? = null, range: IntRange? = null): CellBuilder<JBTextField> {
     return intTextField(prop.toBinding(), columns, range)
   }
@@ -374,8 +406,8 @@ abstract class Cell : BaseBuilder {
     ).withValidationOnInput {
       val value = it.text.toIntOrNull()
       when {
-        value == null -> error("Please enter a number")
-        range != null && value !in range -> error("Please enter a number from ${range.first} to ${range.last}")
+        value == null -> error(UIBundle.message("please.enter.a.number"))
+        range != null && value !in range -> error(UIBundle.message("please.enter.a.number.from.0.to.1", range.first, range.last))
         else -> null
       }
     }
@@ -392,7 +424,7 @@ abstract class Cell : BaseBuilder {
   }
 
   fun textFieldWithHistoryWithBrowseButton(
-    browseDialogTitle: String,
+    @DialogTitle browseDialogTitle: String,
     value: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
@@ -405,7 +437,7 @@ abstract class Cell : BaseBuilder {
   }
 
   fun textFieldWithBrowseButton(
-    browseDialogTitle: String? = null,
+    @DialogTitle browseDialogTitle: String? = null,
     value: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
@@ -418,7 +450,7 @@ abstract class Cell : BaseBuilder {
 
   fun textFieldWithBrowseButton(
     prop: KMutableProperty0<String>,
-    browseDialogTitle: String? = null,
+    @DialogTitle browseDialogTitle: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
     fileChosen: ((chosenFile: VirtualFile) -> String)? = null
@@ -430,7 +462,7 @@ abstract class Cell : BaseBuilder {
   fun textFieldWithBrowseButton(
     getter: () -> String,
     setter: (String) -> Unit,
-    browseDialogTitle: String? = null,
+    @DialogTitle browseDialogTitle: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
     fileChosen: ((chosenFile: VirtualFile) -> String)? = null
@@ -441,7 +473,7 @@ abstract class Cell : BaseBuilder {
 
   fun textFieldWithBrowseButton(
     modelBinding: PropertyBinding<String>,
-    browseDialogTitle: String? = null,
+    @DialogTitle browseDialogTitle: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
     fileChosen: ((chosenFile: VirtualFile) -> String)? = null
@@ -455,7 +487,19 @@ abstract class Cell : BaseBuilder {
 
   fun textFieldWithBrowseButton(
     property: GraphProperty<String>,
-    browseDialogTitle: String? = null,
+    emptyTextProperty: GraphProperty<String>,
+    @DialogTitle browseDialogTitle: String? = null,
+    project: Project? = null,
+    fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
+    fileChosen: ((chosenFile: VirtualFile) -> String)? = null
+  ): CellBuilder<TextFieldWithBrowseButton> {
+    return textFieldWithBrowseButton(property, browseDialogTitle, project, fileChooserDescriptor, fileChosen)
+      .applyToComponent { emptyText.bind(emptyTextProperty) }
+  }
+
+  fun textFieldWithBrowseButton(
+    property: GraphProperty<String>,
+    @DialogTitle browseDialogTitle: String? = null,
     project: Project? = null,
     fileChooserDescriptor: FileChooserDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
     fileChosen: ((chosenFile: VirtualFile) -> String)? = null
@@ -517,7 +561,7 @@ abstract class Cell : BaseBuilder {
    * @see LayoutBuilder.titledRow
    */
   @JvmOverloads
-  fun panel(title: String, wrappedComponent: Component, hasSeparator: Boolean = true): CellBuilder<JPanel> {
+  fun panel(@BorderTitle title: String, wrappedComponent: Component, hasSeparator: Boolean = true): CellBuilder<JPanel> {
     val panel = Panel(title, hasSeparator)
     panel.add(wrappedComponent)
     return component(panel)
@@ -527,11 +571,11 @@ abstract class Cell : BaseBuilder {
     return component(JBScrollPane(component))
   }
 
-  fun comment(text: String, maxLineLength: Int = -1): CellBuilder<JLabel> {
+  fun comment(@DetailedDescription text: String, maxLineLength: Int = -1): CellBuilder<JLabel> {
     return component(ComponentPanelBuilder.createCommentComponent(text, true, maxLineLength, true))
   }
 
-  fun commentNoWrap(text: String): CellBuilder<JLabel> {
+  fun commentNoWrap(@DetailedDescription text: String): CellBuilder<JLabel> {
     return component(ComponentPanelBuilder.createNonWrappingCommentComponent(text))
   }
 
@@ -548,7 +592,7 @@ abstract class Cell : BaseBuilder {
   operator fun <T : JComponent> T.invoke(
     vararg constraints: CCFlags,
     growPolicy: GrowPolicy? = null,
-    comment: String? = null
+    @DetailedDescription comment: String? = null
   ): CellBuilder<T> = component(this).apply {
     constraints(*constraints)
     if (comment != null) comment(comment)
@@ -607,11 +651,24 @@ private fun <T> ComboBox<T>.bind(property: GraphProperty<T>) {
   }
 }
 
+private val TextFieldWithBrowseButton.emptyText
+  get() = (textField as JBTextField).emptyText
+
+private fun StatusText.bind(property: GraphProperty<String>) {
+  text = property.get()
+  property.afterChange {
+    text = it
+  }
+  property.afterReset {
+    text = property.get()
+  }
+}
+
 private fun TextFieldWithBrowseButton.bind(property: GraphProperty<String>) {
   textField.bind(property)
 }
 
-private fun JTextField.bind(property: GraphProperty<String>) {
+private fun JTextComponent.bind(property: GraphProperty<String>) {
   val mutex = AtomicBoolean()
   property.afterChange {
     mutex.lockOrSkip {

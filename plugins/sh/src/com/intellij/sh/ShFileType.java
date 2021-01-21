@@ -22,7 +22,7 @@ public final class ShFileType extends LanguageFileType {
   @Override
   @NotNull
   public String getDescription() {
-    return ShBundle.message("sh.title.case");
+    return ShBundle.message("sh.shell.script");
   }
 
   @Override
@@ -33,6 +33,6 @@ public final class ShFileType extends LanguageFileType {
 
   @Override
   public Icon getIcon() {
-    return ShIcons.FILE_TYPE;
+    return SHIcons.ShFile;
   }
 }

@@ -1,20 +1,22 @@
-// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.spellchecker.inspections;
 
 import com.intellij.codeInspection.*;
 import com.intellij.codeInspection.ui.SingleCheckboxOptionsPanel;
 import com.intellij.lang.*;
+import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.lang.refactoring.NamesValidator;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.spellchecker.SpellCheckerManager;
 import com.intellij.spellchecker.quickfixes.SpellCheckerQuickFix;
 import com.intellij.spellchecker.tokenizer.*;
 import com.intellij.spellchecker.util.SpellCheckerBundle;
 import com.intellij.util.Consumer;
-import gnu.trove.THashSet;
+import com.intellij.util.containers.CollectionFactory;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -23,7 +25,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.Set;
 
-public class SpellCheckingInspection extends LocalInspectionTool {
+public final class SpellCheckingInspection extends LocalInspectionTool {
   public static final String SPELL_CHECKING_INSPECTION_TOOL_NAME = "SpellCheckingInspection";
 
   @Override
@@ -101,6 +103,11 @@ public class SpellCheckingInspection extends LocalInspectionTool {
           }
         }
 
+        PsiFile containingFile = element.getContainingFile();
+        if (containingFile != null && Boolean.TRUE.equals(containingFile.getUserData(InjectedLanguageManager.FRANKENSTEIN_INJECTION))) {
+          return;
+        }
+
         tokenize(element, language, new MyTokenConsumer(manager, holder, LanguageNamesValidation.INSTANCE.forLanguage(language)));
       }
     };
@@ -122,42 +129,34 @@ public class SpellCheckingInspection extends LocalInspectionTool {
   }
 
   private static void addBatchDescriptor(PsiElement element,
-                                         int offset,
                                          @NotNull TextRange textRange,
                                          @NotNull ProblemsHolder holder) {
     SpellCheckerQuickFix[] fixes = SpellcheckingStrategy.getDefaultBatchFixes();
-    ProblemDescriptor problemDescriptor = createProblemDescriptor(element, offset, textRange, fixes, false);
+    ProblemDescriptor problemDescriptor = createProblemDescriptor(element, textRange, fixes, false);
     holder.registerProblem(problemDescriptor);
   }
 
-  private static void addRegularDescriptor(PsiElement element, int offset, @NotNull TextRange textRange, @NotNull ProblemsHolder holder,
+  private static void addRegularDescriptor(PsiElement element, @NotNull TextRange textRange, @NotNull ProblemsHolder holder,
                                            boolean useRename, String wordWithTypo) {
     SpellcheckingStrategy strategy = getSpellcheckingStrategy(element, element.getLanguage());
 
-    SpellCheckerQuickFix[] fixes = strategy != null
-                                   ? strategy.getRegularFixes(element, offset, textRange, useRename, wordWithTypo)
-                                   : SpellcheckingStrategy.getDefaultRegularFixes(useRename, wordWithTypo, element);
+    LocalQuickFix[] fixes = strategy != null
+                                   ? strategy.getRegularFixes(element, textRange, useRename, wordWithTypo)
+                                   : SpellcheckingStrategy.getDefaultRegularFixes(useRename, wordWithTypo, element, textRange);
 
-    final ProblemDescriptor problemDescriptor = createProblemDescriptor(element, offset, textRange, fixes, true);
+    final ProblemDescriptor problemDescriptor = createProblemDescriptor(element, textRange, fixes, true);
     holder.registerProblem(problemDescriptor);
   }
 
-  private static ProblemDescriptor createProblemDescriptor(PsiElement element, int offset, TextRange textRange,
-                                                           SpellCheckerQuickFix[] fixes,
+  private static ProblemDescriptor createProblemDescriptor(PsiElement element, TextRange textRange,
+                                                           LocalQuickFix[] fixes,
                                                            boolean onTheFly) {
-    SpellcheckingStrategy strategy = getSpellcheckingStrategy(element, element.getLanguage());
-    final Tokenizer tokenizer = strategy != null ? strategy.getTokenizer(element) : null;
-    if (tokenizer != null) {
-      textRange = tokenizer.getHighlightingRange(element, offset, textRange);
-    }
-    assert textRange.getStartOffset() >= 0;
-
     final String description = SpellCheckerBundle.message("typo.in.word.ref");
     return new ProblemDescriptorBase(element, element, description, fixes, ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                                      false, textRange, onTheFly, onTheFly);
   }
 
-  @SuppressWarnings({"PublicField"})
+  @SuppressWarnings("PublicField")
   public boolean processCode = true;
   public boolean processLiterals = true;
   public boolean processComments = true;
@@ -173,8 +172,8 @@ public class SpellCheckingInspection extends LocalInspectionTool {
     return panel;
   }
 
-  private static class MyTokenConsumer extends TokenConsumer implements Consumer<TextRange> {
-    private final Set<String> myAlreadyChecked = new THashSet<>();
+  private static final class MyTokenConsumer extends TokenConsumer implements Consumer<TextRange> {
+    private final Set<String> myAlreadyChecked = CollectionFactory.createSmallMemoryFootprintSet();
     private final SpellCheckerManager myManager;
     private final ProblemsHolder myHolder;
     private final NamesValidator myNamesValidator;
@@ -204,8 +203,8 @@ public class SpellCheckingInspection extends LocalInspectionTool {
     }
 
     @Override
-    public void consume(TextRange textRange) {
-      String word = textRange.substring(myText);
+    public void consume(TextRange range) {
+      String word = range.substring(myText);
       if (!myHolder.isOnTheFly() && myAlreadyChecked.contains(word)) {
         return;
       }
@@ -216,12 +215,21 @@ public class SpellCheckingInspection extends LocalInspectionTool {
       }
 
       if (myManager.hasProblem(word)) {
+        //Use tokenizer to generate accurate range in element (e.g. in case of escape sequences in element)
+        SpellcheckingStrategy strategy = getSpellcheckingStrategy(myElement, myElement.getLanguage());
+
+        final Tokenizer tokenizer = strategy != null ? strategy.getTokenizer(myElement) : null;
+        if (tokenizer != null) {
+          range = tokenizer.getHighlightingRange(myElement, myOffset, range);
+        }
+        assert range.getStartOffset() >= 0;
+
         if (myHolder.isOnTheFly()) {
-          addRegularDescriptor(myElement, myOffset, textRange, myHolder, myUseRename, word);
+          addRegularDescriptor(myElement, range, myHolder, myUseRename, word);
         }
         else {
           myAlreadyChecked.add(word);
-          addBatchDescriptor(myElement, myOffset, textRange, myHolder);
+          addBatchDescriptor(myElement, range, myHolder);
         }
       }
     }

@@ -3,6 +3,7 @@ package com.intellij.openapi.util.io;
 
 import com.intellij.UtilBundle;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.util.text.Strings;
@@ -13,13 +14,13 @@ import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.JBTreeTraverser;
 import com.intellij.util.io.URLUtil;
 import com.intellij.util.text.FilePathHashingStrategy;
-import com.intellij.util.text.StringFactory;
 import gnu.trove.TObjectHashingStrategy;
 import org.intellij.lang.annotations.RegExp;
 import org.jetbrains.annotations.*;
 
 import java.io.*;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -59,7 +60,7 @@ public class FileUtil extends FileUtilRt {
 
   private static final Logger LOG = Logger.getInstance(FileUtil.class);
 
-  public static @NotNull String join(String @NotNull ... parts) {
+  public static @NotNull @NlsSafe String join(String @NotNull ... parts) {
     return String.join(File.separator, parts);
   }
 
@@ -73,17 +74,17 @@ public class FileUtil extends FileUtilRt {
    * @return the relative path from the {@code base} to the {@code file} or {@code null}
    */
   @Nullable
-  public static String getRelativePath(File base, File file) {
+  public static @NlsSafe String getRelativePath(File base, File file) {
     return FileUtilRt.getRelativePath(base, file);
   }
 
   @Nullable
-  public static String getRelativePath(@NotNull String basePath, @NotNull String filePath, final char separator) {
+  public static @NlsSafe String getRelativePath(@NotNull String basePath, @NotNull String filePath, final char separator) {
     return FileUtilRt.getRelativePath(basePath, filePath, separator);
   }
 
   @Nullable
-  public static String getRelativePath(@NotNull String basePath,
+  public static @NlsSafe String getRelativePath(@NotNull String basePath,
                                        @NotNull String filePath,
                                        final char separator,
                                        final boolean caseSensitive) {
@@ -133,23 +134,25 @@ public class FileUtil extends FileUtilRt {
     return startsWith(filePath, ancestorPath, strict, SystemInfo.isFileSystemCaseSensitive, true);
   }
 
-  public static boolean startsWith(@NotNull String path, @NotNull String start) {
-    return startsWith(path, start, SystemInfo.isFileSystemCaseSensitive);
+  public static boolean startsWith(@NotNull String path, @NotNull String prefix) {
+    return startsWith(path, prefix, SystemInfo.isFileSystemCaseSensitive);
   }
 
-  public static boolean startsWith(@NotNull String path, @NotNull String start, boolean caseSensitive) {
-    return startsWith(path, start, caseSensitive, false);
+  public static boolean startsWith(@NotNull String path, @NotNull String prefix, boolean isCaseSensitive) {
+    return startsWith(path, prefix, isCaseSensitive, false);
   }
 
-  public static boolean startsWith(@NotNull String path, @NotNull String start, boolean caseSensitive, boolean strict) {
-    return !ThreeState.NO.equals(startsWith(path, start, strict, caseSensitive, false));
+  public static boolean startsWith(@NotNull String path, @NotNull String prefix, boolean isCaseSensitive, boolean strict) {
+    return !ThreeState.NO.equals(startsWith(path, prefix, strict, isCaseSensitive, false));
   }
 
-  private static ThreeState startsWith(String path, String prefix, boolean strict, boolean caseSensitive, boolean checkImmediateParent) {
-    int pathLength = path.length(), prefixLength = prefix.length();
+  @NotNull
+  private static ThreeState startsWith(@NotNull String path, @NotNull String prefix, boolean strict, boolean isCaseSensitive, boolean checkImmediateParent) {
+    int pathLength = path.length();
+    int prefixLength = prefix.length();
     if (prefixLength == 0) return pathLength == 0 ? ThreeState.YES : ThreeState.UNSURE;
     if (prefixLength > pathLength) return ThreeState.NO;
-    if (!path.regionMatches(!caseSensitive, 0, prefix, 0, prefixLength)) return ThreeState.NO;
+    if (!path.regionMatches(!isCaseSensitive, 0, prefix, 0, prefixLength)) return ThreeState.NO;
     if (pathLength == prefixLength) {
       return strict ? ThreeState.NO : ThreeState.YES;
     }
@@ -221,7 +224,7 @@ public class FileUtil extends FileUtilRt {
   @NotNull
   public static String loadTextAndClose(@NotNull Reader reader) throws IOException {
     try {
-      return StringFactory.createShared(adaptiveLoadText(reader));
+      return new String(adaptiveLoadText(reader));
     }
     finally {
       reader.close();
@@ -391,10 +394,11 @@ public class FileUtil extends FileUtilRt {
   private static void performCopy(@NotNull File fromFile, @NotNull File toFile, final boolean syncTimestamp) throws IOException {
     if (filesEqual(fromFile, toFile)) return;
 
-    try (FileOutputStream fos = openOutputStream(toFile)) {
-      try (FileInputStream fis = new FileInputStream(fromFile)) {
-        copy(fis, fos);
-      }
+    try (FileOutputStream fos = openOutputStream(toFile); FileInputStream fis = new FileInputStream(fromFile)) {
+      copy(fis, fos);
+    }
+    catch (IOException e) {
+      throw new IOException(String.format("Couldn't copy [%s] to [%s]", fromFile, toFile), e);
     }
 
     if (syncTimestamp) {
@@ -511,30 +515,30 @@ public class FileUtil extends FileUtilRt {
   }
 
   @NotNull
-  public static String getNameWithoutExtension(@NotNull File file) {
+  public static @NlsSafe String getNameWithoutExtension(@NotNull File file) {
     return FileUtilRt.getNameWithoutExtension(file.getName());
   }
 
   @NotNull
-  public static String getNameWithoutExtension(@NotNull String name) {
+  public static @NlsSafe String getNameWithoutExtension(@NotNull String name) {
     return FileUtilRt.getNameWithoutExtension(name);
   }
 
   @NotNull
-  public static String createSequentFileName(@NotNull File aParentFolder, @NotNull String aFilePrefix, @NotNull String aExtension) {
+  public static @NlsSafe String createSequentFileName(@NotNull File aParentFolder, @NotNull String aFilePrefix, @NotNull String aExtension) {
     return findSequentNonexistentFile(aParentFolder, aFilePrefix, aExtension).getName();
   }
 
   @NotNull
-  public static String createSequentFileName(@NotNull File aParentFolder,
-                                             @NotNull String aFilePrefix,
-                                             @NotNull String aExtension,
-                                             @NotNull Predicate<? super File> condition) {
+  public static @NlsSafe String createSequentFileName(@NotNull File aParentFolder,
+                                                      @NotNull String aFilePrefix,
+                                                      @NotNull String aExtension,
+                                                      @NotNull Predicate<? super File> condition) {
     return findSequentFile(aParentFolder, aFilePrefix, aExtension, condition).getName();
   }
 
   @NotNull
-  public static File findSequentNonexistentFile(@NotNull File parentFolder, @NotNull  String filePrefix, @NotNull String extension) {
+  public static File findSequentNonexistentFile(@NotNull File parentFolder, @NotNull @NonNls String filePrefix, @NotNull String extension) {
     return findSequentFile(parentFolder, filePrefix, extension, file -> !file.exists());
   }
 
@@ -562,14 +566,23 @@ public class FileUtil extends FileUtilRt {
     return candidate;
   }
 
+  /**
+   * Converts {@code filePath} to file system dependent form which uses forward slashes ('/') on Linux and Mac OS, and use back slashes ('\')
+   * on Windows. Such paths are shown in UI. They must be converted to {@link #toSystemIndependentName file system independent form} to
+   * store in configuration files.
+   */
   @NotNull
-  public static String toSystemDependentName(@NotNull String aFileName) {
-    return FileUtilRt.toSystemDependentName(aFileName);
+  public static @NlsSafe String toSystemDependentName(@NotNull String filePath) {
+    return FileUtilRt.toSystemDependentName(filePath);
   }
 
+  /**
+   * Converts {@code filePath} to file system independent form which uses forward slashes ('/'). Such paths can be stored in internal structures
+   * and configuration files. They must be converted to {@link #toSystemDependentName file system dependenct form} to show in UI.
+   */
   @NotNull
-  public static String toSystemIndependentName(@NotNull String aFileName) {
-    return FileUtilRt.toSystemIndependentName(aFileName);
+  public static @NonNls String toSystemIndependentName(@NotNull String filePath) {
+    return FileUtilRt.toSystemIndependentName(filePath);
   }
 
   /**
@@ -579,7 +592,7 @@ public class FileUtil extends FileUtilRt {
    * <br>
    * If the path may contain symlinks, use {@link FileUtil#toCanonicalPath(String, boolean)} instead.
    */
-  @Contract("null -> null")
+  @Contract("null -> null; !null->!null")
   public static String toCanonicalPath(@Nullable String path) {
     return toCanonicalPath(path, File.separatorChar, true);
   }
@@ -706,20 +719,9 @@ public class FileUtil extends FileUtilRt {
   }
 
   @NotNull
-  public static String unquote(@NotNull String urlString) {
+  public static @NlsSafe String unquote(@NotNull String urlString) {
     urlString = urlString.replace('/', File.separatorChar);
     return URLUtil.unescapePercentSequences(urlString);
-  }
-
-  public static boolean isFilePathAcceptable(@NotNull File root, @Nullable FileFilter fileFilter) {
-    if (fileFilter == null) return true;
-    File file = root;
-    do {
-      if (!fileFilter.accept(file)) return false;
-      file = file.getParentFile();
-    }
-    while (file != null);
-    return true;
   }
 
   public static boolean rename(@NotNull File source, @NotNull String newName) throws IOException {
@@ -775,11 +777,11 @@ public class FileUtil extends FileUtilRt {
   }
 
   public static int fileHashCode(@Nullable File file) {
-    return pathHashCode(file == null ? null : file.getPath());
+    return FileUtilRt.pathHashCode(file == null ? null : file.getPath());
   }
 
   public static int pathHashCode(@Nullable String path) {
-    return Strings.isEmpty(path) ? 0 : PATH_HASHING_STRATEGY.computeHashCode(toCanonicalPath(path));
+    return FileUtilRt.pathHashCode(path);
   }
 
   /**
@@ -794,7 +796,7 @@ public class FileUtil extends FileUtilRt {
   }
 
   @NotNull
-  public static String resolveShortWindowsName(@NotNull String path) throws IOException {
+  public static @NlsSafe String resolveShortWindowsName(@NotNull String path) throws IOException {
     try {
       return SystemInfo.isWindows && containsWindowsShortName(path) ? Paths.get(path).toRealPath(LinkOption.NOFOLLOW_LINKS).toString() : path;
     }
@@ -826,6 +828,36 @@ public class FileUtil extends FileUtilRt {
       start = end + 1;
     }
     return false;
+  }
+
+  /**
+   * @return <ul>
+   * <li>null for relative or incorrect paths.</li>
+   * <li>'/' on Unix.</li>
+   * <li>'C:' or '//host_name/share_name' on Windows.</li></ul>
+   */
+  @Nullable
+  public static String extractRootPath(@NotNull String normalizedPath) {
+    if (SystemInfo.isWindows) {
+      if (normalizedPath.length() >= 2 && normalizedPath.charAt(1) == ':') {
+        // drive letter
+        return StringUtil.toUpperCase(normalizedPath.substring(0, 2));
+      }
+      if (normalizedPath.startsWith("//")) {
+        // UNC (https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/62e862f4-2a51-452e-8eeb-dc4ff5ee33cc)
+        int p1 = normalizedPath.indexOf('/', 2);
+        if (p1 > 2) {
+          int p2 = normalizedPath.indexOf('/', p1 + 1);
+          if (p2 > p1 + 1) return normalizedPath.substring(0, p2);
+          if (p2 < 0) return normalizedPath;
+        }
+      }
+    }
+    else if (StringUtil.startsWithChar(normalizedPath, '/')) {
+      return "/";
+    }
+
+    return null;
   }
 
   public static void collectMatchedFiles(@NotNull File root, @NotNull Pattern pattern, @NotNull List<? super File> outFiles) {
@@ -1042,6 +1074,9 @@ public class FileUtil extends FileUtilRt {
   public static void writeToFile(@NotNull File file, @NotNull String text) throws IOException {
     writeToFile(file, text, false);
   }
+  public static void writeToFile(@NotNull File file, @NotNull String text, @NotNull Charset charset) throws IOException {
+    writeToFile(file, text.getBytes(charset));
+  }
   public static void writeToFile(@NotNull File file, @NotNull String text, boolean append) throws IOException {
     writeToFile(file, text.getBytes(StandardCharsets.UTF_8), append);
   }
@@ -1153,7 +1188,7 @@ public class FileUtil extends FileUtilRt {
    * @return path of the first of found files or empty string or null.
    */
   @Nullable
-  public static String findFileInProvidedPath(String providedPath, String... fileNames) {
+  public static @NlsSafe String findFileInProvidedPath(String providedPath, String... fileNames) {
     if (Strings.isEmpty(providedPath)) {
       return "";
     }
@@ -1209,12 +1244,12 @@ public class FileUtil extends FileUtilRt {
   }
 
   @Contract("null -> null; !null -> !null")
-  public static String getLocationRelativeToUserHome(@Nullable String path) {
+  public static @NlsSafe String getLocationRelativeToUserHome(@Nullable String path) {
     return getLocationRelativeToUserHome(path, true);
   }
 
   @Contract("null,_ -> null; !null,_ -> !null")
-  public static String getLocationRelativeToUserHome(@Nullable String path, boolean unixOnly) {
+  public static @NlsSafe String getLocationRelativeToUserHome(@Nullable String path, boolean unixOnly) {
     if (path == null) return null;
 
     if (SystemInfo.isUnix || !unixOnly) {
@@ -1228,6 +1263,7 @@ public class FileUtil extends FileUtilRt {
     return path;
   }
 
+  @Contract(pure = true)
   @NotNull
   public static String expandUserHome(@NotNull String path) {
     if (path.startsWith("~/") || path.startsWith("~\\")) {
@@ -1257,62 +1293,65 @@ public class FileUtil extends FileUtilRt {
   }
 
   @NotNull
-  public static File createTempDirectory(@NotNull String prefix, @Nullable String suffix) throws IOException {
+  public static File createTempDirectory(@NotNull @NonNls String prefix, @Nullable @NonNls String suffix) throws IOException {
     return FileUtilRt.createTempDirectory(prefix, suffix);
   }
 
   @NotNull
-  public static File createTempDirectory(@NotNull String prefix, @Nullable String suffix, boolean deleteOnExit)
+  public static File createTempDirectory(@NotNull @NonNls String prefix, @Nullable @NonNls String suffix, boolean deleteOnExit)
     throws IOException {
     return FileUtilRt.createTempDirectory(prefix, suffix, deleteOnExit);
   }
 
   @NotNull
-  public static File createTempDirectory(@NotNull File dir, @NotNull String prefix, @Nullable String suffix)
+  public static File createTempDirectory(@NotNull File dir, @NotNull @NonNls String prefix, @Nullable @NonNls String suffix)
     throws IOException {
     return FileUtilRt.createTempDirectory(dir, prefix, suffix);
   }
 
   @NotNull
   public static File createTempDirectory(@NotNull File dir,
-                                         @NotNull String prefix,
-                                         @Nullable String suffix,
+                                         @NotNull @NonNls String prefix,
+                                         @Nullable @NonNls String suffix,
                                          boolean deleteOnExit) throws IOException {
     return FileUtilRt.createTempDirectory(dir, prefix, suffix, deleteOnExit);
   }
 
   @NotNull
-  public static File createTempFile(@NotNull String prefix, @Nullable String suffix) throws IOException {
+  public static File createTempFile(@NotNull @NonNls String prefix, @Nullable @NonNls String suffix) throws IOException {
     return FileUtilRt.createTempFile(prefix, suffix);
   }
 
   @NotNull
-  public static File createTempFile(@NotNull String prefix, @Nullable String suffix, boolean deleteOnExit)
+  public static File createTempFile(@NotNull @NonNls String prefix, @Nullable @NonNls String suffix, boolean deleteOnExit)
     throws IOException {
     return FileUtilRt.createTempFile(prefix, suffix, deleteOnExit);
   }
 
   @NotNull
-  public static File createTempFile(@NotNull File dir, @NotNull String prefix, @Nullable String suffix) throws IOException {
+  public static File createTempFile(@NotNull File dir, @NotNull @NonNls String prefix, @Nullable @NonNls String suffix) throws IOException {
     return FileUtilRt.createTempFile(dir, prefix, suffix);
   }
 
   @NotNull
-  public static File createTempFile(@NotNull File dir, @NotNull String prefix, @Nullable String suffix, boolean create) throws IOException {
+  public static File createTempFile(@NotNull File dir,
+                                    @NotNull @NonNls String prefix,
+                                    @Nullable @NonNls String suffix,
+                                    boolean create) throws IOException {
     return FileUtilRt.createTempFile(dir, prefix, suffix, create);
   }
 
   @NotNull
   public static File createTempFile(@NotNull File dir,
-                                    @NotNull String prefix,
-                                    @Nullable String suffix,
+                                    @NotNull @NonNls String prefix,
+                                    @Nullable @NonNls String suffix,
                                     boolean create,
                                     boolean deleteOnExit) throws IOException {
     return FileUtilRt.createTempFile(dir, prefix, suffix, create, deleteOnExit);
   }
 
   @NotNull
-  public static String getTempDirectory() {
+  public static @NlsSafe String getTempDirectory() {
     return FileUtilRt.getTempDirectory();
   }
 
@@ -1417,19 +1456,6 @@ public class FileUtil extends FileUtilRt {
     return splitPath(path, File.separatorChar);
   }
 
-  @NotNull
-  public static List<String> splitPath(@NotNull String path, char separatorChar) {
-    List<String> list = new ArrayList<>();
-    int index = 0;
-    int nextSeparator;
-    while ((nextSeparator = path.indexOf(separatorChar, index)) != -1) {
-      list.add(path.substring(index, nextSeparator));
-      index = nextSeparator + 1;
-    }
-    list.add(path.substring(index));
-    return list;
-  }
-
   public static boolean visitFiles(@NotNull File root, @NotNull Processor<? super File> processor) {
     if (!processor.process(root)) {
       return false;
@@ -1472,5 +1498,13 @@ public class FileUtil extends FileUtilRt {
     catch (MalformedURLException e) {
       return "file://" + file.getAbsolutePath();
     }
+  }
+
+  /**
+   * Energy-efficient variant of {@link File#toURI()}. Unlike the latter, doesn't check whether a given file is a directory,
+   * so URIs never have a trailing slash (but are nevertheless compatible with {@link File#File(URI)}).
+   */
+  public static @NotNull URI fileToUri(@NotNull File file) {
+    return FileUtilRt.fileToUri(file);
   }
 }

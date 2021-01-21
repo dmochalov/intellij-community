@@ -20,23 +20,25 @@
  */
 package com.intellij.ui.classFilter;
 
+import com.intellij.CommonBundle;
+import com.intellij.icons.AllIcons;
 import com.intellij.ide.util.ClassFilter;
 import com.intellij.ide.util.TreeClassChooser;
 import com.intellij.ide.util.TreeClassChooserFactory;
 import com.intellij.java.JavaBundle;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CommonShortcuts;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.ui.AnActionButton;
-import com.intellij.ui.AnActionButtonRunnable;
-import com.intellij.ui.TableUtil;
-import com.intellij.ui.ToolbarDecorator;
+import com.intellij.ui.*;
 import com.intellij.ui.table.JBTable;
-import com.intellij.util.IconUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.*;
 import org.jetbrains.annotations.Nls;
@@ -46,14 +48,12 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
 public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText {
-  private static final String IS_ACTIVE = "Is Active";
-  protected JBTable myTable = null;
-  protected FilterTableModel myTableModel = null;
+  protected JBTable myTable;
+  protected FilterTableModel myTableModel;
   protected final Project myProject;
   private final ClassFilter myChooserFilter;
   @Nullable
@@ -73,39 +73,22 @@ public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText 
     myPatternsHelpId = patternsHelpId;
     myTable = new JBTable();
 
-    final ToolbarDecorator decorator = ToolbarDecorator.createDecorator(myTable)
-      .addExtraAction(new AnActionButton(getAddButtonText(), getAddButtonIcon()) {
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent e) {
-          addClassFilter();
-        }
-
-        @Override
-        public void updateButton(@NotNull AnActionEvent e) {
-          super.updateButton(e);
-          setEnabled(!myProject.isDefault());
-        }
-      });
+    final ToolbarDecorator decorator = ToolbarDecorator.createDecorator(myTable);
     if (addPatternButtonVisible()) {
-      decorator.addExtraAction(new AnActionButton(getAddPatternButtonText(), getAddPatternButtonIcon()) {
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent e) {
-          addPatternFilter();
-        }
-
-        @Override
-        public void updateButton(@NotNull AnActionEvent e) {
-          super.updateButton(e);
-          setEnabled(!myProject.isDefault());
-        }
-      });
+      DefaultActionGroup addGroup = new DefaultActionGroup(new AddClassFilterAction(), new AddPatternFilterAction());
+      addGroup.getTemplatePresentation().setIcon(new LayeredIcon(AllIcons.General.Add, AllIcons.General.Dropdown));
+      addGroup.getTemplatePresentation().setText(JavaBundle.messagePointer("button.add"));
+      addGroup.registerCustomShortcutSet(CommonShortcuts.getNewForDialogs(), null);
+      decorator.addExtraAction(new AnActionButton.GroupPopupWrapper(addGroup));
+    } else {
+      decorator.addExtraAction(AnActionButton.fromAction(new AddClassFilterAction()));
     }
     add(decorator.setRemoveAction(new AnActionButtonRunnable() {
       @Override
       public void run(AnActionButton button) {
         TableUtil.removeSelectedItems(myTable);
       }
-    }).setButtonComparator(getAddButtonText(), getAddPatternButtonText(), "Remove")
+    }).setButtonComparator(getAddButtonText(), getAddPatternButtonText(), CommonBundle.message("button.remove"))
           .disableUpDownActions().createPanel(), BorderLayout.CENTER);
 
     myChooserFilter = classFilter;
@@ -132,6 +115,38 @@ public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText 
     getEmptyText().setText(JavaBundle.message("no.patterns"));
   }
 
+  private class AddClassFilterAction extends DumbAwareAction {
+    private AddClassFilterAction() {
+      super(getAddButtonText(), null, getAddButtonIcon());
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setEnabled(!myProject.isDefault());
+    }
+
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      addClassFilter();
+    }
+  }
+
+  private class AddPatternFilterAction extends DumbAwareAction {
+    private AddPatternFilterAction() {
+      super(getAddPatternButtonText(), null, getAddPatternButtonIcon());
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setEnabled(!myProject.isDefault());
+    }
+
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      addPatternFilter();
+    }
+  }
+
   @NotNull
   @Override
   public StatusText getEmptyText() {
@@ -147,11 +162,11 @@ public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText 
   }
 
   protected Icon getAddButtonIcon() {
-    return IconUtil.getAddClassIcon();
+    return AllIcons.Nodes.Class;
   }
 
   protected Icon getAddPatternButtonIcon() {
-    return IconUtil.getAddPatternIcon();
+    return AllIcons.Actions.Regex;
   }
 
   protected boolean addPatternButtonVisible() {
@@ -199,13 +214,7 @@ public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText 
     }
 
     public com.intellij.ui.classFilter.ClassFilter[] getFilters() {
-      for (Iterator<com.intellij.ui.classFilter.ClassFilter> it = myFilters.iterator(); it.hasNext(); ) {
-        com.intellij.ui.classFilter.ClassFilter filter = it.next();
-        String pattern = filter.getPattern();
-        if (pattern == null || "".equals(pattern)) {
-          it.remove();
-        }
-      }
+      myFilters.removeIf(filter -> StringUtil.isEmpty(filter.getPattern()));
       return myFilters.toArray(com.intellij.ui.classFilter.ClassFilter.EMPTY_ARRAY);
     }
 
@@ -236,9 +245,9 @@ public class ClassFilterEditor extends JPanel implements ComponentWithEmptyText 
     @Override
     public @NlsContexts.ColumnName String getColumnName(int column) {
       if (column == FILTER) {
-        return "Pattern";
+        return JavaBundle.message("class.filter.editor.table.model.column.name.pattern");
       }
-      return IS_ACTIVE;
+      return JavaBundle.message("class.filter.editor.table.model.column.name.isActive");
     }
 
     @Override

@@ -52,6 +52,7 @@ import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -90,7 +91,7 @@ public class EditorTextField extends NonOpaquePanel implements EditorTextCompone
   private boolean myShowPlaceholderWhenFocused;
   private boolean myEnsureWillComputePreferredSize;
   private Dimension myPassivePreferredSize;
-  private CharSequence myHintText;
+  private @Nls CharSequence myHintText;
   private boolean myIsRendererWithSelection;
   private Color myRendererBg;
   private Color myRendererFg;
@@ -309,7 +310,7 @@ public class EditorTextField extends NonOpaquePanel implements EditorTextCompone
    *
    * @param text    {@link EditorEx#setPlaceholder(CharSequence) editor's placeholder} text to use
    */
-  public void setPlaceholder(@Nullable CharSequence text) {
+  public void setPlaceholder(@Nls @Nullable CharSequence text) {
     myHintText = text;
     if (myEditor != null) {
       myEditor.setPlaceholder(text);
@@ -652,12 +653,7 @@ public class EditorTextField extends NonOpaquePanel implements EditorTextCompone
       super.setEnabled(enabled);
       setFocusTraversalPolicyProvider(enabled);
       setViewerEnabled(enabled);
-      EditorEx editor = myEditor;
-      if (editor != null) {
-        releaseEditor(editor);
-        initEditor();
-        revalidate();
-      }
+      resetEditor();
     }
   }
 
@@ -665,8 +661,26 @@ public class EditorTextField extends NonOpaquePanel implements EditorTextCompone
     myIsViewer = !enabled;
   }
 
+  private void resetEditor() {
+    final EditorEx editor = myEditor;
+
+    if (editor != null) {
+      releaseEditor(editor);
+      initEditor();
+      revalidate();
+    }
+  }
+
   public boolean isViewer() {
     return myIsViewer;
+  }
+
+  public void setViewer(boolean viewer) {
+    if (myIsViewer != viewer) {
+      myIsViewer = viewer;
+
+      resetEditor();
+    }
   }
 
   @Override

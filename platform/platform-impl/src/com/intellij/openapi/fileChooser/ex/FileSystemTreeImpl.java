@@ -7,7 +7,7 @@ import com.intellij.ide.util.treeView.NodeDescriptor;
 import com.intellij.ide.util.treeView.NodeRenderer;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionGroup;
-import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.DataKey;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -237,7 +237,7 @@ public class FileSystemTreeImpl implements FileSystemTree {
   }
 
   public void registerMouseListener(final ActionGroup group) {
-    PopupHandler.installUnknownPopupHandler(myTree, group, ActionManager.getInstance());
+    PopupHandler.installPopupHandler(myTree, group, ActionPlaces.UNKNOWN);
   }
 
   @Override
@@ -246,7 +246,7 @@ public class FileSystemTreeImpl implements FileSystemTree {
       return myDescriptor.isShowHiddenFiles();
     }
     else {
-      return myTreeStructure.areHiddensShown();
+      return myTreeStructure.areHiddenShown();
     }
   }
 
@@ -257,7 +257,7 @@ public class FileSystemTreeImpl implements FileSystemTree {
       if (myFileTreeModel != null) myFileTreeModel.invalidate();
     }
     else {
-      myTreeStructure.showHiddens(showHidden);
+      myTreeStructure.showHidden(showHidden);
     }
     updateTree();
   }

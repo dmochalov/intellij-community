@@ -1,9 +1,6 @@
 package com.intellij.dupLocator.treeHash;
 
-import com.intellij.dupLocator.DupInfo;
-import com.intellij.dupLocator.DuplicatesProfile;
-import com.intellij.dupLocator.DuplocatorState;
-import com.intellij.dupLocator.NodeSpecificHasher;
+import com.intellij.dupLocator.*;
 import com.intellij.dupLocator.util.DuplocatorUtil;
 import com.intellij.dupLocator.util.PsiFragment;
 import com.intellij.openapi.components.PathMacroManager;
@@ -24,6 +21,7 @@ import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,7 +36,7 @@ import java.util.*;
 public class DuplocatorHashCallback implements FragmentsCollector {
   private static final Logger LOG = Logger.getInstance(DuplocatorHashCallback.class);
 
-  private Int2ObjectOpenHashMap<List<List<PsiFragment>>> myDuplicates = new Int2ObjectOpenHashMap<>();
+  private Int2ObjectMap<List<List<PsiFragment>>> myDuplicates = new Int2ObjectOpenHashMap<>();
   private final int myBound;
   private boolean myReadOnly = false;
   private final int myDiscardCost;
@@ -161,9 +159,8 @@ public class DuplocatorHashCallback implements FragmentsCollector {
   }
 
   public DupInfo getInfo() {
-    Object2IntOpenHashMap<PsiFragment[]> duplicateList = new Object2IntOpenHashMap<>();
-    for (ObjectIterator<Int2ObjectMap.Entry<List<List<PsiFragment>>>> iterator = myDuplicates.int2ObjectEntrySet().fastIterator(); iterator.hasNext(); ) {
-      Int2ObjectMap.Entry<List<List<PsiFragment>>> entry = iterator.next();
+    Object2IntMap<PsiFragment[]> duplicateList = new Object2IntOpenHashMap<>();
+    for (Int2ObjectMap.Entry<List<List<PsiFragment>>> entry : myDuplicates.int2ObjectEntrySet()) {
       for (List<PsiFragment> list : entry.getValue()) {
         int len = list.size();
         if (len > 1) {
@@ -180,7 +177,7 @@ public class DuplocatorHashCallback implements FragmentsCollector {
 
     myDuplicates = null;
 
-    for (ObjectIterator<Object2IntMap.Entry<PsiFragment[]>> iterator = duplicateList.object2IntEntrySet().fastIterator(); iterator.hasNext(); ) {
+    for (ObjectIterator<Object2IntMap.Entry<PsiFragment[]>> iterator = duplicateList.object2IntEntrySet().iterator(); iterator.hasNext(); ) {
       Object2IntMap.Entry<PsiFragment[]> entry = iterator.next();
       PsiFragment[] fragments = entry.getKey();
       LOG.assertTrue(fragments.length > 1);
@@ -201,7 +198,7 @@ public class DuplocatorHashCallback implements FragmentsCollector {
     Arrays.sort(duplicates, (x, y) -> y[0].getCost() - x[0].getCost());
 
     return new DupInfo() {
-      private final Int2ObjectOpenHashMap<GroupNodeDescription> myPattern2Description = new Int2ObjectOpenHashMap<>();
+      private final Int2ObjectMap<GroupNodeDescription> myPattern2Description = new Int2ObjectOpenHashMap<>();
 
       @Override
       public int getPatterns() {
@@ -254,14 +251,14 @@ public class DuplocatorHashCallback implements FragmentsCollector {
         final PsiFile psiFile = occurrences[0].getFile();
         DuplicatesProfile profile = DuplicatesProfile.findProfileForDuplicate(this, pattern);
         String comment = profile != null ? profile.getComment(this, pattern) : "";
-        final GroupNodeDescription description = new GroupNodeDescription(fileCount, psiFile != null ? psiFile.getName() : "unknown", comment);
+        String filename = psiFile != null ? psiFile.getName() : DupLocatorBundle.message("duplicates.unknown.file.node.title");
+        final GroupNodeDescription description = new GroupNodeDescription(fileCount, filename, comment);
         myPattern2Description.put(pattern, description);
         return description;
       }
 
       @Override
-      @Nullable
-      public String getTitle(int pattern) {
+      public @Nullable @Nls String getTitle(int pattern) {
         if (getFileCount(pattern) == 1) {
           if (myPattern2Description.containsKey(pattern)) {
             return myPattern2Description.get(pattern).getTitle();
@@ -272,8 +269,7 @@ public class DuplocatorHashCallback implements FragmentsCollector {
       }
 
       @Override
-      @Nullable
-      public String getComment(int pattern) {
+      public @Nullable @Nls String getComment(int pattern) {
         if (getFileCount(pattern) == 1) {
           if (myPattern2Description.containsKey(pattern)) {
             return myPattern2Description.get(pattern).getComment();

@@ -1,11 +1,12 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch;
 
-import com.intellij.codeInsight.daemon.XmlErrorBundle;
 import com.intellij.codeInsight.template.TemplateContextType;
 import com.intellij.codeInsight.template.XmlContextType;
 import com.intellij.dupLocator.iterators.NodeIterator;
 import com.intellij.dupLocator.util.NodeFilter;
+import com.intellij.ide.highlighter.HtmlFileType;
+import com.intellij.ide.highlighter.XmlFileType;
 import com.intellij.lang.Language;
 import com.intellij.lang.html.HTMLLanguage;
 import com.intellij.lang.xml.XMLLanguage;
@@ -24,13 +25,14 @@ import com.intellij.structuralsearch.plugin.replace.impl.ReplacerUtil;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.LocalTimeCounter;
+import com.intellij.xml.psi.XmlPsiBundle;
 import com.intellij.xml.util.HtmlUtil;
 import com.intellij.xml.util.XmlUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import static com.intellij.structuralsearch.PredefinedConfigurationUtil.createSearchTemplateInfo;
+import static com.intellij.structuralsearch.PredefinedConfigurationUtil.createLegacyConfiguration;
 
 /**
  * @author Eugene.Kudelevsky
@@ -147,11 +149,11 @@ public class XmlStructuralSearchProfile extends StructuralSearchProfile {
       super.visitErrorElement(element);
       final String errorDescription = element.getErrorDescription();
       final PsiElement parent = element.getParent();
-      if (parent instanceof XmlAttribute && XmlErrorBundle.message("expected.attribute.eq.sign").equals(errorDescription)) {
+      if (parent instanceof XmlAttribute && XmlPsiBundle.message("xml.parsing.expected.attribute.eq.sign").equals(errorDescription)) {
         return;
       }
       else if (parent instanceof XmlTag &&
-               XmlErrorBundle.message("named.element.is.not.closed", ((XmlTag)parent).getName()).equals(errorDescription)) {
+               XmlPsiBundle.message("xml.parsing.named.element.is.not.closed", ((XmlTag)parent).getName()).equals(errorDescription)) {
         return;
       }
       throw new MalformedPatternException(errorDescription);
@@ -247,14 +249,25 @@ public class XmlStructuralSearchProfile extends StructuralSearchProfile {
   private static final class XmlPredefinedConfigurations {
     static Configuration[] createPredefinedTemplates() {
       return new Configuration[]{
-        createSearchTemplateInfo("xml tag", "<'a/>", getHtmlXml(), StdFileTypes.XML),
-        createSearchTemplateInfo("xml attribute", "<'_tag 'attribute=\"'_value\"/>", getHtmlXml(), StdFileTypes.XML),
-        createSearchTemplateInfo("html attribute", "<'_tag 'attribute />", getHtmlXml(), StdFileTypes.HTML),
-        createSearchTemplateInfo("xml attribute value", "<'_tag '_attribute=\"'value\"/>", getHtmlXml(), StdFileTypes.XML),
-        createSearchTemplateInfo("html attribute value", "<'_tag '_attribute='value />", getHtmlXml(), StdFileTypes.HTML),
-        createSearchTemplateInfo("xml/html tag value", "<table>'_content*</table>", getHtmlXml(), StdFileTypes.HTML),
-        createSearchTemplateInfo("<ul> or <ol>", "<'_tag:[regex( ul|ol )] />", getHtmlXml(), StdFileTypes.HTML),
-        createSearchTemplateInfo("<li> not contained in <ul> or <ol>", "[!within( <ul> or <ol> )]<li />", getHtmlXml(), StdFileTypes.HTML)
+        createLegacyConfiguration(SSRBundle.message("predefined.template.xml.tag"), "Xml tag",
+                                  "<'a/>", getHtmlXml(), XmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.xml.attribute"), "Xml attribute",
+                                  "<'_tag 'attribute=\"'_value\"/>", getHtmlXml(), XmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.html.attribute"), "Html attribute",
+                                  "<'_tag 'attribute />", getHtmlXml(), HtmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.xml.attribute.value"), "Xml attribute value",
+                                  "<'_tag '_attribute=\"'value\"/>", getHtmlXml(), XmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.html.attribute.value"), "Html attribute value",
+                                  "<'_tag '_attribute='value />", getHtmlXml(), HtmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.xml.html.tag.value"), "Xml/html tag value",
+                                  "<table>'_content*</table>", getHtmlXml(), HtmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.ul.or.ol"), "<ul> or <ol>",
+                                  "<'_tag:[regex( ul|ol )] />", getHtmlXml(), HtmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.template.li.not.contained.in.ul.or.ol"), "<li> not contained in <ul> or <ol>",
+                                  "[!within( <ul> or <ol> )]<li />", getHtmlXml(), HtmlFileType.INSTANCE),
+        createLegacyConfiguration(SSRBundle.message("predefined.configuration.xml.attribute.referencing.java.class"), "xml attribute referencing java class",
+                                  "<'_tag 'attribute=\"'_value:[ref( classes, interfaces & enums )]\"/>",
+                                  SSRBundle.message("xml_html.category"), XmlFileType.INSTANCE),
       };
     }
 

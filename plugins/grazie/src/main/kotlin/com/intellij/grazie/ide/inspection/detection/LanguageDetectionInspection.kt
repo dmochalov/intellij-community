@@ -62,17 +62,16 @@ internal class LanguageDetectionInspection : LocalInspectionTool() {
   }
 
   override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
-    if (!isOnTheFly) return PsiElementVisitor.EMPTY_VISITOR
+    if (!isOnTheFly || InjectedLanguageManager.getInstance(holder.project).isInjectedFragment(holder.file))
+      return PsiElementVisitor.EMPTY_VISITOR
 
     return object : PsiElementVisitor() {
       override fun visitElement(element: PsiElement) {
-        if (InjectedLanguageManager.getInstance(holder.project).isInjectedFragment(holder.file)) return
-
         val strategies = LanguageGrammarChecking.getStrategiesForElement(element, enabledStrategiesIDs, disabledStrategiesIDs)
 
         for (strategy in strategies) {
-          val (_, _, text) = GraziePsiElementProcessor.processElements(element, strategy)
-          LangDetector.updateContext(text, session.getUserData(key)!!)
+          val (_, _, _, text) = GraziePsiElementProcessor.processElements(listOf(element), strategy)
+          LangDetector.updateContext(text.first().text, session.getUserData(key)!!)
           break
         }
       }

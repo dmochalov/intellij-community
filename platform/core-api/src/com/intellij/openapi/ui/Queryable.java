@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.ui;
 
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -9,7 +10,7 @@ import java.util.Map;
 
 public interface Queryable {
 
-  void putInfo(@NotNull Map<String, String> info);
+  void putInfo(@NotNull Map<? super String, ? super String> info);
 
   class PrintInfo {
     private final String[] myIdKeys;
@@ -30,11 +31,10 @@ public interface Queryable {
   }
 
   final class Util {
-    @Nullable
-    public static String print(@NotNull Queryable ui, @Nullable PrintInfo printInfo, @Nullable Contributor contributor) {
+    public static @NonNls @NotNull String print(@NotNull Queryable ui, @Nullable PrintInfo printInfo, @Nullable Contributor contributor) {
       PrintInfo print = printInfo != null ? printInfo : new PrintInfo();
 
-      LinkedHashMap<String, String> map = new LinkedHashMap<>();
+      Map<String, String> map = new LinkedHashMap<>();
       ui.putInfo(map);
 
       if (contributor != null) {
@@ -42,14 +42,6 @@ public interface Queryable {
       }
 
       String id = null;
-
-      //String[] names = print.myIdKeys != null ? print.myIdKeys : new String[] {"name"};
-      //for (String eachKey : names) {
-      //  String eachValue = map.get(eachKey);
-      //  if (eachValue != null) {
-      //    id = eachValue;
-      //  }
-      //}
 
       if (!map.isEmpty()) {
         id = map.values().iterator().next();
@@ -71,8 +63,7 @@ public interface Queryable {
       return id + (info.length() > 0 ? " " + info : "");
     }
 
-    @Nullable
-    public static String print(@NotNull Queryable ui, @Nullable PrintInfo printInfo) {
+    public static @NonNls @NotNull String print(@NotNull Queryable ui, @Nullable PrintInfo printInfo) {
       return print(ui, printInfo, null);
     }
   }

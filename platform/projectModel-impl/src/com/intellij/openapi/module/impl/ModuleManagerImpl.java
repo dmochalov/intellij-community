@@ -14,6 +14,7 @@ import com.intellij.openapi.components.ProjectComponent;
 import com.intellij.openapi.components.impl.stores.IComponentStore;
 import com.intellij.openapi.components.impl.stores.ModuleStore;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.*;
 import com.intellij.openapi.progress.*;
 import com.intellij.openapi.progress.util.ProgressWrapper;
@@ -223,7 +224,8 @@ public abstract class ModuleManagerImpl extends ModuleManagerEx implements Dispo
     myModulePathsToLoad.clear();
   }
 
-  protected void unloadNewlyAddedModulesIfPossible(@NotNull Set<ModulePath> modulesToLoad, @NotNull List<UnloadedModuleDescriptionImpl> modulesToUnload) {
+  @Override
+  public void unloadNewlyAddedModulesIfPossible(@NotNull Set<ModulePath> modulesToLoad, @NotNull List<UnloadedModuleDescriptionImpl> modulesToUnload) {
   }
 
   @NotNull
@@ -944,7 +946,7 @@ public abstract class ModuleManagerImpl extends ModuleManagerEx implements Dispo
 
     @NotNull
     private Graph<Module> moduleGraph(final boolean includeTests) {
-      return GraphGenerator.generate(CachingSemiGraph.cache(new InboundSemiGraph<Module>() {
+      return GraphGenerator.generate(CachingSemiGraph.cache(new InboundSemiGraph<>() {
         @NotNull
         @Override
         public Collection<Module> getNodes() {

@@ -47,7 +47,7 @@ public class SaveTo implements SpellCheckerQuickFix, LowPriorityAction {
   @Override
   @NotNull
   public String getName() {
-    return SpellCheckerBundle.message("save.0.to.1", myWord != null ? SpellCheckerBundle.message("0.in.qoutes", myWord) : "");
+    return SpellCheckerBundle.message("save.0.to.1", myWord != null ? SpellCheckerBundle.message("0.in.quotes", myWord) : "");
   }
 
   @Override
@@ -55,12 +55,6 @@ public class SaveTo implements SpellCheckerQuickFix, LowPriorityAction {
   public String getFamilyName() {
     final String dictionary = myLevel != DictionaryLevel.NOT_SPECIFIED ? myLevel.getName() + DICTIONARY : DOTS;
     return SpellCheckerBundle.message("save.0.to.1", "", dictionary);
-  }
-
-  @Override
-  @NotNull
-  public Anchor getPopupActionAnchor() {
-    return Anchor.LAST;
   }
 
   @Override

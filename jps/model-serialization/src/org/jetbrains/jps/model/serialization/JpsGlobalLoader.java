@@ -7,7 +7,6 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.JpsElementChildRole;
 import org.jetbrains.jps.model.JpsElementFactory;
 import org.jetbrains.jps.model.JpsGlobal;
@@ -38,6 +37,9 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
   }
 
   public static void loadGlobalSettings(JpsGlobal global, String optionsPath) throws IOException {
+    if (System.getProperty("jps.in.wsl") != null) {
+      global.setPathMapper(new JpsWslPathMapper());
+    }
     Path optionsDir = Paths.get(FileUtil.toCanonicalPath(optionsPath));
     Map<String, String> pathVariables = loadPathVariables(global, optionsDir);
     new JpsGlobalLoader(global, pathVariables).load(optionsDir);
@@ -52,15 +54,6 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
     JpsModel model = JpsElementFactory.getInstance().createModel();
     Path optionsDir = Paths.get(FileUtil.toCanonicalPath(optionsPath));
     return loadPathVariables(model.getGlobal(), optionsDir);
-  }
-
-  /**
-   * @deprecated use {@link JpsModelSerializationDataService#getPathVariableValue(JpsGlobal, String)} instead
-   */
-  @Deprecated
-  @Nullable
-  public static String getPathVariable(JpsGlobal global, String name) {
-    return JpsModelSerializationDataService.getPathVariableValue(global, name);
   }
 
   private void load(@NotNull Path optionsDir) {
@@ -101,19 +94,6 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
         }
       }
     }
-
-    @Override
-    public void saveExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
-      JpsPathVariablesConfiguration configuration = JpsModelSerializationDataService.getPathVariablesConfiguration(global);
-      if (configuration != null) {
-        for (Map.Entry<String, String> entry : configuration.getAllUserVariables().entrySet()) {
-          Element tag = new Element(MACRO_TAG);
-          tag.setAttribute(NAME_ATTRIBUTE, entry.getKey());
-          tag.setAttribute(VALUE_ATTRIBUTE, entry.getValue());
-          componentTag.addContent(tag);
-        }
-      }
-    }
   }
 
   public static class GlobalLibrariesSerializer extends JpsGlobalExtensionSerializer {
@@ -123,12 +103,7 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
 
     @Override
     public void loadExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
-      JpsLibraryTableSerializer.loadLibraries(componentTag, global.getLibraryCollection());
-    }
-
-    @Override
-    public void saveExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
-      JpsLibraryTableSerializer.saveLibraries(global.getLibraryCollection(), componentTag);
+      JpsLibraryTableSerializer.loadLibraries(componentTag, global.getPathMapper(), global.getLibraryCollection());
     }
   }
 
@@ -139,12 +114,7 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
 
     @Override
     public void loadExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
-      JpsSdkTableSerializer.loadSdks(componentTag, global.getLibraryCollection());
-    }
-
-    @Override
-    public void saveExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
-      JpsSdkTableSerializer.saveSdks(global.getLibraryCollection(), componentTag);
+      JpsSdkTableSerializer.loadSdks(componentTag, global.getLibraryCollection(), global.getPathMapper());
     }
   }
 
@@ -159,10 +129,6 @@ public final class JpsGlobalLoader extends JpsLoaderBase {
       if (ignoreFilesTag != null) {
         global.getFileTypesConfiguration().setIgnoredPatternString(ignoreFilesTag.getAttributeValue("list"));
       }
-    }
-
-    @Override
-    public void saveExtension(@NotNull JpsGlobal global, @NotNull Element componentTag) {
     }
   }
 }

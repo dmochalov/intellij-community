@@ -56,7 +56,7 @@ public class ClassWithoutLoggerInspection extends BaseInspection {
   public boolean ignoreSuperLoggers = false;
 
   @SuppressWarnings("PublicField") public final ExternalizableStringSet annotations = new ExternalizableStringSet();
-  @SuppressWarnings("PublicField") public final ExternalizableStringSet ignoredClasses = new ExternalizableStringSet("java.lang.Throwable");
+  @SuppressWarnings("PublicField") public final ExternalizableStringSet ignoredClasses = new ExternalizableStringSet(CommonClassNames.JAVA_LANG_THROWABLE);
 
   public ClassWithoutLoggerInspection() {
     parseString(loggerNamesString, loggerNames);
@@ -79,7 +79,7 @@ public class ClassWithoutLoggerInspection extends BaseInspection {
     panel.add(checkBox, BorderLayout.SOUTH);
     final JBTabbedPane tabs = new JBTabbedPane(SwingConstants.TOP);
     tabs.add(InspectionGadgetsBundle.message("class.without.logger.loggers.tab"), ScrollPaneFactory.createScrollPane(loggerPanel, true));
-    tabs.add(InspectionGadgetsBundle.message("class.without.logger.ignored.classes.tab"), ScrollPaneFactory.createScrollPane(panel, true));
+    tabs.add(InspectionGadgetsBundle.message("options.title.ignored.classes"), ScrollPaneFactory.createScrollPane(panel, true));
     tabs.add(InspectionGadgetsBundle.message("class.without.logger.annotations.tab"), ScrollPaneFactory.createScrollPane(annotationsListControl, true));
     return tabs;
   }

@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.largeFilesEditor.search;
 
 import com.intellij.codeInsight.hint.HintManager;
@@ -9,7 +9,6 @@ import com.intellij.find.impl.RegExHelpPopup;
 import com.intellij.largeFilesEditor.Utils;
 import com.intellij.largeFilesEditor.editor.LargeFileEditor;
 import com.intellij.largeFilesEditor.editor.Page;
-import com.intellij.largeFilesEditor.search.actions.LargeFileToggleAction;
 import com.intellij.largeFilesEditor.search.actions.*;
 import com.intellij.largeFilesEditor.search.searchResultsPanel.RangeSearch;
 import com.intellij.largeFilesEditor.search.searchResultsPanel.RangeSearchCallback;
@@ -26,6 +25,9 @@ import com.intellij.openapi.editor.event.CaretEvent;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -33,7 +35,7 @@ import com.intellij.ui.CollectionListModel;
 import com.intellij.ui.EditorNotifications;
 import com.intellij.ui.LightweightHint;
 import com.intellij.ui.components.JBList;
-import org.jetbrains.annotations.CalledInAwt;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -71,7 +73,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
   private LargeFileToggleAction myToggleRegularExpression;
   private LargeFileStatusTextAction myStatusTextAction;
 
-  private String myStatusText;
+  private @NlsContexts.StatusText String myStatusText;
   private boolean myIsStatusTextHidden;
   private long myLastTimeStatusTextWasChanged;
 
@@ -126,7 +128,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
       .setSearchDirectionForward(forwardDirection)
       .setSearchBounds(fromPageNumber, SearchTaskOptions.NO_LIMIT,
                        toPageNumber, SearchTaskOptions.NO_LIMIT)
-      .setCaseSensetive(myToggleCaseSensitiveAction.isSelected())
+      .setCaseSensitive(myToggleCaseSensitiveAction.isSelected())
       .setWholeWords(myToggleWholeWordsAction.isSelected())
       .setRegularExpression(myToggleRegularExpression.isSelected())
       .setContextOneSideLength(CONTEXT_ONE_SIDE_LENGTH);
@@ -171,7 +173,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
     }
   }
 
-  @CalledInAwt
+  @RequiresEdt
   private void launchCloseSearch(SearchTaskOptions options) {
     if (StringUtil.isEmpty(options.stringToFind)) {
       return;
@@ -242,7 +244,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
     SearchTaskOptions options = new SearchTaskOptions()
       .setSearchDirectionForward(directionForward)
       .setStringToFind(mySearchReplaceComponent.getSearchTextComponent().getText())
-      .setCaseSensetive(myToggleCaseSensitiveAction.isSelected())
+      .setCaseSensitive(myToggleCaseSensitiveAction.isSelected())
       .setWholeWords(myToggleWholeWordsAction.isSelected())
       .setRegularExpression(myToggleRegularExpression.isSelected())
       .setContextOneSideLength(CONTEXT_ONE_SIDE_LENGTH);
@@ -343,7 +345,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
     });
   }
 
-  private static void showSimpleHintInEditor(String message, Editor editor) {
+  private static void showSimpleHintInEditor(@NlsContexts.HintText String message, Editor editor) {
     JComponent hintComponent = HintUtil.createInformationLabel(message);
     final LightweightHint hint = new LightweightHint(hintComponent);
     HintManagerImpl.getInstanceImpl().showEditorHint(hint,
@@ -391,7 +393,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
   }
 
   @Override
-  public String getStatusText() {
+  public @NlsContexts.StatusText String getStatusText() {
     return myStatusText;
   }
 
@@ -418,7 +420,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
   }
 
 
-  @CalledInAwt
+  @RequiresEdt
   @Override
   public void onSearchParametersChanged() {
     if (lastExecutedCloseSearchTask != null) {
@@ -452,7 +454,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
     SearchTaskOptions options = new SearchTaskOptions()
       .setStringToFind(mySearchReplaceComponent.getSearchTextComponent().getText())
       .setStringToFind(mySearchReplaceComponent.getSearchTextComponent().getText())
-      .setCaseSensetive(myToggleCaseSensitiveAction.isSelected())
+      .setCaseSensitive(myToggleCaseSensitiveAction.isSelected())
       .setWholeWords(myToggleWholeWordsAction.isSelected())
       .setRegularExpression(myToggleRegularExpression.isSelected())
       .setSearchDirectionForward(true)
@@ -544,7 +546,9 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
                              myToggleWholeWordsAction,
                              myToggleRegularExpression,
                              new DefaultCustomComponentAction(
-                               () -> RegExHelpPopup.createRegExLink("<html><body><b>?</b></body></html>", null, null, "FindInFile")),
+                               () -> RegExHelpPopup.createRegExLink(
+                                 new HtmlBuilder().append(HtmlChunk.text("?").bold()).wrapWithHtmlBody().toString(),
+                                 null, "FindInFile")),
                              myStatusTextAction)
       //.addSearchFieldActions(new RestorePreviousSettingsAction())
       .withCloseAction(this::onEscapePressed)
@@ -581,7 +585,7 @@ public class LfeSearchManagerImpl implements LfeSearchManager, CloseSearchTask.C
     }
   }
 
-  private void setNewStatusText(String newStatusText) {
+  private void setNewStatusText(@NlsContexts.StatusText String newStatusText) {
     myStatusText = newStatusText;
     myLastTimeStatusTextWasChanged = System.currentTimeMillis();
 

@@ -15,6 +15,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.VcsListener
+import com.intellij.openapi.vcs.changes.ChangeListManagerImpl
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -28,9 +29,9 @@ import git4idea.index.vfs.GitIndexVirtualFile
 import git4idea.index.vfs.filePath
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryManager
-import git4idea.repo.GitUntrackedFilesHolder
 import git4idea.status.GitChangeProvider
-import git4idea.util.toShortenedString
+import git4idea.util.toShortenedLogString
+import org.jetbrains.annotations.NonNls
 import java.util.*
 
 private val PROCESSED = Key.create<Boolean>("GitStageTracker.file.processed")
@@ -42,12 +43,19 @@ class GitStageTracker(val project: Project) : Disposable {
 
   @Volatile
   var state: State = State(gitRoots().associateWith { RootState.empty(it) })
+    private set
+  val ignoredPaths: Map<VirtualFile, List<FilePath>>
+    get() {
+      return gitRoots().associateWith {
+        GitRepositoryManager.getInstance(project).getRepositoryForRootQuick(it)?.ignoredFilesHolder?.ignoredFilePaths?.toList() ?: emptyList()
+      }
+    }
 
   init {
     val connection: MessageBusConnection = project.messageBus.connect(this)
     connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
       override fun after(events: List<VFileEvent>) {
-        markDirty(events)
+        handleIndexFileEvents(events)
       }
     })
     connection.subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, VcsListener {
@@ -91,35 +99,47 @@ class GitStageTracker(val project: Project) : Disposable {
         }
       }
     }, this)
+
+    updateTrackerState()
   }
 
-  fun scheduleUpdateAll() {
-    val gitRoots = gitRoots()
-    LOG.debug("Mark dirty ${gitRoots}")
-    dirtyScopeManager.filesDirty(emptyList(), gitRoots)
+  fun updateTrackerState() {
+    LOG.debug("Update tracker state")
+    ChangeListManagerImpl.getInstanceImpl(project).executeOnUpdaterThread {
+      for (root in gitRoots()) {
+        val repository = GitRepositoryManager.getInstance(project).getRepositoryForFile(root) ?: continue
+        doUpdateState(repository)
+      }
+    }
   }
 
+  /**
+   * Update tree on [FileDocumentManager#unsavedDocuments] state change.
+   *
+   * We can refresh only [doUpdateState], but this introduces blinking in some cases.
+   *   Ex: when unsaved unstaged changes are saved on disk. We remove file from tree immediately,
+   *   but CLM is slow to notice new saved unstaged changes - so file is removed from thee and added again in a second.
+   */
   private fun markDirty(file: VirtualFile) {
+    if (!isStagingAreaAvailable(project)) return
     val root = getRoot(project, file) ?: return
     if (!gitRoots().contains(root)) return
     LOG.debug("Mark dirty ${file.filePath()}")
     dirtyScopeManager.fileDirty(file.filePath())
   }
 
-  private fun markDirty(events: List<VFileEvent>) {
-    val gitRoots = gitRoots()
+  private fun handleIndexFileEvents(events: List<VFileEvent>) {
+    val pathsToDirty = mutableListOf<FilePath>()
+    for (event in events) {
+      if (event.isFromRefresh) continue
+      val file = event.file as? GitIndexVirtualFile ?: continue
+      pathsToDirty.add(file.filePath)
+    }
 
-    val roots = GitRepositoryManager.getInstance(project).repositories.filter { repo ->
-      events.any { e -> GitUntrackedFilesHolder.totalRefreshNeeded(repo, e.path) }
-    }.map { it.root }.intersect(gitRoots)
-
-    val files = events.mapNotNull { it.file as? GitIndexVirtualFile }.filter {
-      gitRoots.contains(it.root)
-    }.map { it.filePath }
-
-    LOG.debug("Mark dirty", files, roots)
-    dirtyScopeManager.filesDirty(emptyList(), roots)
-    dirtyScopeManager.filePathsDirty(files, emptyList())
+    if (pathsToDirty.isNotEmpty()) {
+      LOG.debug("Mark dirty on index VFiles save: ", pathsToDirty)
+      VcsDirtyScopeManager.getInstance(project).filePathsDirty(pathsToDirty, emptyList())
+    }
   }
 
   private fun doUpdateState(repository: GitRepository) {
@@ -147,7 +167,7 @@ class GitStageTracker(val project: Project) : Disposable {
       }
     }
 
-    val newRootState = RootState(repository.root, status)
+    val newRootState = RootState(repository.root, true, status)
 
     runInEdt(this) {
       update { it.updatedWith(repository.root, newRootState) }
@@ -177,30 +197,39 @@ class GitStageTracker(val project: Project) : Disposable {
     fun getInstance(project: Project) = project.getService(GitStageTracker::class.java)
   }
 
-  data class RootState(val root: VirtualFile,
+  data class RootState(val root: VirtualFile, val initialized: Boolean,
                        val statuses: Map<FilePath, GitFileStatus>) {
     fun hasStagedFiles(): Boolean {
       return statuses.values.any { line -> line.getStagedStatus() != null }
+    }
+
+    fun hasChangedFiles(): Boolean {
+      return statuses.values.any { line -> line.isTracked() }
     }
 
     fun isEmpty(): Boolean {
       return statuses.isEmpty()
     }
 
+    @NonNls
     override fun toString(): String {
-      return "RootState(root=${root.name}, statuses=${statuses.toShortenedString(",\n")})"
+      return "RootState(root=${root.name}, statuses=${statuses.toShortenedLogString(",\n")})"
     }
 
     companion object {
-      fun empty(root: VirtualFile) = RootState(root, emptyMap())
+      fun empty(root: VirtualFile) = RootState(root, false, emptyMap())
     }
   }
 
   data class State(val rootStates: Map<VirtualFile, RootState>) {
     val stagedRoots: Set<VirtualFile>
       get() = rootStates.filterValues(RootState::hasStagedFiles).keys
+    val changedRoots: Set<VirtualFile>
+      get() = rootStates.filterValues(RootState::hasChangedFiles).keys
 
     fun hasStagedRoots(): Boolean = rootStates.any { it.value.hasStagedFiles() }
+
+    fun hasChangedRoots(): Boolean = rootStates.any { it.value.hasChangedFiles() }
 
     internal fun updatedWith(root: VirtualFile, newState: RootState): State {
       val result = mutableMapOf<VirtualFile, RootState>()
@@ -209,8 +238,9 @@ class GitStageTracker(val project: Project) : Disposable {
       return State(result)
     }
 
+    @NonNls
     override fun toString(): String {
-      return "State(${rootStates.toShortenedString(separator = "\n") { "${it.key.name}=${it.value}" }}"
+      return "State(${rootStates.toShortenedLogString(separator = "\n") { "${it.key.name}=${it.value}" }}"
     }
 
     companion object {
@@ -243,5 +273,6 @@ fun GitStageTracker.status(file: VirtualFile): GitFileStatus? {
     return ignoredStatus(filePath)
   }
   val rootState = state.rootStates[root] ?: return null
+  if (!rootState.initialized) return null
   return rootState.statuses[filePath] ?: return notChangedStatus(filePath)
 }

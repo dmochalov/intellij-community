@@ -42,6 +42,7 @@ import java.util.List;
  *
  * @apiUse DiffRequestExample
  */
+@SuppressWarnings("HardCodedStringLiteral")
 final class DiffHttpService extends RestService {
   @NotNull
   @Override
@@ -106,7 +107,11 @@ final class DiffHttpService extends RestService {
       if (finalFocused) {
         ProjectUtil.focusProjectWindow(finalProject, true);
       }
-      DiffManager.getInstance().showDiff(finalProject, new SimpleDiffRequest(StringUtil.notNullize(finalWindowTitle, "Diff Service"), contents, titles));
+      DiffManager.getInstance().showDiff(finalProject, new SimpleDiffRequest(
+        StringUtil.notNullize(finalWindowTitle, BuiltInServerBundle.message("dialog.title.diff.service")),
+        contents,
+        titles
+      ));
     }, project.getDisposed());
 
     sendOk(request, context);

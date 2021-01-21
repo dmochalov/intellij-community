@@ -53,7 +53,7 @@ public class PyPIPackageUtil {
    * @see #getPackageVersionsFromAdditionalRepositories(String)
    */
   private final LoadingCache<String, List<String>> myAdditionalPackagesReleases = CacheBuilder.newBuilder().build(
-    new CacheLoader<String, List<String>>() {
+    new CacheLoader<>() {
       @Override
       public List<String> load(@NotNull String key) throws Exception {
         LOG.debug("Searching for versions of package '" + key + "' in additional repositories");
@@ -81,7 +81,7 @@ public class PyPIPackageUtil {
    * Contains cached packages taken from additional repositories.
    */
   protected final LoadingCache<String, List<RepoPackage>> myAdditionalPackages = CacheBuilder.newBuilder().build(
-    new CacheLoader<String, List<RepoPackage>>() {
+    new CacheLoader<>() {
       @Override
       public List<RepoPackage> load(@NotNull String key) throws Exception {
         return getPackagesFromAdditionalRepository(key);
@@ -94,7 +94,7 @@ public class PyPIPackageUtil {
    * @see #refreshAndGetPackageDetailsFromPyPI(String, boolean)
    */
   private final LoadingCache<String, PackageDetails> myPackageToDetails = CacheBuilder.newBuilder().build(
-    new CacheLoader<String, PackageDetails>() {
+    new CacheLoader<>() {
       @Override
       public PackageDetails load(@NotNull String key) throws Exception {
         LOG.debug("Fetching details for the package '" + key + "' on PyPI");
@@ -203,6 +203,7 @@ public class PyPIPackageUtil {
   private String getLatestPackageVersionFromPyPI(@NotNull Project project, @NotNull String packageName) throws IOException {
     LOG.debug("Requesting the latest PyPI version for the package " + packageName);
     final List<String> versions = getPackageVersionsFromPyPI(packageName, true);
+    if (project.isDisposed()) return null;
     return PyPackagingSettings.getInstance(project).selectLatestVersion(versions);
   }
 
@@ -235,7 +236,7 @@ public class PyPIPackageUtil {
   @Nullable
   public String fetchLatestPackageVersion(@NotNull Project project, @NotNull String packageName) throws IOException {
     String version = null;
-    // Package is on PyPI not a, say, some system package on Ubuntu
+    // Package is on PyPI, not, say, some system package on Ubuntu
     if (PyPIPackageCache.getInstance().containsPackage(packageName)) {
       version = getLatestPackageVersionFromPyPI(project, packageName);
     }

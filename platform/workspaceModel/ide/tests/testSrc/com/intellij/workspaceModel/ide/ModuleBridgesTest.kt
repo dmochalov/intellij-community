@@ -3,29 +3,23 @@ package com.intellij.workspaceModel.ide
 
 import com.intellij.ProjectTopics.PROJECT_ROOTS
 import com.intellij.configurationStore.StoreUtil
-import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.invokeAndWaitIfNeeded
 import com.intellij.openapi.application.runWriteActionAndWait
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.module.EmptyModuleType
-import com.intellij.openapi.module.ModuleManager
-import com.intellij.openapi.module.ModuleType
-import com.intellij.openapi.module.ModuleTypeId
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.module.*
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.rootManager
-import com.intellij.openapi.rd.attach
 import com.intellij.openapi.roots.*
 import com.intellij.openapi.roots.impl.OrderEntryUtil
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar
-import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.util.io.FileUtil
+import com.intellij.openapi.util.io.IoTestUtil
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VfsUtilCore
-import com.intellij.testFramework.ApplicationRule
-import com.intellij.testFramework.DisposableRule
-import com.intellij.testFramework.PlatformTestUtil
-import com.intellij.testFramework.TemporaryDirectory
+import com.intellij.testFramework.*
 import com.intellij.testFramework.UsefulTestCase.assertEmpty
 import com.intellij.testFramework.UsefulTestCase.assertSameElements
 import com.intellij.util.io.write
@@ -33,13 +27,16 @@ import com.intellij.util.ui.UIUtil
 import com.intellij.workspaceModel.ide.impl.WorkspaceModelInitialTestContent
 import com.intellij.workspaceModel.ide.impl.jps.serialization.JpsProjectEntitiesLoader
 import com.intellij.workspaceModel.ide.impl.jps.serialization.toConfigLocation
+import com.intellij.workspaceModel.ide.impl.legacyBridge.module.ModuleManagerComponentBridge
 import com.intellij.workspaceModel.ide.impl.legacyBridge.module.ModuleManagerComponentBridge.Companion.findModuleEntity
+import com.intellij.workspaceModel.ide.impl.legacyBridge.module.roots.ModuleRootComponentBridge
 import com.intellij.workspaceModel.ide.impl.toVirtualFileUrl
 import com.intellij.workspaceModel.ide.legacyBridge.ModuleBridge
-import com.intellij.workspaceModel.storage.VirtualFileUrlManager
 import com.intellij.workspaceModel.storage.WorkspaceEntityStorageBuilder
 import com.intellij.workspaceModel.storage.bridgeEntities.*
-import com.intellij.workspaceModel.storage.toVirtualFileUrl
+import com.intellij.workspaceModel.storage.impl.url.toVirtualFileUrl
+import com.intellij.workspaceModel.storage.toBuilder
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import org.jetbrains.jps.model.java.LanguageLevel
 import org.jetbrains.jps.model.module.UnknownSourceRootType
 import org.jetbrains.jps.model.module.UnknownSourceRootTypeProperties
@@ -50,7 +47,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.io.PrintStream
 import java.nio.file.Files
+import kotlin.random.Random
 
 class ModuleBridgesTest {
   @Rule
@@ -92,7 +91,7 @@ class ModuleBridgesTest {
 
       WorkspaceModel.getInstance(project).updateProjectModel {
         val moduleEntity = it.findModuleEntity(module)!!
-        it.addContentRootEntity(contentRootUrl, emptyList(), emptyList(), moduleEntity, moduleEntity.entitySource)
+        it.addContentRootEntity(contentRootUrl, emptyList(), emptyList(), moduleEntity)
       }
 
       assertArrayEquals(
@@ -164,9 +163,9 @@ class ModuleBridgesTest {
       assertSame(module, moduleManager.findModuleByName(newModuleName))
       assertEquals(newModuleName, module.name)
 
-      val moduleFile = module.moduleFile?.toVirtualFileUrl(virtualFileManager)?.file
-      assertNotNull(moduleFile)
-      assertEquals(newNameFile, moduleFile)
+      val moduleFilePath = module.moduleFile?.toVirtualFileUrl(virtualFileManager)?.presentableUrl
+      assertNotNull(moduleFilePath)
+      assertEquals(newNameFile, File(moduleFilePath!!))
       assertTrue(module.getModuleNioFile().toString().endsWith(newNameFile.name))
 
       StoreUtil.saveDocumentsAndProjectSettings(project)
@@ -235,6 +234,7 @@ class ModuleBridgesTest {
   @Test
   fun `test remove and add module with the same name`() =
     WriteCommandAction.runWriteCommandAction(project) {
+      startLog()
       val moduleManager = ModuleManager.getInstance(project)
       for (module in moduleManager.modules) {
         moduleManager.disposeModule(module)
@@ -257,6 +257,9 @@ class ModuleBridgesTest {
 
       assertEquals(1, moduleManager.modules.size)
       assertNotNull(moduleManager.findModuleByName("name"))
+      val caughtLogs = catchLog()
+      // Trying to assert that a particular warning isn't presented in logs
+      assertFalse("name.iml does not exist" in caughtLogs)
     }
 
   @Test
@@ -325,8 +328,7 @@ class ModuleBridgesTest {
       val virtualFileUrl = dir.toVirtualFileUrl(virtualFileManager)
       projectModel.updateProjectModel {
         val moduleEntity = it.addModuleEntity("name", emptyList(), JpsFileEntitySource.FileInDirectory(moduleDirUrl, projectLocation))
-        val contentRootEntity = it.addContentRootEntity(virtualFileUrl, emptyList(), emptyList(), moduleEntity,
-                                                        moduleEntity.entitySource)
+        val contentRootEntity = it.addContentRootEntity(virtualFileUrl, emptyList(), emptyList(), moduleEntity)
         it.addSourceRootEntity(contentRootEntity, virtualFileUrl, false, "",
                                JpsFileEntitySource.FileInDirectory(moduleDirUrl, projectLocation))
       }
@@ -394,6 +396,31 @@ class ModuleBridgesTest {
   }
 
   @Test
+  fun `test module extension saves correctly if custom options exist`() {
+    val optionValue = "foo"
+    val module = runWriteActionAndWait {
+      ModuleManager.getInstance(project).newModule(File(project.basePath, "test.iml").path, ModuleType.EMPTY.id)
+    }
+    module.setOption(Module.ELEMENT_TYPE, optionValue)
+
+    val moduleRootManager = ModuleRootManager.getInstance(module)
+    var modifiableModel = moduleRootManager.modifiableModel
+    var moduleExtension = modifiableModel.getModuleExtension(TestModuleExtension::class.java)
+    moduleExtension.languageLevel = LanguageLevel.JDK_1_5
+    runWriteActionAndWait { modifiableModel.commit() }
+
+    assertEquals(LanguageLevel.JDK_1_5, moduleRootManager.getModuleExtension(TestModuleExtension::class.java).languageLevel)
+
+    modifiableModel = moduleRootManager.modifiableModel
+    moduleExtension = modifiableModel.getModuleExtension(TestModuleExtension::class.java)
+    moduleExtension.languageLevel = null
+    runWriteActionAndWait { modifiableModel.commit() }
+
+    assertEquals(optionValue, module.getOptionValue(Module.ELEMENT_TYPE))
+    assertNull(moduleRootManager.getModuleExtension(TestModuleExtension::class.java).languageLevel)
+  }
+
+  @Test
   fun `test module libraries loaded from cache`() {
     val builder = WorkspaceEntityStorageBuilder.create()
 
@@ -406,7 +433,7 @@ class ModuleBridgesTest {
     val moduleLibraryEntity = builder.addLibraryEntity(
       name = "some",
       tableId = LibraryTableId.ModuleLibraryTableId(moduleEntity.persistentId()),
-      roots = listOf(LibraryRoot(tempDir.toVirtualFileUrl(virtualFileManager), LibraryRootTypeId("CLASSES"), LibraryRoot.InclusionOptions.ROOT_ITSELF)),
+      roots = listOf(LibraryRoot(tempDir.toVirtualFileUrl(virtualFileManager), LibraryRootTypeId.COMPILED)),
       excludedRoots = emptyList(),
       source = source
     )
@@ -417,10 +444,7 @@ class ModuleBridgesTest {
     }
 
     WorkspaceModelInitialTestContent.withInitialContent(builder.toStorage()) {
-      val project = PlatformTestUtil.loadAndOpenProject(iprFile)
-      Disposer.register(disposableRule.disposable, Disposable {
-        PlatformTestUtil.forceCloseProjectWithoutSaving(project)
-      })
+      val project = PlatformTestUtil.loadAndOpenProject(iprFile, disposableRule.disposable)
 
       val module = ModuleManager.getInstance(project).findModuleByName("test")
 
@@ -447,16 +471,13 @@ class ModuleBridgesTest {
     builder.addLibraryEntity(
       name = "my_lib",
       tableId = LibraryTableId.ProjectLibraryTableId,
-      roots = listOf(LibraryRoot(jarUrl, LibraryRootTypeId("CLASSES"), LibraryRoot.InclusionOptions.ROOT_ITSELF)),
+      roots = listOf(LibraryRoot(jarUrl, LibraryRootTypeId.COMPILED)),
       excludedRoots = emptyList(),
-      source = JpsProjectEntitiesLoader.createJpsEntitySourceForProjectLibrary(toConfigLocation(iprFile, virtualFileManager))
+      source = JpsProjectEntitiesLoader.createJpsEntitySourceForProjectLibrary(toConfigLocation(iprFile, virtualFileManager), virtualFileManager)
     )
 
     WorkspaceModelInitialTestContent.withInitialContent(builder.toStorage()) {
-      val project = PlatformTestUtil.loadAndOpenProject(iprFile)
-      Disposer.register(disposableRule.disposable, Disposable {
-        PlatformTestUtil.forceCloseProjectWithoutSaving(project)
-      })
+      val project = PlatformTestUtil.loadAndOpenProject(iprFile, disposableRule.disposable)
 
       val projectLibraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project)
       invokeAndWaitIfNeeded { UIUtil.dispatchAllInvocationEvents() }
@@ -585,6 +606,7 @@ class ModuleBridgesTest {
 
   @Test
   fun `test remove module removes source roots`() = WriteCommandAction.runWriteCommandAction(project) {
+    startLog()
     val moduleName = "build"
     val antLibraryFolder = "ant-lib"
 
@@ -610,6 +632,10 @@ class ModuleBridgesTest {
     ModuleManager.getInstance(project).disposeModule(module)
     assertEmpty(entityStore.current.entities(ContentRootEntity::class.java).toList())
     assertEmpty(entityStore.current.entities(JavaSourceRootEntity::class.java).toList())
+
+    val caughtLogs = catchLog()
+    // Trying to assert that a particular warning isn't presented in logs
+    assertFalse("name.iml does not exist" in caughtLogs)
   }
 
   @Test
@@ -646,6 +672,34 @@ class ModuleBridgesTest {
   }
 
   @Test
+  fun `test content root equality at case insensitive FS`() {
+    IoTestUtil.assumeCaseInsensitiveFS()
+    WriteCommandAction.runWriteCommandAction(project) {
+      val moduleName = "build"
+      val contentRoot = "test"
+      val tempDir = temporaryDirectoryRule.newPath().toFile()
+      val contentRootFolder = File(tempDir, StringUtil.capitalize(contentRoot))
+
+      val moduleFile = File(project.basePath, "$moduleName.iml")
+      val module = ModuleManager.getInstance(project).modifiableModel.let { moduleModel ->
+        val module = moduleModel.newModule(moduleFile.path, EmptyModuleType.getInstance().id) as ModuleBridge
+        moduleModel.commit()
+        module
+      }
+
+      ModuleRootModificationUtil.updateModel(module) { model ->
+        FileUtil.createDirectory(contentRootFolder)
+        val url = VfsUtilCore.pathToUrl(FileUtil.toSystemIndependentName(File(tempDir, contentRoot).path))
+        model.addContentEntry(url)
+      }
+
+      val rootManager = ModuleRootManager.getInstance(module)
+      assertEquals(1, rootManager.contentRootUrls.size)
+      assertEquals(VfsUtilCore.pathToUrl(FileUtil.toSystemIndependentName(contentRootFolder.path)), rootManager.contentRootUrls[0])
+    }
+  }
+
+  @Test
   fun `test disposed module doesn't appear in rootsChanged`() = WriteCommandAction.runWriteCommandAction(project) {
     val moduleName = "build"
     val moduleFile = File(project.basePath, "$moduleName.iml")
@@ -664,13 +718,102 @@ class ModuleBridgesTest {
 
     ModuleManager.getInstance(project).disposeModule(module)
   }
+
+  @Test
+  fun `creating module from modifiable model and removing it`() =
+    WriteCommandAction.runWriteCommandAction(project) {
+      val moduleManager = ModuleManager.getInstance(project) as ModuleManagerComponentBridge
+
+      moduleManager.modifiableModel.let { modifiableModel ->
+        modifiableModel.newModule(File(project.basePath, "xxx.iml").path, EmptyModuleType.getInstance().id) as ModuleBridge
+        modifiableModel.commit()
+      }
+
+      moduleManager.getModifiableModel(WorkspaceModel.getInstance(project).entityStorage.current.toBuilder()).let { modifiableModel ->
+        val existingModule = modifiableModel.modules.single { it.name == "xxx" }
+        modifiableModel.disposeModule(existingModule)
+        val module = modifiableModel.newModule(File(project.basePath, "xxx.iml").path, EmptyModuleType.getInstance().id) as ModuleBridge
+        // No commit
+
+        // This is an actual code that was broken
+        //   It tests that model listener inside of ModuleBridgeImpl correctly converts an instanse of the storage inside of it
+        WorkspaceModel.getInstance(project).updateProjectModel {
+          val moduleEntity: ModuleEntity = it.entities(ModuleEntity::class.java).single()
+          it.removeEntity(moduleEntity)
+        }
+
+        assertEquals("xxx", module.name)
+
+        modifiableModel.commit()
+      }
+    }
+
+  @Test
+  fun `remove module without removing module library`() = WriteCommandAction.runWriteCommandAction(project) {
+    val moduleManager = ModuleManager.getInstance(project) as ModuleManagerComponentBridge
+
+    val module = moduleManager.modifiableModel.let { modifiableModel ->
+      val module = modifiableModel.newModule(File(project.basePath, "xxx.iml").path, EmptyModuleType.getInstance().id)
+      modifiableModel.commit()
+      module as ModuleBridge
+    }
+
+    val componentBridge = ModuleRootComponentBridge.getInstance(module)
+    val componentModifiableModel = componentBridge.modifiableModel
+    val modifiableModel = componentModifiableModel.moduleLibraryTable.modifiableModel
+    modifiableModel.createLibrary("myNewLibrary")
+    modifiableModel.commit()
+    componentModifiableModel.commit()
+
+    val currentStore = WorkspaceModel.getInstance(project).entityStorage.current
+    UsefulTestCase.assertOneElement(currentStore.entities(ModuleEntity::class.java).toList())
+    UsefulTestCase.assertOneElement(currentStore.entities(LibraryEntity::class.java).toList())
+
+    WorkspaceModel.getInstance(project).updateProjectModel {
+      val moduleEntity = it.entities(ModuleEntity::class.java).single()
+      it.removeEntity(moduleEntity)
+    }
+
+    val updatedStore = WorkspaceModel.getInstance(project).entityStorage.current
+    assertEmpty(updatedStore.entities(ModuleEntity::class.java).toList())
+    assertEmpty(updatedStore.entities(LibraryEntity::class.java).toList())
+  }
+
+  class OutCatcher(printStream: PrintStream) : PrintStream(printStream) {
+    var catcher = ""
+    override fun println(x: String?) {
+      catcher += "$x\n"
+    }
+  }
+
+  companion object {
+    val log = logger<ModuleBridgesTest>()
+    var logLine = ""
+    val rand = Random(0)
+
+    fun startLog() {
+      logLine = "Start logging " + rand.nextInt()
+      log.info(logLine)
+    }
+
+    fun catchLog(): String {
+      return try {
+        val outCatcher = OutCatcher(System.out)
+        System.setOut(outCatcher)
+        TestLoggerFactory.dumpLogToStdout(logLine)
+        outCatcher.catcher
+      }
+      finally {
+        System.setOut(System.out)
+      }
+    }
+  }
 }
 
 internal fun createEmptyTestProject(temporaryDirectory: TemporaryDirectory, disposableRule: DisposableRule): Project {
   val projectDir = temporaryDirectory.newPath("project")
   val project = WorkspaceModelInitialTestContent.withInitialContent(WorkspaceEntityStorageBuilder.create()) {
-    PlatformTestUtil.loadAndOpenProject(projectDir.resolve("testProject.ipr"))
+    PlatformTestUtil.loadAndOpenProject(projectDir.resolve("testProject.ipr"), disposableRule.disposable)
   }
-  disposableRule.disposable.attach { PlatformTestUtil.forceCloseProjectWithoutSaving(project) }
   return project
 }

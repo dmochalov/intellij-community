@@ -1,10 +1,13 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.uploader;
 
-import com.intellij.internal.statistic.connect.StatisticsResult;
+import com.intellij.internal.statistic.eventLog.connection.EventLogConnectionSettings;
+import com.intellij.internal.statistic.eventLog.connection.EventLogSendListener;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsResult;
 import com.intellij.internal.statistic.eventLog.*;
 import com.intellij.internal.statistic.eventLog.config.EventLogExternalApplicationInfo;
 import com.intellij.internal.statistic.eventLog.config.EventLogExternalRecorderConfig;
+import com.intellij.internal.statistic.eventLog.connection.EventLogStatisticsService;
 import com.intellij.internal.statistic.uploader.events.ExternalEventsLogger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -20,13 +23,22 @@ public final class EventLogUploader {
   private static final int WAIT_FOR_IDE_MS = 2000;
 
   public static void main(String[] args) {
-    execute(args);
+    DataCollectorDebugLogger logger = new ExternalDataCollectorLogger();
+    ExternalEventsLogger eventsLogger = new ExternalEventsLogger();
+    try {
+      execute(args, logger, eventsLogger);
+    }
+    catch (Throwable e) {
+      logger.warn("Failed uploading logs", e);
+      eventsLogger.logSendingLogsFinished("EXCEPTION_OCCURRED");
+    }
   }
 
-  private static void execute(String[] args) {
-    ExternalEventsLogger eventsLogger = new ExternalEventsLogger();
-    DataCollectorDebugLogger logger = new ExternalDataCollectorLogger();
+  private static void execute(String[] args,
+                              DataCollectorDebugLogger logger,
+                              ExternalEventsLogger eventsLogger) {
     logger.info("Process started with '" + String.join(" ", args) + "'");
+    logger.info("Classpath:" + System.getProperty("java.class.path"));
 
     eventsLogger.logSendingLogsStarted();
     if (args.length == 0) {
@@ -76,8 +88,10 @@ public final class EventLogUploader {
     try {
       EventLogStatisticsService service = new EventLogStatisticsService(device, recorder, appInfo, new EventLogSendListener() {
         @Override
-        public void onLogsSend(@NotNull List<String> successfullySentFiles, int failed, int totalLocalFiles) {
-          eventsLogger.logSendingLogsSucceed(successfullySentFiles, failed, totalLocalFiles);
+        public void onLogsSend(@NotNull List<String> successfullySentFiles,
+                               @NotNull List<Integer> errors,
+                               int totalLocalFiles) {
+          eventsLogger.logSendingLogsSucceed(successfullySentFiles, errors, totalLocalFiles);
         }
       });
 

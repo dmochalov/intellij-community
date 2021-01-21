@@ -7,14 +7,13 @@ import com.jetbrains.rd.util.lifetime.Lifetime;
 import com.jetbrains.rd.util.lifetime.LifetimeDefinition;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
-import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.ApiStatus;
 
 public final class DisposableExKt {
   private DisposableExKt() {}
 
   /**
-   * @deprecated Use version from `LifetimeDisposableEx`
+   * @deprecated Use {@link com.intellij.openapi.rd.LifetimeDisposableExKt#defineNestedLifetime(Disposable)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
   @Deprecated
@@ -23,7 +22,7 @@ public final class DisposableExKt {
   }
 
   /**
-   * @deprecated Use version from `LifetimeDisposableEx`
+   * @deprecated Use {@link com.intellij.openapi.rd.LifetimeDisposableExKt#createLifetime(Disposable)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
   @Deprecated
@@ -32,25 +31,7 @@ public final class DisposableExKt {
   }
 
   /**
-   * @deprecated Use version from `LifetimeDisposableEx`
-   */
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  @Deprecated
-  public static void doIfAlive(Disposable disposable, Function1<Lifetime, Unit> action) {
-    DisposableEx.doIfAlive(disposable, action);
-  }
-
-  /**
-   * @deprecated Use version from `LifetimeDisposableEx`
-   */
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  @Deprecated
-  public static Disposable createNestedDisposable(Lifetime lifetime) {
-    return createNestedDisposable(lifetime, "lifetimeToDisposable");
-  }
-
-  /**
-   * @deprecated Use version from `LifetimeDisposableEx`
+   * @deprecated Use {@link com.intellij.openapi.rd.LifetimeDisposableExKt#createNestedDisposable(Lifetime, String)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
   @Deprecated
@@ -59,7 +40,7 @@ public final class DisposableExKt {
   }
 
   /**
-   * @deprecated Use version from `LifetimeDisposableEx`
+   * @deprecated Use {@link com.intellij.openapi.rd.LifetimeDisposableExKt#createNestedDisposable(Lifetime, String)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
   @Deprecated
@@ -70,7 +51,7 @@ public final class DisposableExKt {
   }
 
   /**
-   * @deprecated Use version from `DisposableEx`
+   * @deprecated Use {@link Disposer#register(Disposable, Disposable)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
   @Deprecated
@@ -79,7 +60,7 @@ public final class DisposableExKt {
   }
 
   /**
-   * @deprecated Use version from `DisposableEx`
+   * @deprecated Use {@link DisposableEx#attach(Disposable, Function0)}
    */
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
   @Deprecated

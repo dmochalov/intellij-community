@@ -5,6 +5,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.Computable;
 import com.intellij.psi.*;
+import com.intellij.psi.augment.PsiExtensionMethod;
 import com.intellij.psi.impl.light.LightRecordCanonicalConstructor;
 import com.intellij.psi.impl.light.LightRecordMember;
 import com.intellij.psi.javadoc.PsiDocTag;
@@ -151,6 +152,10 @@ public class JavaTargetElementEvaluator extends TargetElementEvaluatorEx2 implem
         }
       }
 
+      if (refElement instanceof PsiExtensionMethod) {
+        refElement = ((PsiExtensionMethod)refElement).getTargetMethod();
+      }
+
       if (refElement instanceof LightRecordMember) {
         return ((LightRecordMember)refElement).getRecordComponent();
       }
@@ -275,7 +280,7 @@ public class JavaTargetElementEvaluator extends TargetElementEvaluatorEx2 implem
   }
 
   private static PsiClass @Nullable [] getClassesWithMember(final PsiReference reference, final PsiMember member) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<PsiClass[]>() {
+    return ApplicationManager.getApplication().runReadAction(new Computable<>() {
       @Override
       public PsiClass[] compute() {
         PsiClass containingClass = member.getContainingClass();
@@ -294,7 +299,8 @@ public class JavaTargetElementEvaluator extends TargetElementEvaluatorEx2 implem
             if (resolve instanceof PsiClass) {
               containingClass = (PsiClass)resolve;
             }
-          } else {
+          }
+          else {
             psiClass = PsiTreeUtil.getParentOfType((PsiReferenceExpression)reference, PsiClass.class);
           }
         }
@@ -324,7 +330,7 @@ public class JavaTargetElementEvaluator extends TargetElementEvaluatorEx2 implem
           if (!processor1.process(psiClass) ||
               !ClassInheritorsSearch.search(containingClass).forEach(new PsiElementFindProcessor<>(psiClass)) ||
               !ClassInheritorsSearch.search(psiClass).forEach(processor1)) {
-            return new PsiClass[] {psiClass};
+            return new PsiClass[]{psiClass};
           }
           psiClass = psiClass.getContainingClass();
         }

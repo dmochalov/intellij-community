@@ -26,6 +26,7 @@ import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.EmptyRunnable;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsContexts.PopupTitle;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.ui.CollectionListModel;
 import com.intellij.ui.ColorUtil;
@@ -39,7 +40,6 @@ import com.intellij.ui.popup.mock.MockConfirmation;
 import com.intellij.ui.popup.tree.TreePopupImpl;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.openapi.util.NlsContexts.PopupTitle;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.tree.TreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -140,7 +140,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
                                       final Runnable onYes,
                                       final Runnable onNo,
                                       int defaultOptionIndex) {
-    final BaseListPopupStep<String> step = new BaseListPopupStep<String>(title, yesText, noText) {
+    final BaseListPopupStep<String> step = new BaseListPopupStep<>(title, yesText, noText) {
       @Override
       public PopupStep onChosen(String selectedValue, final boolean finalChoice) {
         return doFinalStep(selectedValue.equals(yesText) ? onYes : onNo);
@@ -260,7 +260,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
       return presentation;
     }
 
-    private static ListPopupStep<ActionItem> createStep(@PopupTitle String title,
+    protected static ListPopupStep<ActionItem> createStep(@PopupTitle String title,
                                                         @NotNull ActionGroup actionGroup,
                                                         @NotNull DataContext dataContext,
                                                         boolean showNumbers,
@@ -279,20 +279,6 @@ public class PopupFactoryImpl extends JBPopupFactory {
 
       return new ActionPopupStep(items, title, getComponentContextSupplier(component), actionPlace, showNumbers || honorActionMnemonics && itemsHaveMnemonics(items),
                                  preselectActionCondition, autoSelection, showDisabledActions, presentationFactory);
-    }
-
-    /** @deprecated Use {@link ActionPopupStep#createActionItems(ActionGroup, DataContext, boolean, boolean, boolean, boolean, String, PresentationFactory)} instead. */
-    @Deprecated
-    @NotNull
-    public static List<ActionItem> getActionItems(@NotNull ActionGroup actionGroup,
-                                                  @NotNull DataContext dataContext,
-                                                  boolean showNumbers,
-                                                  boolean useAlphaAsNumbers,
-                                                  boolean showDisabledActions,
-                                                  boolean honorActionMnemonics,
-                                                  @Nullable String actionPlace) {
-      return ActionPopupStep.createActionItems(
-        actionGroup, dataContext, showNumbers, useAlphaAsNumbers, showDisabledActions, honorActionMnemonics, actionPlace, null);
     }
 
     @Override
@@ -681,22 +667,24 @@ public class PopupFactoryImpl extends JBPopupFactory {
 
   public static class ActionItem implements ShortcutProvider, AnActionHolder {
     private final AnAction myAction;
-    private String myText;
+    private @NlsContexts.ListItem String myText;
     private final boolean myIsEnabled;
     private final Icon myIcon;
     private final Icon mySelectedIcon;
     private final boolean myPrependWithSeparator;
-    private final String mySeparatorText;
-    private final String myDescription;
+    private final @NlsContexts.Separator String mySeparatorText;
+    private final @NlsContexts.DetailedDescription String myDescription;
+    private final @NlsContexts.ListItem String myValue;
 
     ActionItem(@NotNull AnAction action,
-               @NotNull String text,
-               @Nullable String description,
+               @NotNull @NlsContexts.ListItem String text,
+               @Nullable @NlsContexts.DetailedDescription String description,
                boolean enabled,
                @Nullable Icon icon,
                @Nullable Icon selectedIcon,
                final boolean prependWithSeparator,
-               String separatorText) {
+               @NlsContexts.Separator String separatorText,
+               @Nullable @NlsContexts.ListItem String value) {
       myAction = action;
       myText = text;
       myIsEnabled = enabled;
@@ -705,6 +693,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
       myPrependWithSeparator = prependWithSeparator;
       mySeparatorText = separatorText;
       myDescription = description;
+      myValue = value;
       myAction.getTemplatePresentation().addPropertyChangeListener(evt -> {
         if (evt.getPropertyName() == Presentation.PROP_TEXT) {
           myText = myAction.getTemplatePresentation().getText();
@@ -719,6 +708,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
     }
 
     @NotNull
+    @NlsContexts.ListItem
     public String getText() {
       return myText;
     }
@@ -732,13 +722,13 @@ public class PopupFactoryImpl extends JBPopupFactory {
       return myPrependWithSeparator;
     }
 
-    public String getSeparatorText() {
+    public @NlsContexts.Separator String getSeparatorText() {
       return mySeparatorText;
     }
 
     public boolean isEnabled() { return myIsEnabled; }
 
-    public String getDescription() {
+    public @NlsContexts.DetailedDescription String getDescription() {
       return myDescription;
     }
 
@@ -751,6 +741,10 @@ public class PopupFactoryImpl extends JBPopupFactory {
     @Override
     public String toString() {
       return myText;
+    }
+
+    public @NlsContexts.ListItem String getValue() {
+      return myValue;
     }
   }
 }

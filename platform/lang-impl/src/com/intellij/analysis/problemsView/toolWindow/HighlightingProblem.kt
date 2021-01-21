@@ -6,8 +6,9 @@ import com.intellij.analysis.problemsView.ProblemsProvider
 import com.intellij.codeHighlighting.HighlightDisplayLevel
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.openapi.editor.ex.RangeHighlighterEx
-import com.intellij.openapi.util.text.StringUtil.isLineBreak
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.xml.util.XmlStringUtil.escapeString
 import javax.swing.Icon
 
 internal class HighlightingProblem(
@@ -29,21 +30,46 @@ internal class HighlightingProblem(
 
   override val text: String
     get() {
-      val text = description ?: return "Invalid"
-      val pos = text.indexOfFirst { isLineBreak(it) }
-      return if (pos < 0) text else text.substring(0, pos)
+      val text = info?.description ?: return "Invalid"
+      val pos = text.indexOfFirst { StringUtil.isLineBreak(it) }
+      return if (pos < 0 || text.startsWith("<html>", ignoreCase = true)) text
+      else text.substring(0, pos) + StringUtil.ELLIPSIS
     }
 
   override val description: String?
-    get() = info?.description
+    get() {
+      val text = info?.description ?: return null
+      val pos = text.indexOfFirst { StringUtil.isLineBreak(it) }
+      return if (pos < 0 || text.startsWith("<html>", ignoreCase = true)) null
+      else "<html>" + StringUtil.join(StringUtil.splitByLines(escapeString(text)), "<br/>")
+    }
 
   val severity: Int
     get() = info?.severity?.myVal ?: -1
 
-  override val offset: Int
-    get() = info?.actualStartOffset ?: -1
-
   override fun hashCode() = highlighter.hashCode()
 
   override fun equals(other: Any?) = other is HighlightingProblem && other.highlighter == highlighter
+
+  override val line: Int
+    get() = position?.line ?: -1
+
+  override val column: Int
+    get() = position?.column ?: -1
+
+  private var position: CachedPosition? = null
+    get() = info?.actualStartOffset?.let {
+      if (it != field?.offset) field = computePosition(it)
+      field
+    }
+
+  private fun computePosition(offset: Int): CachedPosition? {
+    if (offset < 0) return null
+    val document = ProblemsView.getDocument(provider.project, file) ?: return null
+    if (offset > document.textLength) return null
+    val line = document.getLineNumber(offset)
+    return CachedPosition(offset, line, offset - document.getLineStartOffset(line))
+  }
+
+  private class CachedPosition(val offset: Int, val line: Int, val column: Int)
 }

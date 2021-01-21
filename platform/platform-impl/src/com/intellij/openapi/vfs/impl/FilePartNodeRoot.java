@@ -1,8 +1,6 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vfs.impl;
 
-import com.intellij.openapi.application.impl.ApplicationInfoImpl;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -22,6 +20,7 @@ import com.intellij.util.PathUtilRt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.io.URLUtil;
+import com.intellij.util.text.FilePathHashingStrategy;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,7 +51,7 @@ final class FilePartNodeRoot extends FilePartNode {
     int nameId = getNameId(file);
     NewVirtualFileSystem fs = (NewVirtualFileSystem)file.getFileSystem();
     VirtualFile parent = getParentThroughJar(file, fs);
-    return matchById(parent, file, nameId, new MultiMap<>(), true, fs);
+    return matchById(parent, file, nameId, new MultiMap<>(), true, true, fs);
   }
 
   /**
@@ -67,9 +66,9 @@ final class FilePartNodeRoot extends FilePartNode {
                                @NotNull List<? super NodeToUpdate> toUpdateNodes,
                                boolean addSubdirectoryPointers,
                                @NotNull NewVirtualFileSystem fs,
+                               boolean addRecursiveDirectoryPointers,
                                @NotNull VFileEvent event) {
-    if (childNameId <= 0) throw new IllegalArgumentException("invalid argument childNameId: "+childNameId);
-    NodeToUpdate toUpdate = matchById(parent, file, childNameId, toFirePointers, false, fs);
+    NodeToUpdate toUpdate = matchById(parent, file, childNameId, toFirePointers, false, addRecursiveDirectoryPointers, fs);
     if (toUpdate != null) {
       toUpdate.myEvent = event;
       toUpdateNodes.add(toUpdate);
@@ -93,12 +92,13 @@ final class FilePartNodeRoot extends FilePartNode {
    * Tries to match the given path (parent, childNameId) with the trie structure of FilePartNodes
    * <p>Recursive nodes (i.e. the nodes containing VFP with recursive==true) will be added to outDirs.
    */
-  @Contract("_, _, _, _, true, _ -> !null")
+  @Contract("_, _, _, _, true, _, _ -> !null")
   private NodeToUpdate matchById(@Nullable VirtualFile parent,
                                  @Nullable VirtualFile file,
                                  int childNameId,
                                  @NotNull MultiMap<? super VirtualFilePointerListener, ? super VirtualFilePointerImpl> toFirePointers,
                                  boolean createIfNotFound,
+                                 boolean addRecursiveDirectoryPtr,
                                  @NotNull NewVirtualFileSystem fs) {
     if (childNameId <= 0 && childNameId != JAR_SEPARATOR_NAME_ID) throw new IllegalArgumentException("invalid argument childNameId: " + childNameId);
     List<VirtualFile> hierarchy = parent == null ? Collections.emptyList() : getHierarchy(parent, fs);
@@ -112,8 +112,10 @@ final class FilePartNodeRoot extends FilePartNode {
         // by some strange accident there is UrlPartNode when the corresponding file is alive and kicking - replace with proper FPPN
         child = child.replaceWithFPPN(part, node);
       }
-      // recursive pointers must be fired even for events deep under them
-      child.addRecursiveDirectoryPtrTo(toFirePointers);
+      if (addRecursiveDirectoryPtr) {
+        // recursive pointers must be fired even for events deep under them
+        child.addRecursiveDirectoryPtrTo(toFirePointers);
+      }
       node = child;
     }
 
@@ -166,7 +168,7 @@ final class FilePartNodeRoot extends FilePartNode {
         if (fsRoot == null) {
           String rootPath = ContainerUtil.getLastItem(names);
           fsRoot = ManagingFS.getInstance().findRoot(rootPath, fs instanceof ArchiveFileSystem ? LocalFileSystem.getInstance() : fs);
-          if (fsRoot != null && !FileUtil.namesEqual(fsRoot.getName(), rootPath)) {
+          if (fsRoot != null && !FilePathHashingStrategy.create(fsRoot.isCaseSensitive()).equals(fsRoot.getName(), rootPath)) {
             // ignore really weird root names, like "/" under windows
             fsRoot = null;
           }
@@ -176,8 +178,22 @@ final class FilePartNodeRoot extends FilePartNode {
       else {
         currentFile = currentFile == null ? null : findChildThroughJar(currentFile, name, currentFS);
       }
+
+      // check that found child name is the same as the one we were looking for
+      // otherwise it may be the 8.3 abbreviation, which we should expand and look again
+      //noinspection UseVirtualFileEquals
+      if (currentFile != null && currentFile != NEVER_TRIED_TO_FIND && !currentFile.getName().equals(name)) {
+        name = currentFile.getName();
+        index = currentNode.binarySearchChildByName(name);
+        if (index >= 0) {
+          parentNode = currentNode;
+          currentNode = currentNode.children[index];
+          continue;
+        }
+      }
+
       FilePartNode child = currentFile == null ? new UrlPartNode(name, myUrl(currentNode.myFileOrUrl), currentFS)
-                                               : new FilePartNode(name.equals(JarFileSystem.JAR_SEPARATOR) ? JAR_SEPARATOR_NAME_ID : getNameId(currentFile), currentFile, currentFS);
+             : new FilePartNode(name.equals(JarFileSystem.JAR_SEPARATOR) ? JAR_SEPARATOR_NAME_ID : getNameId(currentFile), currentFile, currentFS);
 
       currentNode.children = ArrayUtil.insert(currentNode.children, -index - 1, child);
       parentNode = currentNode;
@@ -261,7 +277,7 @@ final class FilePartNodeRoot extends FilePartNode {
   }
 
   void checkConsistency() {
-    if (VirtualFilePointerManagerImpl.IS_UNDER_UNIT_TEST && !ApplicationInfoImpl.isInStressTest()) {
+    if (VirtualFilePointerManagerImpl.shouldCheckConsistency()) {
       doCheckConsistency(null, "", myFS.getProtocol() + URLUtil.SCHEME_SEPARATOR);
     }
   }

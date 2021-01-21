@@ -98,9 +98,7 @@ public class ExecutionToolWindowFixture extends ToolWindowFixture {
     public XDebuggerTreeNode getDebuggerTreeRoot() {
       try {
         JComponent debuggerComponent = getTabComponent("Debugger");
-        if (debuggerComponent != null) {
-          myRobot.click(debuggerComponent);
-        }
+        myRobot.click(debuggerComponent);
         ThreeComponentsSplitter threeComponentsSplitter =
           myRobot.finder().findByType(debuggerComponent, ThreeComponentsSplitter.class, false);
         JComponent innerComponent = threeComponentsSplitter.getInnerComponent();
@@ -128,7 +126,7 @@ public class ExecutionToolWindowFixture extends ToolWindowFixture {
 
       TabLabel tabLabel;
       if (parentComponentType == null) {
-        tabLabel = GuiTestUtil.INSTANCE.waitUntilFound(myRobot, new GenericTypeMatcher<TabLabel>(TabLabel.class) {
+        tabLabel = GuiTestUtil.INSTANCE.waitUntilFound(myRobot, new GenericTypeMatcher<>(TabLabel.class) {
           @Override
           protected boolean isMatching(@NotNull TabLabel component) {
             return component.toString().equals(tabName);
@@ -137,7 +135,7 @@ public class ExecutionToolWindowFixture extends ToolWindowFixture {
       }
       else {
         final JComponent parent = myRobot.finder().findByType(root, parentComponentType, false);
-        tabLabel = GuiTestUtil.INSTANCE.waitUntilFound(myRobot, parent, new GenericTypeMatcher<TabLabel>(TabLabel.class) {
+        tabLabel = GuiTestUtil.INSTANCE.waitUntilFound(myRobot, parent, new GenericTypeMatcher<>(TabLabel.class) {
           @Override
           protected boolean isMatching(@NotNull TabLabel component) {
             return component.getParent() == parent && component.toString().equals(tabName);
@@ -194,7 +192,7 @@ public class ExecutionToolWindowFixture extends ToolWindowFixture {
     public boolean stop() {
       for (final ActionButton button : getToolbarButtons()) {
         final AnAction action = button.getAction();
-        if (action != null && action.getClass().getName().equals("com.intellij.execution.actions.StopAction")) {
+        if (action.getClass().getName().equals("com.intellij.execution.actions.StopAction")) {
           //noinspection ConstantConditions
           boolean enabled = method("isButtonEnabled").withReturnType(boolean.class).in(button).invoke();
           if (enabled) {

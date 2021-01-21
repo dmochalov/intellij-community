@@ -16,6 +16,7 @@ import git4idea.branch.GitBranchUiHandler
 import git4idea.branch.GitBranchWorker
 import git4idea.branch.GitRebaseParams
 import git4idea.config.GitVersionSpecialty
+import git4idea.i18n.GitBundle
 import git4idea.rebase.interactive.dialog.GitInteractiveRebaseDialog
 import git4idea.repo.GitRepository
 import git4idea.test.*
@@ -219,7 +220,7 @@ class GitSingleRepoRebaseTest : GitRebaseBaseTest() {
 
     ensureUpToDateAndRebaseOnMaster()
 
-    assertErrorNotification("Rebase Failed",
+    assertErrorNotification("Rebase failed",
         """
         $UNKNOWN_ERROR_TEXT<br/>
         $LOCAL_CHANGES_WARNING
@@ -427,11 +428,11 @@ class GitSingleRepoRebaseTest : GitRebaseBaseTest() {
     repo.assertRebaseInProgress()
     repo.`assert feature not rebased on master`()
     repo.assertConflict("c.txt")
-    assertErrorNotification("Rebase Abort Failed",
-        """
-        unknown error<br/>
-        $LOCAL_CHANGES_WARNING
-        """)
+    assertErrorNotification(GitBundle.message("rebase.abort.notification.failed.title"),
+                            """
+                            unknown error<br/>
+                            $LOCAL_CHANGES_WARNING
+                            """)
   }
 
   // git rebase --continue should be either called from a commit dialog, either from the GitRebaseProcess.
@@ -553,7 +554,7 @@ class GitSingleRepoRebaseTest : GitRebaseBaseTest() {
 
     rebaseInteractively()
 
-    assertSuccessfulNotification("Rebase Stopped for Editing", "")
+    assertSuccessfulNotification("Rebase stopped for editing", "")
     assertEquals("The repository must be in the 'SUSPENDED' state", repo, repositoryManager.ongoingRebaseSpec!!.ongoingRebase)
 
     GitRebaseUtils.continueRebase(project)

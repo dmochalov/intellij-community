@@ -29,9 +29,8 @@ final class LightEditDropHandler implements EditorDropHandler {
     for (File file : fileList) {
       VirtualFile obj = VfsUtil.findFileByIoFile(file, true);
       if (obj != null) {
-        if (LightEditService.getInstance().openFile(obj)) {
-          LightEditFeatureUsagesUtil.logFileOpen(LightEditFeatureUsagesUtil.OpenPlace.DragAndDrop);
-        }
+        LightEditService.getInstance().openFile(obj);
+        LightEditFeatureUsagesUtil.logFileOpen(project, LightEditFeatureUsagesUtil.OpenPlace.DragAndDrop);
       }
     }
   }

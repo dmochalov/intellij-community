@@ -9,6 +9,8 @@ import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.changes.shelf.ShelveChangesManager;
 import com.intellij.openapi.vcs.changes.shelf.ShelvedBinaryFile;
@@ -17,8 +19,9 @@ import com.intellij.openapi.vcs.changes.shelf.ShelvedChangeList;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
-import org.jetbrains.annotations.CalledInAwt;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,8 +40,8 @@ public final class VcsShelveUtils {
                                       final ShelvedChangeList shelvedChangeList,
                                       @Nullable final LocalChangeList targetChangeList,
                                       final ShelveChangesManager shelveManager,
-                                      @Nullable final String leftConflictTitle,
-                                      @Nullable final String rightConflictTitle) {
+                                      @NlsContexts.Label @Nullable final String leftConflictTitle,
+                                      @NlsContexts.Label @Nullable final String rightConflictTitle) {
     VirtualFile baseDir = project.getBaseDir();
     assert baseDir != null;
     final String projectPath = baseDir.getPath() + "/";
@@ -59,7 +62,7 @@ public final class VcsShelveUtils {
     ApplicationManager.getApplication().invokeAndWait(() -> markUnshelvedFilesNonUndoable(project, changes));
   }
 
-  @CalledInAwt
+  @RequiresEdt
   private static void markUnshelvedFilesNonUndoable(@NotNull final Project project,
                                                     @NotNull List<? extends ShelvedChange> changes) {
     final UndoManagerImpl undoManager = (UndoManagerImpl)UndoManager.getInstance(project);
@@ -100,34 +103,24 @@ public final class VcsShelveUtils {
   }
 
   /**
-   * Shelve changes
-   *
-   *
    * @param project       the context project
-   * @param shelveManager the shelve manager
    * @param changes       the changes to process
    * @param description   the description of for the shelve
-   * @param exceptions    the generated exceptions
-   * @param rollback
    * @return created shelved change list or null in case failure
    */
   @Nullable
-  public static ShelvedChangeList shelveChanges(final Project project, final ShelveChangesManager shelveManager, Collection<? extends Change> changes,
-                                                final String description,
-                                                final List<? super VcsException> exceptions, boolean rollback, boolean markToBeDeleted) {
+  public static ShelvedChangeList shelveChanges(final Project project,
+                                                Collection<? extends Change> changes,
+                                                final @Nls String description,
+                                                boolean rollback,
+                                                boolean markToBeDeleted) throws VcsException {
     try {
-      ShelvedChangeList shelve = shelveManager.shelveChanges(changes, description, rollback, markToBeDeleted);
+      ShelvedChangeList shelve = ShelveChangesManager.getInstance(project).shelveChanges(changes, description, rollback, markToBeDeleted);
       BackgroundTaskUtil.syncPublisher(project, ShelveChangesManager.SHELF_TOPIC).stateChanged(new ChangeEvent(VcsShelveUtils.class));
       return shelve;
     }
-
     catch (IOException e) {
-      exceptions.add(new VcsException("Shelving changes failed: " + description, e));
-      return null;
-    }
-    catch (VcsException e) {
-      exceptions.add(e);
-      return null;
+      throw new VcsException(VcsBundle.message("changes.error.shelving.changes.failed", description), e);
     }
   }
 }

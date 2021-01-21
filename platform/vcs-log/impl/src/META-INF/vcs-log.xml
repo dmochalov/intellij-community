@@ -5,12 +5,16 @@
     <extensionPoint name="logHighlighterFactory" interface="com.intellij.vcs.log.ui.highlighters.VcsLogHighlighterFactory" dynamic="true"/>
     <extensionPoint name="customVcsLogUiFactoryProvider" interface="com.intellij.vcs.log.impl.CustomVcsLogUiFactoryProvider"
                     area="IDEA_PROJECT" dynamic="true"/>
+    <extensionPoint name="vcsLogCustomColumn"
+                    interface="com.intellij.vcs.log.ui.table.column.VcsLogCustomColumn"
+                    dynamic="true"/>
   </extensionPoints>
 
   <extensions defaultExtensionNs="com.intellij">
     <changesViewContent tabName="Log"
                         className="com.intellij.vcs.log.impl.VcsLogContentProvider"
                         predicateClassName="com.intellij.vcs.log.impl.VcsLogContentProvider$VcsLogVisibilityPredicate"
+                        preloaderClassName="com.intellij.vcs.log.impl.VcsLogContentProvider$VcsLogContentPreloader"
                         displayNameSupplierClassName="com.intellij.vcs.log.impl.VcsLogContentProvider$DisplayNameSupplier"/>
 
     <applicationService serviceImplementation="com.intellij.vcs.log.impl.VcsLogApplicationSettings"/>
@@ -33,7 +37,7 @@
     <statistics.projectUsagesCollector implementation="com.intellij.vcs.log.statistics.VcsLogIndexProjectStatisticsCollector"/>
     <statistics.applicationUsagesCollector implementation="com.intellij.vcs.log.statistics.VcsLogIndexApplicationStatisticsCollector"/>
 
-    <statistics.counterUsagesCollector groupId="vcs.log.trigger" version="2"/>
+    <statistics.counterUsagesCollector groupId="vcs.log.trigger" version="3"/>
     <statistics.validation.customValidationRule implementation="com.intellij.vcs.log.statistics.VcsLogTriggerEventIdValidator"/>
     <statistics.validation.customValidationRule implementation="com.intellij.vcs.log.statistics.VcsLogFilterNameValidator"/>
     <statistics.validation.customValidationRule implementation="com.intellij.vcs.log.statistics.VcsLogHighlighterIdValidator"/>
@@ -74,9 +78,10 @@
 
     <actionPromoter implementation="com.intellij.vcs.log.ui.actions.VcsLogActionPromoter"/>
 
+    <virtualFileSystem key="vcs-log" implementationClass="com.intellij.vcs.log.ui.editor.VcsLogVirtualFileSystem"/>
     <fileIconProvider implementation="com.intellij.vcs.log.ui.editor.VcsLogIconProvider"/>
     <fileEditorProvider implementation="com.intellij.vcs.log.ui.editor.VcsLogEditorProvider"/>
-    <editorTabTitleProvider implementation="com.intellij.vcs.log.ui.editor.VcsLogEditorTabTitleProvider"/>
+    <editorTabTitleProvider implementation="com.intellij.vcs.log.ui.editor.DefaultVcsLogFileTabTitleProvider"/>
   </extensions>
 
   <actions resource-bundle="messages.VcsLogBundle">

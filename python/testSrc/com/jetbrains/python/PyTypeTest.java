@@ -2345,7 +2345,7 @@ public class PyTypeTest extends PyTestCase {
   public void testNotMatchedOverloadsAndImplementationInImportedModule() {
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
-      () -> doMultiFileTest("Union[int, str]",
+      () -> doMultiFileTest("Union[str, int]",
                             "from b import foo\n" +
                             "expr = foo(object())")
     );
@@ -2353,7 +2353,7 @@ public class PyTypeTest extends PyTestCase {
 
   // PY-24383
   public void testSubscriptionOnWeakType() {
-    doTest("Union[int, Any]",
+    doTest("int",
            "foo = bar() if 42 != 42 else [1, 2, 3, 4]\n" +
            "expr = foo[0]");
   }
@@ -3902,6 +3902,59 @@ public class PyTypeTest extends PyTestCase {
            "class Base(object):\n" +
            "    pass\n" +
            "expr = Base.__subclasses__()");
+  }
+
+  // PY-37876
+  public void testCallableParameterTypeVarMatching() {
+    runWithLanguageLevel(
+      LanguageLevel.getLatest(),
+      () -> doTest("int",
+                   "from typing import Callable, TypeVar, Any\n" +
+                   "\n" +
+                   "T = TypeVar('T')\n" +
+                   "def func(x: Callable[[T], Any]) -> T:\n" +
+                   "    pass\n" +
+                   "\n" +
+                   "def callback(x: int) -> Any:\n" +
+                   "    pass\n" +
+                   "\n" +
+                   "\n" +
+                   "expr = func(callback)")
+    );
+  }
+
+  // PY-37876
+  public void testCallableParameterGenericTypeParameterMatching() {
+    runWithLanguageLevel(
+      LanguageLevel.getLatest(),
+      () -> doTest("int",
+                   "from typing import Callable, TypeVar, Any, List\n" +
+                   "\n" +
+                   "T = TypeVar('T')\n" +
+                   "\n" +
+                   "\n" +
+                   "def func(f: Callable[[List[T]], Any]) -> T:\n" +
+                   "    pass\n" +
+                   "\n" +
+                   "\n" +
+                   "def accepts_list_of_int(x: List[int]) -> Any:\n" +
+                   "    pass\n" +
+                   "\n" +
+                   "\n" +
+                   "expr = func(accepts_list_of_int)\n")
+    );
+  }
+
+  // PY-44470
+  public void testInferringAndMatchingCls() {
+    runWithLanguageLevel(
+      LanguageLevel.getLatest(),
+      () -> doTest("Subclass",
+                   "class Subclass(dict):\n" +
+                   "    def __new__(cls, *args, **kwargs):\n" +
+                   "        expr = super().__new__(cls, *args, **kwargs)\n" +
+                   "        return expr")
+    );
   }
 
   private static List<TypeEvalContext> getTypeEvalContexts(@NotNull PyExpression element) {

@@ -6,8 +6,8 @@
  */
 package com.intellij.debugger.ui.breakpoints;
 
-import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.DebuggerInvocationUtil;
+import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.engine.BreakpointStepMethodFilter;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.requests.RequestManagerImpl;
@@ -54,7 +54,6 @@ import com.sun.jdi.ThreadReference;
 import com.sun.jdi.request.EventRequest;
 import com.sun.jdi.request.EventRequestManager;
 import com.sun.jdi.request.InvalidRequestStateException;
-import gnu.trove.THashMap;
 import one.util.streamex.StreamEx;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -64,6 +63,7 @@ import org.jetbrains.java.debugger.breakpoints.properties.JavaExceptionBreakpoin
 import org.jetbrains.java.debugger.breakpoints.properties.JavaMethodBreakpointProperties;
 
 import javax.swing.*;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,7 +117,7 @@ public class BreakpointManager {
   }
 
   public void addListeners(@NotNull MessageBusConnection busConnection) {
-    busConnection.subscribe(XBreakpointListener.TOPIC, new XBreakpointListener<XBreakpoint<?>>() {
+    busConnection.subscribe(XBreakpointListener.TOPIC, new XBreakpointListener<>() {
       @Override
       public void breakpointAdded(@NotNull XBreakpoint<?> xBreakpoint) {
         Breakpoint breakpoint = getJavaBreakpoint(xBreakpoint);
@@ -304,7 +304,7 @@ public class BreakpointManager {
 
   private void doRead(@NotNull final Element parentNode) {
     ApplicationManager.getApplication().runReadAction(() -> {
-      final Map<String, Breakpoint> nameToBreakpointMap = new THashMap<>();
+      final Map<String, Breakpoint> nameToBreakpointMap = new HashMap<>();
       try {
         final List groups = parentNode.getChildren();
         for (final Object group1 : groups) {

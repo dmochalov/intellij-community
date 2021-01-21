@@ -4,12 +4,11 @@ package com.intellij.codeInsight.template;
 
 import com.intellij.codeInsight.lookup.PresentableLookupValue;
 import com.intellij.codeInsight.template.impl.Variable;
-import com.intellij.util.PairProcessor;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.Map;
 
 /**
  * Used to build and run a live template.
@@ -54,11 +53,11 @@ public abstract class Template implements PresentableLookupValue {
   public abstract void addSelectionStartVariable();
   public abstract void addSelectionEndVariable();
 
-  public abstract String getId();
-  public abstract String getKey();
+  public abstract @NonNls String getId();
+  public abstract @NlsSafe String getKey();
 
   @Nullable
-  public abstract String getDescription();
+  public abstract @NlsContexts.DetailedDescription String getDescription();
 
   public abstract boolean isToReformat();
 
@@ -72,7 +71,7 @@ public abstract class Template implements PresentableLookupValue {
    * 
    * E.g. they might be useful for inplace rename.
    * 
-   * @see com.intellij.codeInsight.template.impl.TemplateState#start(TemplateImpl, PairProcessor, Map) 
+   * @see com.intellij.codeInsight.template.impl.TemplateState#start
    */
   public abstract void setInline(boolean isInline);
 
@@ -88,14 +87,14 @@ public abstract class Template implements PresentableLookupValue {
    * @see #getTemplateText()
    */
   @NotNull
-  public abstract String getString();
+  public abstract @NlsSafe String getString();
 
   /**
    * @return template text without any variables and with '$' character escapes removed.
    * @see #getString()
    */
   @NotNull
-  public abstract String getTemplateText();
+  public abstract @NlsSafe String getTemplateText();
 
   public abstract boolean isToShortenLongNames();
   public abstract void setToShortenLongNames(boolean toShortenLongNames);
@@ -113,7 +112,7 @@ public abstract class Template implements PresentableLookupValue {
   }
 
   @Override
-  public String getPresentation() {
+  public @NlsSafe String getPresentation() {
     return getKey();
   }
 }

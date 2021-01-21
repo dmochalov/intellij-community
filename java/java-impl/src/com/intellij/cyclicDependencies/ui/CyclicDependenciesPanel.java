@@ -1,4 +1,4 @@
-// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.cyclicDependencies.ui;
 
 import com.intellij.CommonBundle;
@@ -38,8 +38,8 @@ import java.awt.*;
 import java.util.List;
 import java.util.*;
 
-public class CyclicDependenciesPanel extends JPanel implements Disposable, DataProvider {
-  private static final HashSet<PsiFile> EMPTY_FILE_SET = new HashSet<>(0);
+public final class CyclicDependenciesPanel extends JPanel implements Disposable, DataProvider {
+  private static final Set<PsiFile> EMPTY_FILE_SET = new HashSet<>(0);
 
   private final HashMap<PsiPackage, Set<List<PsiPackage>>> myDependencies;
   private final MyTree myLeftTree = new MyTree();
@@ -209,9 +209,7 @@ public class CyclicDependenciesPanel extends JPanel implements Disposable, DataP
     EditSourceOnDoubleClickHandler.install(tree);
     new TreeSpeedSearch(tree);
 
-    PopupHandler.installUnknownPopupHandler(tree, createTreePopupActions(), ActionManager.getInstance());
-
-
+    PopupHandler.installUnknownPopupHandler(tree, createTreePopupActions());
   }
 
   private void updateLeftTreeModel() {
@@ -427,7 +425,8 @@ public class CyclicDependenciesPanel extends JPanel implements Disposable, DataP
   private final class HideOutOfCyclePackagesAction extends ToggleAction {
 
     HideOutOfCyclePackagesAction() {
-      super("Hide packages without cyclic dependencies", "Hide packages without cyclic dependencies", AllIcons.General.Filter);
+      super(JavaBundle.message("hide.out.of.cyclic.packages.action.text"),
+            JavaBundle.message("hide.out.of.cyclic.packages.action.description"), AllIcons.General.Filter);
     }
 
     @Override

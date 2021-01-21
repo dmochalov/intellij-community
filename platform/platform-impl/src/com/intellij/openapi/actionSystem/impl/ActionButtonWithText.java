@@ -7,6 +7,7 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionButtonLook;
+import com.intellij.openapi.util.NlsActions;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
@@ -71,7 +72,7 @@ public class ActionButtonWithText extends ActionButton {
     }
     else {
       AnAction action = getAction();
-      setFont(action != null && action.useSmallerFontForTextInToolbar() ? JBUI.Fonts.toolbarSmallComboBoxFont() : UIUtil.getLabelFont());
+      setFont(action.useSmallerFontForTextInToolbar() ? JBUI.Fonts.toolbarSmallComboBoxFont() : UIUtil.getLabelFont());
     }
   }
 
@@ -235,7 +236,7 @@ public class ActionButtonWithText extends ActionButton {
     return icon instanceof EmptyIcon || icon == null ? 0 : JBUI.scale(ICON_TEXT_SPACE);
   }
 
-  private int getMnemonicCharIndex(String text) {
+  protected int getMnemonicCharIndex(String text) {
     final int mnemonicIndex = myPresentation.getDisplayedMnemonicIndex();
     if (mnemonicIndex != -1) {
       return mnemonicIndex;
@@ -260,6 +261,7 @@ public class ActionButtonWithText extends ActionButton {
   }
 
   @NotNull
+  @NlsActions.ActionText
   private String getText() {
     final String text = myPresentation.getText();
     return text != null ? text : "";

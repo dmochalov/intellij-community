@@ -11,6 +11,8 @@ import com.intellij.navigation.ItemPresentation;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.impl.InternalDecorator;
@@ -63,7 +65,9 @@ final class ServiceViewDragHelper {
               presentation = dragBean.getContributor().getViewDescriptor(project).getPresentation();
             }
             else {
-              presentation = dragBean.getItems().get(0).getViewDescriptor().getPresentation();
+              ServiceViewItem item = dragBean.getItems().get(0);
+              presentation = item.getViewDescriptor().getPresentation();
+              dropTargetContent.setTabColor(item.getColor());
             }
             dropTargetContent.setDisplayName(getDisplayName(presentation));
             dropTargetContent.setIcon(presentation.getIcon(false));
@@ -99,8 +103,8 @@ final class ServiceViewDragHelper {
     });
   }
 
-  static String getDisplayName(ItemPresentation presentation) {
-    StringBuilder result = new StringBuilder();
+  static @NlsContexts.TabTitle String getDisplayName(ItemPresentation presentation) {
+    @NlsSafe StringBuilder result = new StringBuilder();
     if (presentation instanceof PresentationData) {
       List<PresentableNodeDescriptor.ColoredFragment> fragments = ((PresentationData)presentation).getColoredText();
       if (fragments.isEmpty() && presentation.getPresentableText() != null) {

@@ -35,6 +35,22 @@ class GithubGitHelper {
                                                       it.firstUrl == sshUrl ||
                                                       it.firstUrl == sshUrl + GitUtil.DOT_GIT) }
 
+  fun findLocalBranch(repository: GitRepository, prRemote: GitRemote, isFork: Boolean, possibleBranchName: String?): String? {
+    val localBranchesWithTracking =
+      with(repository.branches) {
+        if (isFork) {
+          localBranches.filter { it.findTrackedBranch(repository)?.remote == prRemote }
+        }
+        else {
+          val prRemoteBranch = remoteBranches.find { it.nameForRemoteOperations == possibleBranchName } ?: return null
+          localBranches.filter { it.findTrackedBranch(repository) == prRemoteBranch }
+        }
+      }
+    return localBranchesWithTracking.find { it.name == possibleBranchName }?.name
+           // if PR was made not from fork we can assume that the first local branch with tracking to that fork is a good candidate of local branch for that PR.
+           ?: if (!isFork) localBranchesWithTracking.firstOrNull()?.name else null
+  }
+
   companion object {
     @JvmStatic
     fun findGitRepository(project: Project, file: VirtualFile? = null): GitRepository? {

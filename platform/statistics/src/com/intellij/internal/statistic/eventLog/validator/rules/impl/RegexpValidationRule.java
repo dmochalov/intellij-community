@@ -26,13 +26,14 @@ public class RegexpValidationRule extends PerformanceCareRule implements FUSRege
   private static final List<String> ESCAPE_TO = ContainerUtil.map(ESCAPE_FROM, s -> "\\" + s);
 
   public RegexpValidationRule(@Nullable final String regexp) {
-    myPattern = regexp == null ? null : new NullableLazyValue<Pattern>() {
+    myPattern = regexp == null ? null : new NullableLazyValue<>() {
       @Nullable
       @Override
       protected Pattern compute() {
         try {
           return Pattern.compile(regexp);
-        } catch (Exception ignored) {
+        }
+        catch (Exception ignored) {
           return null;
         }
       }
@@ -45,7 +46,15 @@ public class RegexpValidationRule extends PerformanceCareRule implements FUSRege
   public ValidationResultType doValidate(@NotNull String data, @NotNull EventContext context) {
     Pattern pattern = myPattern.getValue();
     if (pattern == null) return INCORRECT_RULE;
-    return pattern.matcher(StatisticsEventEscaper.escape(data)).matches() ? ACCEPTED : REJECTED;
+
+    String escaped = StatisticsEventEscaper.escapeEventIdOrFieldValue(data);
+    if (pattern.matcher(escaped).matches()) {
+      return ACCEPTED;
+    }
+
+    // for backward compatibility with rules created before allowed symbols were changed
+    String legacyData = StatisticsEventEscaper.cleanupForLegacyRulesIfNeeded(escaped);
+    return legacyData != null && pattern.matcher(legacyData).matches() ? ACCEPTED : REJECTED;
   }
 
   @NotNull

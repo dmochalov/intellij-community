@@ -1,12 +1,19 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.maven.server
 
-import com.intellij.openapi.components.*
+import com.intellij.build.FilePosition
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.RoamingType
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.io.StreamUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.io.HttpRequests
+import org.jetbrains.idea.maven.buildtool.MavenSyncConsole
 import org.jetbrains.idea.maven.execution.SyncBundle
 import org.jetbrains.idea.maven.utils.MavenLog
 import org.jetbrains.idea.maven.utils.MavenUtil
@@ -18,21 +25,18 @@ import java.security.MessageDigest
 import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
-import kotlin.collections.HashMap
-
 
 @State(name = "MavenWrapperMapping",
        storages = [Storage(value = "maven.wrapper.mapping.xml", roamingType = RoamingType.PER_OS)])
-class MavenWrapperMapping : PersistentStateComponent<MavenWrapperMapping.State> {
+internal class MavenWrapperMapping : PersistentStateComponent<MavenWrapperMapping.State> {
   internal var myState = State()
 
   class State {
+    @JvmField
     val mapping = HashMap<String, String>()
   }
 
-  override fun getState(): State? {
-    return myState
-  }
+  override fun getState() = myState
 
   override fun loadState(state: State) {
     myState.mapping.putAll(state.mapping)
@@ -41,52 +45,50 @@ class MavenWrapperMapping : PersistentStateComponent<MavenWrapperMapping.State> 
   companion object {
     @JvmStatic
     fun getInstance(): MavenWrapperMapping {
-      return ServiceManager.getService(MavenWrapperMapping::class.java)
+      return ApplicationManager.getApplication().getService(MavenWrapperMapping::class.java)
     }
   }
 }
 
-class MavenWrapperSupport {
+private const val DISTS_DIR = "wrapper/dists"
 
-  private val myMapping = MavenWrapperMapping.getInstance()
-  val DISTS_DIR = "wrapper/dists"
-
+internal class MavenWrapperSupport {
   @Throws(IOException::class)
-  fun downloadAndInstallMaven(urlString: String): MavenDistribution {
-    val cachedHome = myMapping.myState.mapping.get(urlString)
+  fun downloadAndInstallMaven(urlString: String, indicator: ProgressIndicator?): MavenDistribution {
+    val mapping = MavenWrapperMapping.getInstance()
+    val cachedHome = mapping.myState.mapping.get(urlString)
     if (cachedHome != null) {
       val file = File(cachedHome)
       if (file.isDirectory) {
-        return MavenDistribution(file, urlString)
+        return LocalMavenDistribution(file, urlString)
       }
       else {
-        myMapping.myState.mapping.remove(urlString)
+        mapping.myState.mapping.remove(urlString)
       }
     }
-
 
     val zipFile = getZipFile(urlString)
     if (!zipFile.isFile) {
       val partFile = File(zipFile.parentFile, "${zipFile.name}.part-${System.currentTimeMillis()}")
+      indicator?.apply { text = SyncBundle.message("maven.sync.wrapper.dowloading.from", urlString) }
       HttpRequests.request(urlString)
-        .forceHttps(true)
+        .forceHttps(false)
         .connectTimeout(30_000)
         .readTimeout(30_000)
-        .saveToFile(partFile, null) //todo: cancel and progress
+        .saveToFile(partFile, indicator)
       FileUtil.rename(partFile, zipFile)
     }
+
     if (!zipFile.isFile) {
       throw RuntimeException(SyncBundle.message("cannot.download.zip.from", urlString))
     }
-    val home = unpackZipFile(zipFile).canonicalFile
-    myMapping.myState.mapping[urlString] = home.absolutePath
-    return MavenDistribution(home, urlString)
-
+    val home = unpackZipFile(zipFile, indicator).canonicalFile
+    mapping.myState.mapping[urlString] = home.absolutePath
+    return LocalMavenDistribution(home, urlString)
   }
 
-
-  private fun unpackZipFile(zipFile: File): File {
-    unzip(zipFile)
+  private fun unpackZipFile(zipFile: File, indicator: ProgressIndicator?): File {
+    unzip(zipFile, indicator)
     val dirs = zipFile.parentFile.listFiles { it -> it.isDirectory }
     if (dirs == null || dirs.size != 1) {
       MavenLog.LOG.warn("Expected exactly 1 top level dir in Maven distribution, found: " + dirs?.asList())
@@ -105,7 +107,8 @@ class MavenWrapperSupport {
     Files.setPosixFilePermissions(mvnExe.toPath(), permissions)
   }
 
-  private fun unzip(zip: File) {
+  private fun unzip(zip: File, indicator: ProgressIndicator?) {
+    indicator?.apply { text = SyncBundle.message("maven.sync.wrapper.unpacking") }
     val unpackDir = zip.parentFile
     val destinationCanonicalPath = unpackDir.canonicalPath
     var errorUnpacking = false
@@ -127,24 +130,24 @@ class MavenWrapperSupport {
           else {
             destFile.parentFile.mkdirs()
             BufferedOutputStream(FileOutputStream(destFile)).use {
-              StreamUtil.copyStreamContent(zipFile.getInputStream(entry), it)
+              StreamUtil.copy(zipFile.getInputStream(entry), it)
             }
           }
         }
 
       }
       errorUnpacking = false
+      indicator?.apply { text = SyncBundle.message("maven.sync.wrapper.unpacked.into", destinationCanonicalPath) }
     }
     finally {
       if (errorUnpacking) {
+        indicator?.apply { text = SyncBundle.message("maven.sync.wrapper.failure") }
         zip.parentFile.listFiles { it -> it.name != zip.name }?.forEach { FileUtil.delete(it) }
       }
     }
-
   }
 
-
-  fun getZipFile(distributionUrl: String): File {
+  private fun getZipFile(distributionUrl: String): File {
     val baseName: String = getDistName(distributionUrl)
     val distName: String = FileUtil.getNameWithoutExtension(baseName)
     val md5Hash: String = getMd5Hash(distributionUrl)
@@ -173,20 +176,31 @@ class MavenWrapperSupport {
 
 
   companion object {
-    @JvmStatic
-    fun hasWrapperConfigured(baseDir: VirtualFile): Boolean {
-      return !getWrapperDistributionUrl(baseDir).isNullOrEmpty()
-    }
-
+    val DISTRIBUTION_URL_PROPERTY = "distributionUrl";
     @JvmStatic
     fun getWrapperDistributionUrl(baseDir: VirtualFile?): String? {
-      val wrapperProperties = baseDir?.findChild(".mvn")?.findChild("wrapper")?.findChild("maven-wrapper.properties") ?: return null
+      val wrapperProperties = getWrapperProperties(baseDir) ?: return null
 
       val properties = Properties()
 
       val stream = ByteArrayInputStream(wrapperProperties.contentsToByteArray(true))
       properties.load(stream)
-      return properties.getProperty("distributionUrl")
+      return properties.getProperty(DISTRIBUTION_URL_PROPERTY)
     }
+
+    @JvmStatic
+    fun showUnsecureWarning(console: MavenSyncConsole, mavenProjectMultimodulePath: VirtualFile?) {
+      val properties = getWrapperProperties(mavenProjectMultimodulePath)
+
+      val line = properties?.inputStream?.bufferedReader(properties.charset)?.readLines()?.indexOfFirst{ it.startsWith(DISTRIBUTION_URL_PROPERTY)} ?: -1
+      val position = properties?.let { FilePosition(it.toNioPath().toFile(), line, 0) }
+      console.addWarning(SyncBundle.message("maven.sync.wrapper.http.title"),
+                         SyncBundle.message("maven.sync.wrapper.http.description"),
+                         position)
+    }
+
+
+    private fun getWrapperProperties(baseDir: VirtualFile?) =
+      baseDir?.findChild(".mvn")?.findChild("wrapper")?.findChild("maven-wrapper.properties")
   }
 }

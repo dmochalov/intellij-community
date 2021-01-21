@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework.propertyBased;
 
 import com.intellij.codeInsight.intention.IntentionAction;
@@ -168,7 +168,6 @@ public final class MadTestingUtil {
    * "HighlightVisitorInternal" inspection has error-level by default and highlights the first token from erroneous range,
    * which is not very stable and also masks other warning-level inspections available on the same token.
    *
-   * @param disposable when this is disposed, reverts to the previous project inspection profile
    * @param except short names of inspections to disable
    */
   public static void enableAllInspections(@NotNull Project project, String... except) {
@@ -224,7 +223,7 @@ public final class MadTestingUtil {
     Function<GenerationEnvironment, File> generator =
       useRouletteWheel ? new RouletteWheelFileGenerator(root, interestingIdeaFiles) : new FileGenerator(root, interestingIdeaFiles);
     return Generator.from(generator)
-      .suchThat(new Predicate<File>() {
+      .suchThat(new Predicate<>() {
         @Override
         public boolean test(File file) {
           return file != null;
@@ -258,12 +257,12 @@ public final class MadTestingUtil {
    */
   @NotNull
   public static Supplier<MadTestingAction> performOnFileContents(CodeInsightTestFixture fixture,
-                                                                  String rootPath,
-                                                                  FileFilter fileFilter,
-                                                                  BiConsumer<ImperativeCommand.Environment, VirtualFile> action) {
+                                                                 String rootPath,
+                                                                 FileFilter fileFilter,
+                                                                 BiConsumer<? super ImperativeCommand.Environment, ? super VirtualFile> action) {
     Generator<File> randomFiles = randomFiles(rootPath, fileFilter);
-    return () -> env -> new RunAll()
-      .append(() -> {
+    return () -> env -> new RunAll(
+      () -> {
         File ioFile = env.generateValue(randomFiles, "Working with %s");
         VirtualFile vFile = copyFileToProject(ioFile, fixture, rootPath);
         PsiFile psiFile = fixture.getPsiManager().findFile(vFile);
@@ -273,15 +272,15 @@ public final class MadTestingUtil {
           return;
         }
         action.accept(env, vFile);
-      })
-      .append(() -> WriteAction.run(() -> {
+      },
+      () -> WriteAction.run(() -> {
         for (VirtualFile file : Objects.requireNonNull(fixture.getTempDirFixture().getFile("")).getChildren()) {
           file.delete(fixture);
         }
-      }))
-      .append(() -> PsiDocumentManager.getInstance(fixture.getProject()).commitAllDocuments())
-      .append(() -> UIUtil.dispatchAllInvocationEvents())
-      .run();
+      }),
+      () -> PsiDocumentManager.getInstance(fixture.getProject()).commitAllDocuments(),
+      () -> UIUtil.dispatchAllInvocationEvents()
+    ).run();
   }
 
   private static boolean shouldGoInsiderDir(@NotNull String name) {
@@ -373,7 +372,7 @@ public final class MadTestingUtil {
     }
     String suffix = StringUtil.shortenTextWithEllipsis(document.getText(new TextRange(offset, end)), 30, 0);
     String text = prefix + "|" + suffix;
-    return offset + "(" + line + ":" + column + ") [" + text + "]";
+    return offset + "(" + (line + 1) + ":" + (column + 1) + ") [" + text + "]";
   }
 
   @NotNull
@@ -521,7 +520,7 @@ public final class MadTestingUtil {
     private final File myRoot;
     private final FileFilter myFilter;
     private static final File[] EMPTY_DIRECTORY = new File[0];
-    private final SoftFactoryMap<File, File[]> myChildrenCache = new SoftFactoryMap<File, File[]>() {
+    private final SoftFactoryMap<File, File[]> myChildrenCache = new SoftFactoryMap<>() {
       @Override
       protected File[] create(File f) {
         File[] files = f.listFiles(child -> myFilter.accept(child) && (child.isFile() || FileGenerator.containsAtLeastOneFileDeep(child)));

@@ -13,6 +13,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -25,15 +26,14 @@ import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.LocalTimeCounter;
 import com.intellij.util.xml.XmlName;
 import one.util.streamex.StreamEx;
-import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -101,8 +101,8 @@ public final class CustomAntElementsRegistry {
           continue;
         }
         if (declaringElement instanceof AntDomTypeDef) {
-          final AntDomTypeDef typedef = (AntDomTypeDef)declaringElement;
-          final Class clazz = lookupClass(xmlName);
+          AntDomTypeDef typedef = (AntDomTypeDef)declaringElement;
+          Class<?> clazz = lookupClass(xmlName);
           if (clazz != null && typedef.isTask(clazz)) {
             continue;
           }
@@ -162,13 +162,13 @@ public final class CustomAntElementsRegistry {
   }
 
   @Nullable
-  public Class lookupClass(XmlName xmlName) {
-    final ClassProvider provider = myCustomElements.get(xmlName);
+  public Class<?> lookupClass(XmlName xmlName) {
+    ClassProvider provider = myCustomElements.get(xmlName);
     return provider == null ? null : provider.lookupClass();
   }
 
   @Nullable
-  public String lookupError(XmlName xmlName) {
+  public @Nls(capitalization = Nls.Capitalization.Sentence) String lookupError(XmlName xmlName) {
     final ClassProvider provider = myCustomElements.get(xmlName);
     return provider == null ? null : provider.getError();
   }
@@ -181,7 +181,7 @@ public final class CustomAntElementsRegistry {
     return StreamEx.ofKeys(myDeclarations, typedef::equals).anyMatch(name -> lookupError(name) != null);
   }
 
-  public List<String> getTypeLoadingErrors(AntDomTypeDef typedef) {
+  public List<@NlsSafe String> getTypeLoadingErrors(AntDomTypeDef typedef) {
     final String generalError = myTypeDefErrors.get(typedef);
     if (generalError != null) {
       return Collections.singletonList(generalError);
@@ -258,10 +258,6 @@ public final class CustomAntElementsRegistry {
     myDeclarations.put(xmlName, declaringTag);
   }
 
-  private static PsiFile createDummyFile(@NonNls final String name, final LanguageFileType type, final CharSequence str, Project project) {
-    return PsiFileFactory.getInstance(project).createFileFromText(name, type, str, LocalTimeCounter.currentTime(), false, false);
-  }
-
   private static boolean isXmlFormat(AntDomTypeDef typedef, @NotNull final String resourceOrFileName) {
     final String format = typedef.getFormat().getStringValue();
     if (format != null) {
@@ -270,16 +266,15 @@ public final class CustomAntElementsRegistry {
     return StringUtil.endsWithIgnoreCase(resourceOrFileName, ".xml");
   }
 
-  @NotNull
-  public static ClassLoader createClassLoader(final List<URL> urls, final AntDomProject antProject) {
-    final ClassLoader parentLoader = antProject.getClassLoader();
-    if (urls.size() == 0) {
+  public static @NotNull ClassLoader createClassLoader(List<Path> files, AntDomProject antProject) {
+    ClassLoader parentLoader = antProject.getClassLoader();
+    if (files.isEmpty()) {
       return parentLoader;
     }
-    return new AntResourcesClassLoader(urls, parentLoader, false, false);
+    return new AntResourcesClassLoader(files, parentLoader, false, false);
   }
 
-  public static List<URL> collectUrls(AntDomClasspathElement typedef) {
+  public static List<Path> collectUrls(AntDomClasspathElement typedef) {
     boolean cleanupNeeded = false;
     if (!ourIsBuildingClasspathForCustomTagLoading.get()) {
       ourIsBuildingClasspathForCustomTagLoading.set(Boolean.TRUE);
@@ -287,17 +282,12 @@ public final class CustomAntElementsRegistry {
     }
 
     try {
-      final List<URL> urls = new ArrayList<>();
+      List<Path> paths = new ArrayList<>();
       // check classpath attribute
-      final List<File> cpFiles = typedef.getClasspath().getValue();
+      List<File> cpFiles = typedef.getClasspath().getValue();
       if (cpFiles != null) {
         for (File file : cpFiles) {
-          try {
-            urls.add(toLocalURL(file));
-          }
-          catch (MalformedURLException ignored) {
-            LOG.info(ignored);
-          }
+          paths.add(file.toPath());
         }
       }
 
@@ -305,31 +295,20 @@ public final class CustomAntElementsRegistry {
       final AntDomElement referencedPath = typedef.getClasspathRef().getValue();
       if (referencedPath instanceof AntFilesProvider) {
         for (File cpFile : ((AntFilesProvider)referencedPath).getFiles(processed)) {
-          try {
-            urls.add(toLocalURL(cpFile));
-          }
-          catch (MalformedURLException ignored) {
-            LOG.info(ignored);
-          }
+          paths.add(cpFile.toPath());
         }
       }
       // check nested elements
-
-      for (final Iterator<AntDomElement> it = typedef.getAntChildrenIterator(); it.hasNext();) {
+      for (Iterator<AntDomElement> it = typedef.getAntChildrenIterator(); it.hasNext();) {
         AntDomElement child = it.next();
         if (child instanceof AntFilesProvider) {
           for (File cpFile : ((AntFilesProvider)child).getFiles(processed)) {
-            try {
-              urls.add(toLocalURL(cpFile));
-            }
-            catch (MalformedURLException ignored) {
-              LOG.info(ignored);
-            }
+            paths.add(cpFile.toPath());
           }
         }
       }
 
-      return urls;
+      return paths;
     }
     finally {
       if (cleanupNeeded) {
@@ -338,11 +317,7 @@ public final class CustomAntElementsRegistry {
     }
   }
 
-  private static URL toLocalURL(final File file) throws MalformedURLException {
-    return file.toURI().toURL();
-  }
-
-  private class CustomTagDefinitionFinder extends AntDomRecursiveVisitor {
+  private final class CustomTagDefinitionFinder extends AntDomRecursiveVisitor {
     private final Set<AntDomElement> myElementsOnThePath = new HashSet<>();
     private final Set<String> processedAntlibs = new HashSet<>();
     private final AntDomProject myAntProject;
@@ -424,7 +399,7 @@ public final class CustomAntElementsRegistry {
               addCustomDefinition(element, customTagName, nsUri, ClassProvider.create(classname, classLoader));
             }
             else {
-              Class clazz = null;
+              Class<?> clazz = null;
               final String typeName = element.getElementType().getStringValue();
               if (typeName != null) {
                 clazz = lookupClass(new XmlName(typeName));
@@ -432,12 +407,12 @@ public final class CustomAntElementsRegistry {
                   if (reflectedProject == null) { // lazy init
                     reflectedProject = ReflectedProject.getProject(myAntProject.getClassLoader());
                   }
-                  final Hashtable<String, Class> coreTasks = reflectedProject.getTaskDefinitions();
+                  Map<String, Class<?>> coreTasks = reflectedProject.getTaskDefinitions();
                   if (coreTasks != null) {
                     clazz = coreTasks.get(typeName);
                   }
                   if (clazz == null) {
-                    final Hashtable<String, Class> coreTypes = reflectedProject.getDataTypeDefinitions();
+                    Map<String, Class<?>> coreTypes = reflectedProject.getDataTypeDefinitions();
                     if (coreTypes != null) {
                       clazz = coreTypes.get(typeName);
                     }
@@ -582,6 +557,5 @@ public final class CustomAntElementsRegistry {
         }
       }
     }
-
   }
 }

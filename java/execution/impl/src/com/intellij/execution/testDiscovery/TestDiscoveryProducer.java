@@ -22,7 +22,7 @@ import java.util.Map;
 public interface TestDiscoveryProducer {
   ExtensionPointName<TestDiscoveryProducer> EP = new ExtensionPointName<>("com.intellij.testDiscoveryProducer");
 
-  Logger LOG = Logger.getInstance(LocalTestDiscoveryProducer.class);
+  Logger LOG = Logger.getInstance(TestDiscoveryProducer.class);
 
   @NotNull
   MultiMap<String, String> getDiscoveredTests(@NotNull Project project,
@@ -41,7 +41,7 @@ public interface TestDiscoveryProducer {
                                      byte frameworkId,
                                      @NotNull List<String> filePaths,
                                      @NotNull TestProcessor processor) {
-    MultiMap<String, String> visitedTests = new MultiMap<String, String>() {
+    MultiMap<String, String> visitedTests = new MultiMap<>() {
       @NotNull
       @Override
       protected Collection<String> createCollection() {

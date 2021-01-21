@@ -7,18 +7,15 @@ import com.intellij.openapi.util.UnorderedPair
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.util.containers.MultiMap
-import com.intellij.util.containers.Stack
 import com.intellij.vcs.log.data.index.VcsLogPathsIndex.ChangeKind
 import com.intellij.vcs.log.graph.api.LinearGraph
 import com.intellij.vcs.log.graph.api.LiteLinearGraph
-import com.intellij.vcs.log.graph.api.permanent.PermanentCommitsInfo
 import com.intellij.vcs.log.graph.api.permanent.PermanentGraphInfo
 import com.intellij.vcs.log.graph.collapsing.CollapsedGraph
 import com.intellij.vcs.log.graph.impl.facade.*
-import com.intellij.vcs.log.graph.utils.*
-import com.intellij.vcs.log.graph.utils.impl.BitSetFlags
+import com.intellij.vcs.log.graph.utils.LinearGraphUtils
+import com.intellij.vcs.log.graph.utils.isAncestor
 import com.intellij.vcsUtil.VcsFileUtil
-import gnu.trove.THashSet
 import gnu.trove.TIntHashSet
 import gnu.trove.TIntObjectHashMap
 import it.unimi.dsi.fastutil.Hash
@@ -26,7 +23,6 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import it.unimi.dsi.fastutil.ints.IntSet
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenCustomHashMap
 import it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet
-import java.util.*
 import java.util.function.BiConsumer
 
 class FileHistory internal constructor(val commitsToPathsMap: Map<Int, MaybeDeletedFilePath>,
@@ -206,77 +202,6 @@ private fun hideTrivialMerge(collapsedGraph: CollapsedGraph, graph: LiteLinearGr
     for (upNode in graph.getNodes(node, LiteLinearGraph.NodeFilter.UP)) {
       connectRows(upNode, singleParent)
     }
-  }
-}
-
-internal class FileHistoryRefiner(private val visibleLinearGraph: LinearGraph,
-                                  permanentGraphInfo: PermanentGraphInfo<Int>,
-                                  private val historyData: FileHistoryData) : Dfs.NodeVisitor {
-  private val permanentCommitsInfo: PermanentCommitsInfo<Int> = permanentGraphInfo.permanentCommitsInfo
-  private val permanentLinearGraph: LiteLinearGraph = LinearGraphUtils.asLiteLinearGraph(permanentGraphInfo.linearGraph)
-
-  private val paths = Stack<MaybeDeletedFilePath>()
-  private val visibilityBuffer = BitSetFlags(permanentLinearGraph.nodesCount()) // a reusable buffer for bfs
-  private val pathsForCommits = HashMap<Int, MaybeDeletedFilePath>()
-
-  fun refine(row: Int, startPath: MaybeDeletedFilePath): Pair<Map<Int, MaybeDeletedFilePath>, Set<Int>> {
-    paths.push(startPath)
-    LinearGraphUtils.asLiteLinearGraph(visibleLinearGraph).walk(row, this)
-
-    val excluded = THashSet<Int>()
-    for ((commit, path) in pathsForCommits) {
-      if (!historyData.affects(commit, path, true)) {
-        excluded.add(commit)
-      }
-    }
-
-    excluded.forEach { pathsForCommits.remove(it) }
-    return Pair(pathsForCommits, excluded)
-  }
-
-  override fun enterNode(currentNode: Int, previousNode: Int, down: Boolean) {
-    val currentNodeId = visibleLinearGraph.getNodeId(currentNode)
-    val currentCommit = permanentCommitsInfo.getCommitId(currentNodeId)
-
-    val previousPath = paths.last()
-    var currentPath: MaybeDeletedFilePath = previousPath
-
-    if (previousNode != Dfs.NextNode.NODE_NOT_FOUND) {
-      val previousNodeId = visibleLinearGraph.getNodeId(previousNode)
-      val previousCommit = permanentCommitsInfo.getCommitId(previousNodeId)
-
-      currentPath = if (down) {
-        val pathGetter = { parentIndex: Int ->
-          historyData.getPathInParentRevision(previousCommit, permanentCommitsInfo.getCommitId(parentIndex), previousPath)
-        }
-        val path = findPathWithoutConflict(previousNodeId, pathGetter)
-        path ?: pathGetter(permanentLinearGraph.getCorrespondingParent(previousNodeId, currentNodeId, visibilityBuffer))
-      }
-      else {
-        val pathGetter = { parentIndex: Int ->
-          historyData.getPathInChildRevision(currentCommit, permanentCommitsInfo.getCommitId(parentIndex), previousPath)
-        }
-        val path = findPathWithoutConflict(currentNodeId, pathGetter)
-        // since in reality there is no edge between the nodes, but the whole path, we need to know, which parent is affected by this path
-        path ?: pathGetter(permanentLinearGraph.getCorrespondingParent(currentNodeId, previousNodeId, visibilityBuffer))
-      }
-    }
-
-    pathsForCommits[currentCommit] = currentPath
-    paths.push(currentPath)
-  }
-
-  private fun findPathWithoutConflict(nodeId: Int, pathGetter: (Int) -> MaybeDeletedFilePath): MaybeDeletedFilePath? {
-    val parents = permanentLinearGraph.getNodes(nodeId, LiteLinearGraph.NodeFilter.DOWN)
-    val path = pathGetter(parents.first())
-    if (parents.size == 1) return path
-
-    if (parents.subList(1, parents.size).find { pathGetter(it) != path } != null) return null
-    return path
-  }
-
-  override fun exitNode(node: Int) {
-    paths.pop()
   }
 }
 
@@ -528,6 +453,10 @@ class MaybeDeletedFilePath(val filePath: FilePath, val deleted: Boolean) {
     var result = FILE_PATH_HASHING_STRATEGY.hashCode(filePath)
     result = 31 * result + deleted.hashCode()
     return result
+  }
+
+  override fun toString(): String {
+    return "MaybeDeletedFilePath(filePath=$filePath, deleted=$deleted)"
   }
 }
 

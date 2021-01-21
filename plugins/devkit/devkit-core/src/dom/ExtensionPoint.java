@@ -2,9 +2,14 @@
 package org.jetbrains.idea.devkit.dom;
 
 import com.intellij.ide.presentation.Presentation;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.pom.PomTarget;
+import com.intellij.pom.PomTargetPsiElement;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiField;
 import com.intellij.psi.xml.XmlTag;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.xml.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -76,7 +81,7 @@ public interface ExtensionPoint extends DomElement {
    *
    * @return {@code PluginID.name} or {@code qualifiedName}.
    */
-  @NotNull
+  @NotNull @NlsSafe
   String getEffectiveQualifiedName();
 
   /**
@@ -97,16 +102,24 @@ public interface ExtensionPoint extends DomElement {
    *   <li>first {@code <with> "implements"} class where attribute name matching common naming rules ({@code "implementationClass"} etc.)</li>
    *   <li>{@code null} if none of above rules apply</li>
    * </ol>
+   * @see #getExtensionPointClassName()
    */
   @Nullable
   PsiClass getExtensionPointClass();
+
+  /**
+   * <em>NOTE</em> Inner class is separated via {@code '$'}
+   * @see #getExtensionPointClass()
+   */
+  @Nullable
+  String getExtensionPointClassName();
 
   /**
    * Returns EP name prefix (Plugin ID).
    *
    * @return {@code null} if {@code qualifiedName} is set.
    */
-  @Nullable
+  @Nullable @NlsSafe
   String getNamePrefix();
 
   /**
@@ -115,4 +128,20 @@ public interface ExtensionPoint extends DomElement {
    * @return Fields.
    */
   List<PsiField> collectMissingWithTags();
+
+  @Nullable
+  static ExtensionPoint resolveFromDeclaration(PsiElement declaration) {
+    DomElement domElement = null;
+    if (declaration instanceof PomTargetPsiElement) {
+      final PomTarget pomTarget = ((PomTargetPsiElement)declaration).getTarget();
+      if (pomTarget instanceof DomTarget) {
+        domElement = ((DomTarget)pomTarget).getDomElement();
+      }
+    } // via XmlTag for "qualifiedName"
+    else if (declaration instanceof XmlTag) {
+      domElement = DomUtil.getDomElement(declaration);
+    }
+
+    return ObjectUtils.tryCast(domElement, ExtensionPoint.class);
+  }
 }

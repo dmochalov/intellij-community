@@ -55,7 +55,7 @@ public class PivotalTrackerRepository extends NewBaseRepositoryImpl {
                                                                           "unscheduled");
 
   // @formatter:off
-  private static final TypeToken<List<PivotalTrackerStory>> LIST_OF_STORIES_TYPE = new TypeToken<List<PivotalTrackerStory>>() {};
+  private static final TypeToken<List<PivotalTrackerStory>> LIST_OF_STORIES_TYPE = new TypeToken<>() {};
   // @formatter:on
 
   public static final Gson ourGson = TaskGsonUtil.createDefaultBuilder().create();
@@ -225,7 +225,7 @@ public class PivotalTrackerRepository extends NewBaseRepositoryImpl {
   @Override
   public String getPresentableName() {
     final String name = super.getPresentableName();
-    return name + (!StringUtil.isEmpty(getProjectId()) ? "/" + getProjectId() : "");
+    return name + (!StringUtil.isEmpty(getProjectId()) ? "/" + getProjectId() : ""); //NON-NLS
   }
 
   @Override

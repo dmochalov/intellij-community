@@ -53,7 +53,11 @@ public class ShExternalFormatter implements ExternalFormatProcessor {
 
   @Nullable
   @Override
-  public TextRange format(@NotNull PsiFile source, @NotNull TextRange range, boolean canChangeWhiteSpacesOnly, boolean keepLineBreaks) {
+  public TextRange format(@NotNull PsiFile source,
+                          @NotNull TextRange range,
+                          boolean canChangeWhiteSpacesOnly,
+                          boolean keepLineBreaks,
+                          boolean enableBulkUpdate) {
     doFormat(source.getProject(), source.getVirtualFile());
     return range;
   }
@@ -75,27 +79,27 @@ public class ShExternalFormatter implements ExternalFormatProcessor {
 
     ShCodeStyleSettings shSettings = settings.getCustomSettings(ShCodeStyleSettings.class);
     String shFmtExecutable = ShSettings.getShfmtPath();
-    if (ShSettings.I_DO_MIND.equals(shFmtExecutable)) return;
+    if (ShSettings.I_DO_MIND_SUPPLIER.get().equals(shFmtExecutable)) return;
 
     if (!ShShfmtFormatterUtil.isValidPath(shFmtExecutable)) {
-      Notification notification = new Notification(NOTIFICATION_GROUP_ID, message("sh.title.case"), message("sh.fmt.install.question"),
+      Notification notification = new Notification(NOTIFICATION_GROUP_ID, message("sh.shell.script"), message("sh.fmt.install.question"),
                                                    NotificationType.INFORMATION);
       notification.addAction(
         NotificationAction.createSimple(ShBundle.messagePointer("sh.install"), () -> {
           notification.expire();
           ShShfmtFormatterUtil.download(project,
                                         () -> Notifications.Bus
-                                          .notify(new Notification(NOTIFICATION_GROUP_ID, message("sh.title.case"),
+                                          .notify(new Notification(NOTIFICATION_GROUP_ID, message("sh.shell.script"),
                                                                    message("sh.fmt.success.install"),
                                                                    NotificationType.INFORMATION)),
                                         () -> Notifications.Bus
-                                          .notify(new Notification(NOTIFICATION_GROUP_ID, message("sh.title.case"),
+                                          .notify(new Notification(NOTIFICATION_GROUP_ID, message("sh.shell.script"),
                                                                    message("sh.fmt.cannot.download"),
                                                                    NotificationType.ERROR)));
         }));
       notification.addAction(NotificationAction.createSimple(ShBundle.messagePointer("sh.no.thanks"), () -> {
         notification.expire();
-        ShSettings.setShfmtPath(ShSettings.I_DO_MIND);
+        ShSettings.setShfmtPath(ShSettings.I_DO_MIND_SUPPLIER.get());
       }));
       Notifications.Bus.notify(notification, project);
       return;

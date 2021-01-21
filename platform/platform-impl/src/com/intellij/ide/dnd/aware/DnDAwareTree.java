@@ -10,6 +10,7 @@ import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.util.ui.tree.WideSelectionTreeUI;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -77,7 +78,7 @@ public class DnDAwareTree extends Tree implements DnDAware {
   }
 
   @NotNull
-  public static Pair<Image, Point> getDragImage(@NotNull Tree dndAwareTree, @NotNull String text, @Nullable Point dragOrigin) {
+  public static Pair<Image, Point> getDragImage(@NotNull Tree dndAwareTree, @NotNull @Nls String text, @Nullable Point dragOrigin) {
     return createDragImage(dndAwareTree, new JLabel(text), dragOrigin, false);
   }
 
@@ -127,7 +128,7 @@ public class DnDAwareTree extends Tree implements DnDAware {
         JTree tree = (JTree)component;
         TreePath[] selection = tree.getSelectionPaths();
         if (selection != null && selection.length > 1) {
-          return new TransferableList<TreePath>(selection) {
+          return new TransferableList<>(selection) {
             @Override
             protected String toString(TreePath path) {
               return String.valueOf(path.getLastPathComponent());

@@ -25,7 +25,7 @@ import java.util.List;
 
 public class EliminateParenthesesIntention extends BaseElementAtCaretIntentionAction {
 
-  private static final Pass<PsiParenthesizedExpression> ELIMINATE_CALLBACK = new Pass<PsiParenthesizedExpression>() {
+  private static final Pass<PsiParenthesizedExpression> ELIMINATE_CALLBACK = new Pass<>() {
     @Override
     public void pass(@NotNull PsiParenthesizedExpression expression) {
       WriteCommandAction.writeCommandAction(expression.getProject(), expression.getContainingFile())
@@ -48,7 +48,7 @@ public class EliminateParenthesesIntention extends BaseElementAtCaretIntentionAc
   }
 
   private static @NlsContexts.Command String getName() {
-    return IntentionPowerPackBundle.defaultableMessage("eliminate.parentheses.intention.name");
+    return IntentionPowerPackBundle.message("eliminate.parentheses.intention.name");
   }
 
   @Override

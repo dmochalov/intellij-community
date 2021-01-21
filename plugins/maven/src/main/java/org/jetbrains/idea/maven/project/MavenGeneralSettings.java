@@ -2,6 +2,7 @@
 package org.jetbrains.idea.maven.project;
 
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -33,6 +34,8 @@ public class MavenGeneralSettings implements Cloneable {
   private boolean nonRecursive = false;
 
   private boolean alwaysUpdateSnapshots = false;
+
+  private boolean showDialogWithAdvancedSettings = false;
 
   private String threads;
 
@@ -144,8 +147,15 @@ public class MavenGeneralSettings implements Cloneable {
   }
 
   public void setMavenHome(@NotNull final String mavenHome) {
-    if (!Objects.equals(this.mavenHome, mavenHome)) {
-      this.mavenHome = mavenHome;
+    final File mavenHomeDirectory = MavenUtil.resolveMavenHomeDirectory(mavenHome);
+    final File bundledMavenHomeDirectory = MavenUtil.resolveMavenHomeDirectory(MavenServerManager.BUNDLED_MAVEN_3);
+
+    String mavenHomeToSet = mavenHome;
+    if (FileUtil.filesEqual(mavenHomeDirectory, bundledMavenHomeDirectory)) {
+      mavenHomeToSet = MavenServerManager.BUNDLED_MAVEN_3;
+    }
+    if (!Objects.equals(this.mavenHome, mavenHomeToSet)) {
+      this.mavenHome = mavenHomeToSet;
       myDefaultPluginsCache = null;
       changed();
     }
@@ -291,6 +301,15 @@ public class MavenGeneralSettings implements Cloneable {
     changed();
   }
 
+  public boolean isShowDialogWithAdvancedSettings() {
+    return showDialogWithAdvancedSettings;
+  }
+
+  public void setShowDialogWithAdvancedSettings(boolean showDialogWithAdvancedSettings) {
+    this.showDialogWithAdvancedSettings = showDialogWithAdvancedSettings;
+    changed();
+  }
+
   public boolean isNonRecursive() {
     return nonRecursive;
   }
@@ -320,6 +339,7 @@ public class MavenGeneralSettings implements Cloneable {
     if (outputLevel != that.outputLevel) return false;
     if (pluginUpdatePolicy != that.pluginUpdatePolicy) return false;
     if (alwaysUpdateSnapshots != that.alwaysUpdateSnapshots) return false;
+    if (showDialogWithAdvancedSettings != that.showDialogWithAdvancedSettings) return false;
     if (printErrorStackTraces != that.printErrorStackTraces) return false;
     if (usePluginRegistry != that.usePluginRegistry) return false;
     if (workOffline != that.workOffline) return false;

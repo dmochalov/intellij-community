@@ -14,19 +14,20 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.JDOMExternalizable
 import com.intellij.util.concurrency.NonUrgentExecutor
-import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.xmlb.Accessor
 import com.intellij.util.xmlb.BeanBinding
 import org.jdom.Element
+import org.jetbrains.annotations.NonNls
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-private val LOG = Logger.getInstance("com.intellij.configurationStore.statistic.eventLog.FeatureUsageSettingsEventPrinter")
 private val GROUP = EventLogGroup("settings", 9)
 private const val CHANGES_GROUP = "settings.changes"
 private const val ID_FIELD = "id"
 
-private val recordedComponents: MutableSet<String> = ContainerUtil.newConcurrentSet()
-private val recordedOptionNames: MutableSet<String> = ContainerUtil.newConcurrentSet()
+private val recordedComponents: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
+private val recordedOptionNames: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
 
 internal fun isComponentNameWhitelisted(name: String): Boolean {
   return recordedComponents.contains(name)
@@ -77,6 +78,7 @@ open class FeatureUsageSettingsEventPrinter(private val recordDefault: Boolean) 
         val pluginInfo = getPluginInfo(clazz)
         if (pluginInfo.isDevelopedByJetBrains()) {
           recordedComponents.add(componentName)
+          @Suppress("HardCodedStringLiteral")
           logConfig(GROUP, "invoked", createComponentData(project, componentName, pluginInfo), counter.incrementAndGet())
         }
       }
@@ -100,6 +102,7 @@ open class FeatureUsageSettingsEventPrinter(private val recordDefault: Boolean) 
 
   fun logConfigurationState(componentName: String, state: Any?, project: Project?) {
     val (optionsValues, pluginInfo) = valuesExtractor.extract(project, componentName, state) ?: return
+    @Suppress("HardCodedStringLiteral")
     val eventId = if (recordDefault) "option" else "not.default"
     val id = counter.incrementAndGet()
     for (data in optionsValues) {
@@ -107,19 +110,22 @@ open class FeatureUsageSettingsEventPrinter(private val recordDefault: Boolean) 
     }
 
     if (!recordDefault) {
+      @Suppress("HardCodedStringLiteral")
       logConfig(GROUP, "invoked", createComponentData(project, componentName, pluginInfo), id)
     }
   }
 
-  protected open fun logConfig(group: EventLogGroup, eventId: String, data: FeatureUsageData, id: Int) {
+  protected open fun logConfig(group: EventLogGroup, @NonNls eventId: String, data: FeatureUsageData, id: Int) {
     FeatureUsageLogger.logState(group, eventId, data.addData(ID_FIELD, id).build())
   }
 
-  protected open fun logSettingsChanged(eventId: String, data: FeatureUsageData, id: Int) {
+  protected open fun logSettingsChanged(@NonNls eventId: String, data: FeatureUsageData, id: Int) {
     FUCounterUsageLogger.getInstance().logEvent(CHANGES_GROUP, eventId, data.addData(ID_FIELD, id))
   }
 
   companion object {
+    private val LOG = Logger.getInstance(FeatureUsageSettingsEventPrinter::class.java)
+
     private val counter = AtomicInteger(0)
 
     fun createComponentData(project: Project?, componentName: String, pluginInfo: PluginInfo): FeatureUsageData {
@@ -221,7 +227,7 @@ internal data class ConfigurationStateExtractor(val recordDefault: Boolean) {
                                pluginInfo: PluginInfo,
                                accessor: Accessor,
                                state: Any,
-                               type: String): FeatureUsageData? {
+                               @NonNls type: String): FeatureUsageData? {
     val isDefault = !jdomSerializer.getDefaultSerializationFilter().accepts(accessor, state)
     if (isDefault && !recordDefault) {
       return null

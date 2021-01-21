@@ -2,11 +2,14 @@
 package com.intellij.ide.actions.searcheverywhere;
 
 import com.intellij.ide.IdeBundle;
+import com.intellij.ide.actions.SearchEverywherePsiRenderer;
 import com.intellij.ide.util.gotoByName.FileTypeRef;
 import com.intellij.ide.util.gotoByName.FilteringGotoByModel;
 import com.intellij.ide.util.gotoByName.GotoFileConfiguration;
 import com.intellij.ide.util.gotoByName.GotoFileModel;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
@@ -15,11 +18,14 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileSystemItem;
-import com.intellij.ui.IdeUICustomization;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.ArrayList;
 import java.util.List;
+
+import static com.intellij.ide.actions.searcheverywhere.SearchEverywhereFiltersStatisticsCollector.FileTypeFilterCollector;
 
 /**
  * @author Konstantin Bulenkov
@@ -42,10 +48,6 @@ public class FileSearchEverywhereContributor extends AbstractGotoSEContributor {
     return IdeBundle.message("search.everywhere.group.name.files");
   }
 
-  public String includeNonProjectItemsText() {
-    return IdeUICustomization.getInstance().projectMessage("checkbox.include.non.project.files");
-  }
-
   @Override
   public int getSortWeight() {
     return 200;
@@ -66,16 +68,21 @@ public class FileSearchEverywhereContributor extends AbstractGotoSEContributor {
     return model;
   }
 
+  @Override
+  protected @Nullable SearchEverywhereCommandInfo getFilterCommand() {
+    return new SearchEverywhereCommandInfo("f", IdeBundle.message("search.everywhere.filter.files.description"), this);
+  }
+
   @NotNull
   @Override
   public List<AnAction> getActions(@NotNull Runnable onChanged) {
-    return doGetActions(includeNonProjectItemsText(), myFilter, onChanged);
+    return doGetActions(myFilter, new FileTypeFilterCollector(), onChanged);
   }
 
   @NotNull
   @Override
   public ListCellRenderer<Object> getElementsRenderer() {
-    return new SERenderer() {
+    return new SearchEverywherePsiRenderer(this) {
       @NotNull
       @Override
       protected ItemMatchers getItemMatchers(@NotNull JList list, @NotNull Object value) {
@@ -139,7 +146,8 @@ public class FileSearchEverywhereContributor extends AbstractGotoSEContributor {
 
   @NotNull
   public static PersistentSearchEverywhereContributorFilter<FileTypeRef> createFileTypeFilter(@NotNull Project project) {
-    List<FileTypeRef> items = FileTypeRef.forAllFileTypes();
+    List<FileTypeRef> items = new ArrayList<>(FileTypeRef.forAllFileTypes());
+    items.add(0, GotoFileModel.DIRECTORY_FILE_TYPE_REF);
     return new PersistentSearchEverywhereContributorFilter<>(items, GotoFileConfiguration.getInstance(project), FileTypeRef::getName,
                                                              FileTypeRef::getIcon);
   }

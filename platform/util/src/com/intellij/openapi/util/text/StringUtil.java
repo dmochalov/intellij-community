@@ -4,6 +4,7 @@ package com.intellij.openapi.util.text;
 import com.intellij.ReviseWhenPortedToJDK;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.util.*;
@@ -11,11 +12,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.CharSequenceSubSequence;
 import com.intellij.util.text.MergingCharSequence;
-import com.intellij.util.text.StringFactory;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.swing.text.MutableAttributeSet;
 import javax.swing.text.html.HTML;
@@ -35,12 +32,14 @@ import java.util.stream.Collectors;
 //TeamCity inherits StringUtil: do not add private constructors!!!
 @SuppressWarnings("MethodOverridesStaticMethodOfSuperclass")
 public class StringUtil extends StringUtilRt {
-  @SuppressWarnings("SpellCheckingInspection") private static final String VOWELS = "aeiouy";
-  private static final Pattern EOL_SPLIT_KEEP_SEPARATORS = Pattern.compile("(?<=(\r\n|\n))|(?<=\r)(?=[^\n])");
-  private static final Pattern EOL_SPLIT_PATTERN = Pattern.compile(" *(\r|\n|\r\n)+ *");
-  private static final Pattern EOL_SPLIT_PATTERN_WITH_EMPTY = Pattern.compile(" *(\r|\n|\r\n) *");
-  private static final Pattern EOL_SPLIT_DONT_TRIM_PATTERN = Pattern.compile("(\r|\n|\r\n)+");
   public static final String ELLIPSIS = "\u2026";
+
+  private static final class Splitters {
+    private static final Pattern EOL_SPLIT_KEEP_SEPARATORS = Pattern.compile("(?<=(\r\n|\n))|(?<=\r)(?=[^\n])");
+    private static final Pattern EOL_SPLIT_PATTERN = Pattern.compile(" *(\r|\n|\r\n)+ *");
+    private static final Pattern EOL_SPLIT_PATTERN_WITH_EMPTY = Pattern.compile(" *(\r|\n|\r\n) *");
+    private static final Pattern EOL_SPLIT_DONT_TRIM_PATTERN = Pattern.compile("(\r|\n|\r\n)+");
+  }
 
   /**
    * @return a lightweight CharSequence which results from replacing {@code [start, end)} range in the {@code charSeq} with {@code replacement}.
@@ -96,7 +95,7 @@ public class StringUtil extends StringUtilRt {
 
     private void handleTag(@NotNull HTML.Tag tag) {
       if (tag.breaksFlow() && myBuffer.length() > 0) {
-        myBuffer.append(SystemProperties.getLineSeparator());
+        myBuffer.append(System.lineSeparator());
       }
     }
 
@@ -104,8 +103,6 @@ public class StringUtil extends StringUtilRt {
       return myBuffer.toString();
     }
   }
-
-  private static final MyHtml2Text html2TextParser = new MyHtml2Text(false);
 
   public static final NotNullFunction<String, String> QUOTER = s -> "\"" + s + "\"";
 
@@ -205,9 +202,9 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static int lastIndexOfIgnoreCase(@NotNull String where, char what, int fromIndex) {
+  public static int lastIndexOfIgnoreCase(@NotNull String where, char c, int fromIndex) {
     for (int i = Math.min(fromIndex, where.length() - 1); i >= 0; i--) {
-      if (charsEqualIgnoreCase(where.charAt(i), what)) {
+      if (charsEqualIgnoreCase(where.charAt(i), c)) {
         return i;
       }
     }
@@ -232,8 +229,13 @@ public class StringUtil extends StringUtilRt {
 
   @Contract(pure = true)
   public static @NotNull String stripHtml(@NotNull String html, boolean convertBreaks) {
-    if (convertBreaks) {
-      html = html.replaceAll("<br/?>", "\n\n");
+    return stripHtml(html, convertBreaks ? "\n\n" : null);
+  }
+
+  @Contract(pure = true)
+  public static @NotNull String stripHtml(@NotNull String html, @Nullable String breaks) {
+    if (breaks != null) {
+      html = html.replaceAll("<br/?>", breaks);
     }
 
     return html.replaceAll("<(.|\n)*?>", "");
@@ -245,6 +247,7 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
+  @NlsSafe
   public static @NotNull String getPackageName(@NotNull String fqName) {
     return getPackageName(fqName, '.');
   }
@@ -262,6 +265,7 @@ public class StringUtil extends StringUtilRt {
    * @return the package name of the type or the declarator of the type. The empty string if the given fqName is unqualified
    */
   @Contract(pure = true)
+  @NlsSafe
   public static @NotNull String getPackageName(@NotNull String fqName, char separator) {
     int lastPointIdx = fqName.lastIndexOf(separator);
     if (lastPointIdx >= 0) {
@@ -438,6 +442,15 @@ public class StringUtil extends StringUtilRt {
               // filter out abbreviations like I18n, SQL and CSS
               continue;
             }
+            char prevPrevChar = i > 1 ? s.charAt(i - 2) : 0;
+            if (prevChar == '.' && (prevPrevChar == ' ' || prevPrevChar == '*')) {
+              // file extension like .java or *.java; don't change its capitalization
+              continue;
+            }
+            if (prevChar == '~' && prevPrevChar == ' ') {
+              // special string like ~java or _java; keep it as is
+              continue;
+            }
             if (!isPreposition(s, i, j - 1, prepositions)) {
               if (buffer == null) {
                 buffer = new StringBuilder(s);
@@ -459,16 +472,6 @@ public class StringUtil extends StringUtilRt {
   private static final String[] ourOtherNonCapitalizableWords = {
     "iOS", "iPhone", "iPad", "iMac"
   };
-
-  /**
-   * @deprecated Use {@link #isPreposition(String, int, int, String[])}.
-   */
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  @Deprecated
-  @Contract(pure = true)
-  public static boolean isPreposition(@NotNull String s, int firstChar, int lastChar) {
-    return isPreposition(s, firstChar, lastChar, ourPrepositions);
-  }
 
   @Contract(pure = true)
   public static boolean isPreposition(@NotNull String s, int firstChar, int lastChar, String @NotNull [] prepositions) {
@@ -722,8 +725,15 @@ public class StringUtil extends StringUtilRt {
     if (escaped) buffer.append('\\');
   }
 
+  /**
+   * Pluralize English word. Could be used when e.g. generating collection name by element type.
+   * Do not use this method in localized context, as it works for English language only.
+   *
+   * @param word word to pluralize
+   * @return word in plural form
+   */
   @Contract(pure = true)
-  public static @NotNull String pluralize(@NotNull String word) {
+  public static @NotNull @NonNls String pluralize(@NotNull @NonNls String word) {
     return Strings.pluralize(word);
   }
 
@@ -761,7 +771,7 @@ public class StringUtil extends StringUtilRt {
 
   @Contract(pure = true)
   public static boolean isVowel(char c) {
-    return VOWELS.indexOf(c) >= 0;
+    return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' || c == 'y';
   }
 
   /**
@@ -1083,11 +1093,12 @@ public class StringUtil extends StringUtilRt {
     return ExceptionUtil.getMessage(e);
   }
 
+  @ReviseWhenPortedToJDK("11") // Character.toString(aChar).repeat(count)
   @Contract(pure = true)
   public static @NotNull String repeatSymbol(final char aChar, final int count) {
     char[] buffer = new char[count];
     Arrays.fill(buffer, aChar);
-    return StringFactory.createShared(buffer);
+    return new String(buffer);
   }
 
   @Contract(pure = true)
@@ -1429,48 +1440,52 @@ public class StringUtil extends StringUtilRt {
     return Formats.formatFileSize(fileSize, unitSeparator);
   }
 
-  /** Formats duration given in milliseconds as a sum of time units (example: {@code formatDuration(123456) = "2 m 3 s 456 ms"}). */
+  /**
+   * Formats duration given in milliseconds as a sum of time units (example: {@code formatDuration(123456) = "2 m 3 s 456 ms"}).
+   * This method is intended to be used in non-localized contexts (primarily in log output).
+   * See com.intellij.ide.nls.NlsMessages for localized output.
+   */
   @Contract(pure = true)
-  public static @NotNull String formatDuration(long duration) {
+  public static @NotNull @NonNls String formatDuration(long duration) {
     return Formats.formatDuration(duration);
   }
 
-  /** Formats {@link Duration} as a sum of time units (calls {@link #formatDuration(long)} with duration converted to milliseconds) */
+  /**
+   * Formats {@link Duration} as a sum of time units (calls {@link #formatDuration(long)} with duration converted to milliseconds)
+   * This method is intended to be used in non-localized contexts (primarily in log output).
+   * See com.intellij.ide.nls.NlsMessages for localized output.
+   */
   @Contract(pure = true)
-  public static @NotNull String formatDuration(@NotNull Duration duration) {
+  public static @NotNull @NonNls String formatDuration(@NotNull Duration duration) {
     return Formats.formatDuration(duration);
   }
 
-  /** Formats duration given in milliseconds as a sum of time units (example: {@code formatDuration(123456, "") = "2m 3s 456ms"}). */
+  /** 
+   * Formats duration given in milliseconds as a sum of time units (example: {@code formatDuration(123456, "") = "2m 3s 456ms"}).
+   * @deprecated use NlsMessages#formatDurationApproximateNarrow for localized output
+   */
   @Contract(pure = true)
-  public static @NotNull String formatDuration(long duration, @NotNull String unitSeparator) {
+  @Deprecated
+  public static @NotNull @NonNls String formatDuration(long duration, @NotNull String unitSeparator) {
     return Formats.formatDuration(duration, unitSeparator);
   }
 
   /**
-   * Formats duration given in milliseconds as a sum of padded time units, except the most significant unit
-   * E.g. 234523598 padded as "2 d 03 h 11 min 04 sec 004 ms" accordingly with zeros except "days" here.
+   * @deprecated use com.intellij.ide.nls.NlsMessages for localized output.
    */
   @Contract(pure = true)
-  public static @NotNull String formatDurationPadded(long millis, @NotNull String unitSeparator) {
+  @Deprecated
+  public static @NotNull @NonNls String formatDurationPadded(long millis, @NotNull String unitSeparator) {
     return Formats.formatDurationPadded(millis, unitSeparator);
   }
 
   /**
-   * Formats duration given in milliseconds as a sum of time units with at most two units
-   * (example: {@code formatDuration(123456) = "2 m 3 s"}).
+   * @deprecated use com.intellij.ide.nls.NlsMessages for localized output.
    */
   @Contract(pure = true)
-  public static @NotNull String formatDurationApproximate(long duration) {
+  @Deprecated
+  public static @NotNull @NonNls String formatDurationApproximate(long duration) {
     return Formats.formatDurationApproximate(duration);
-  }
-
-  /**
-   * Appends English ordinal suffix to the given number.
-   */
-  @Contract(pure = true)
-  public static @NotNull String formatOrdinal(long num) {
-    return Formats.formatOrdinal(num);
   }
 
   /**
@@ -1494,7 +1509,7 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static boolean containsAnyChar(final @NotNull String value, final @NotNull String chars) {
+  public static boolean containsAnyChar(final @NotNull String value, final @NotNull @NonNls String chars) {
     return Strings.containsAnyChar(value, chars);
   }
 
@@ -1524,7 +1539,7 @@ public class StringUtil extends StringUtilRt {
 
     char[] buffer = displayString.toCharArray();
     buffer[0] = uppedFirstChar;
-    return StringFactory.createShared(buffer);
+    return new String(buffer);
   }
 
   /**
@@ -1993,16 +2008,18 @@ public class StringUtil extends StringUtilRt {
     return replace(text, REPLACES_DISP, REPLACES_REFS);
   }
 
+  @Contract(pure = true)
   public static @NotNull String removeHtmlTags(@NotNull String htmlString) {
     return removeHtmlTags(htmlString, false);
   }
 
+  @Contract(pure = true)
   public static @NotNull String removeHtmlTags(@NotNull String htmlString, boolean isRemoveStyleTag) {
     if (isEmpty(htmlString)) {
       return "";
     }
 
-    final MyHtml2Text parser = isRemoveStyleTag ? new MyHtml2Text(true) : html2TextParser;
+    final MyHtml2Text parser = isRemoveStyleTag ? new MyHtml2Text(true) : new MyHtml2Text(false);
     try {
       parser.parse(new StringReader(htmlString));
     }
@@ -2013,7 +2030,7 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static @NotNull String removeEllipsisSuffix(@NotNull String s) {
+  public static @NotNull @Nls String removeEllipsisSuffix(@NotNull @Nls String s) {
     String THREE_DOTS = "...";
     if (s.endsWith(THREE_DOTS)) {
       return s.substring(0, s.length() - THREE_DOTS.length());
@@ -2033,8 +2050,9 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static @NotNull String htmlEmphasize(@NotNull String text) {
-    return "<b><code>" + escapeXmlEntities(text) + "</code></b>";
+  public static @NlsSafe @NotNull String htmlEmphasize(@NotNull @Nls String text) {
+    return HtmlChunk.tag("code").addText(text)
+      .wrapWith("b").toString();
   }
 
 
@@ -2101,15 +2119,6 @@ public class StringUtil extends StringUtilRt {
       }
     }
     return escaped;
-  }
-
-  /**
-   * @deprecated Use {@link #replace(String, List, List)}
-   */
-  @Deprecated
-  @Contract(pure = true)
-  public static @NotNull String replace(@NotNull String text, String @NotNull [] from, String @NotNull [] to) {
-    return replace(text, Arrays.asList(from), Arrays.asList(to));
   }
 
   @Contract(pure = true)
@@ -2303,7 +2312,7 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static @NotNull String getQualifiedName(@Nullable String packageName, @NotNull String className) {
+  public static @NotNull @NlsSafe String getQualifiedName(@Nullable @NonNls String packageName, @NotNull @NonNls String className) {
     if (packageName == null || packageName.isEmpty()) {
       return className;
     }
@@ -2334,7 +2343,7 @@ public class StringUtil extends StringUtilRt {
 
       int cmp;
       if (p1.matches("\\d+") && p2.matches("\\d+")) {
-        cmp = new Integer(p1).compareTo(new Integer(p2));
+        cmp = Integer.valueOf(p1).compareTo(Integer.valueOf(p2));
       }
       else {
         cmp = part1[idx].compareTo(part2[idx]);
@@ -2350,7 +2359,7 @@ public class StringUtil extends StringUtilRt {
         String p = parts[idx];
         int cmp;
         if (p.matches("\\d+")) {
-          cmp = new Integer(p).compareTo(0);
+          cmp = Integer.valueOf(p).compareTo(0);
         }
         else {
           cmp = 1;
@@ -2476,12 +2485,12 @@ public class StringUtil extends StringUtilRt {
    */
   @Contract(pure = true)
   public static String @NotNull [] splitByLines(@NotNull String string, boolean excludeEmptyStrings) {
-    return (excludeEmptyStrings ? EOL_SPLIT_PATTERN : EOL_SPLIT_PATTERN_WITH_EMPTY).split(string);
+    return (excludeEmptyStrings ? Splitters.EOL_SPLIT_PATTERN : Splitters.EOL_SPLIT_PATTERN_WITH_EMPTY).split(string);
   }
 
   @Contract(pure = true)
   public static String @NotNull [] splitByLinesDontTrim(@NotNull String string) {
-    return EOL_SPLIT_DONT_TRIM_PATTERN.split(string);
+    return Splitters.EOL_SPLIT_DONT_TRIM_PATTERN.split(string);
   }
 
   /**
@@ -2500,7 +2509,7 @@ public class StringUtil extends StringUtilRt {
    */
   @Contract(pure = true)
   public static String @NotNull [] splitByLinesKeepSeparators(@NotNull String string) {
-    return EOL_SPLIT_KEEP_SEPARATORS.split(string);
+    return Splitters.EOL_SPLIT_KEEP_SEPARATORS.split(string);
   }
 
   @Contract(pure = true)
@@ -2768,7 +2777,7 @@ public class StringUtil extends StringUtilRt {
     final int textLength = text.length();
     if (textLength > maxLength) {
       final int prefixLength = maxLength - suffixLength - symbol.length();
-      assert prefixLength > 0;
+      assert prefixLength >= 0;
       return text.substring(0, prefixLength) + symbol + text.substring(textLength - suffixLength);
     }
     else {
@@ -2884,17 +2893,17 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static @NotNull String getShortName(@NotNull Class<?> aClass) {
+  public static @NotNull @NlsSafe String getShortName(@NotNull Class<?> aClass) {
     return StringUtilRt.getShortName(aClass);
   }
 
   @Contract(pure = true)
-  public static @NotNull String getShortName(@NotNull String fqName) {
+  public static @NotNull @NlsSafe String getShortName(@NotNull @NonNls String fqName) {
     return StringUtilRt.getShortName(fqName);
   }
 
   @Contract(pure = true)
-  public static @NotNull String getShortName(@NotNull String fqName, char separator) {
+  public static @NotNull @NlsSafe String getShortName(@NotNull @NonNls String fqName, char separator) {
     return StringUtilRt.getShortName(fqName, separator);
   }
 
@@ -3068,9 +3077,12 @@ public class StringUtil extends StringUtilRt {
 
   @Contract(pure = true)
   public static @NotNull String toHexString(byte @NotNull [] bytes) {
-    @SuppressWarnings("SpellCheckingInspection") String digits = "0123456789abcdef";
+    @SuppressWarnings("SpellCheckingInspection")
+    String digits = "0123456789abcdef";
     StringBuilder sb = new StringBuilder(2 * bytes.length);
-    for (byte b : bytes) sb.append(digits.charAt((b >> 4) & 0xf)).append(digits.charAt(b & 0xf));
+    for (byte b : bytes) {
+      sb.append(digits.charAt((b >> 4) & 0xf)).append(digits.charAt(b & 0xf));
+    }
     return sb.toString();
   }
 
@@ -3083,13 +3095,6 @@ public class StringUtil extends StringUtilRt {
       bytes[i / 2] = (byte)((Character.digit(str.charAt(i), 16) << 4) + Character.digit(str.charAt(i + 1), 16));
     }
     return bytes;
-  }
-
-  /** @deprecated use {@link #startsWithConcatenation(String, String...)} */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  public static boolean startsWithConcatenationOf(@NotNull String string, @NotNull String firstPrefix, @NotNull String secondPrefix) {
-    return startsWithConcatenation(string, firstPrefix, secondPrefix);
   }
 
   /**

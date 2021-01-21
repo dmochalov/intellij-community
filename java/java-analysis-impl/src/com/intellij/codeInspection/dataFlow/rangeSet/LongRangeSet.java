@@ -3,14 +3,17 @@ package com.intellij.codeInspection.dataFlow.rangeSet;
 
 import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.codeInspection.dataFlow.value.RelationType;
-import com.intellij.psi.*;
-import com.intellij.psi.tree.IElementType;
+import com.intellij.java.analysis.JavaAnalysisBundle;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiModifierListOwner;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiType;
 import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.MathUtil;
 import com.intellij.util.ThreeState;
 import one.util.streamex.IntStreamEx;
 import one.util.streamex.StreamEx;
-import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -165,67 +168,7 @@ public abstract class LongRangeSet {
 
   public abstract @Nls String getPresentationText(PsiType type);
 
-  /**
-   * Performs a supported binary operation from token (defined in {@link JavaTokenType}).
-   *
-   * @param token  a token which corresponds to the operation
-   * @param right  a right-hand operand
-   * @param isLong true if operation should be performed on long types (otherwise int is assumed)
-   * @return the resulting LongRangeSet which covers possible results of the operation (probably including some more elements);
-   * or null if the supplied token is not supported.
-   */
-  @Contract("null, _, _ -> null")
-  @Nullable
-  public final LongRangeSet binOpFromToken(IElementType token, LongRangeSet right, boolean isLong) {
-    if (token == null) return null;
-    if (token.equals(JavaTokenType.PLUS)) {
-      return plus(right, isLong);
-    }
-    if (token.equals(JavaTokenType.MINUS)) {
-      return minus(right, isLong);
-    }
-    if (token.equals(JavaTokenType.AND)) {
-      return bitwiseAnd(right);
-    }
-    if (token.equals(JavaTokenType.OR)) {
-      return bitwiseOr(right, isLong);
-    }
-    if (token.equals(JavaTokenType.XOR)) {
-      return bitwiseXor(right, isLong);
-    }
-    if (token.equals(JavaTokenType.PERC)) {
-      return mod(right);
-    }
-    if (token.equals(JavaTokenType.DIV)) {
-      return div(right, isLong);
-    }
-    if (token.equals(JavaTokenType.LTLT)) {
-      return shiftLeft(right, isLong);
-    }
-    if (token.equals(JavaTokenType.GTGT)) {
-      return shiftRight(right, isLong);
-    }
-    if (token.equals(JavaTokenType.GTGTGT)) {
-      return unsignedShiftRight(right, isLong);
-    }
-    if (token.equals(JavaTokenType.ASTERISK)) {
-      return mul(right, isLong);
-    }
-    return null;
-  }
-
-  @Nullable
-  public LongRangeSet wideBinOpFromToken(@NotNull IElementType token, @NotNull LongRangeSet other, boolean isLong) {
-    if (token.equals(JavaTokenType.PLUS) || token.equals(JavaTokenType.MINUS)) {
-      return plusWiden(token.equals(JavaTokenType.MINUS) ? other.negate(isLong) : other, isLong);
-    }
-    if (token.equals(JavaTokenType.ASTERISK)) {
-      return mulWiden(other, isLong);
-    }
-    return null;
-  }
-
-  private LongRangeSet mulWiden(LongRangeSet other, boolean isLong) {
+  @NotNull LongRangeSet mulWiden(LongRangeSet other, boolean isLong) {
     if (Point.ZERO.equals(this)) return this;
     if (Point.ZERO.equals(other)) return other;
     if (Point.ONE.equals(this)) return other;
@@ -233,10 +176,10 @@ public abstract class LongRangeSet {
     if (Point.ZERO.equals(this.mod(point(2))) || Point.ZERO.equals(other.mod(point(2)))) {
       return modRange(minValue(isLong), maxValue(isLong), 2, 1);
     }
-    return null;
+    return isLong ? Range.LONG_RANGE : Range.INT_RANGE;
   }
 
-  private LongRangeSet plusWiden(LongRangeSet other, boolean isLong) {
+  @NotNull LongRangeSet plusWiden(LongRangeSet other, boolean isLong) {
     if (this instanceof Point && other instanceof Point) {
       long val1 = ((Point)this).myValue;
       long val2 = ((Point)other).myValue;
@@ -251,7 +194,7 @@ public abstract class LongRangeSet {
         constVal = this;
         mod = 1 << (Math.min(6, tzb2));
       }
-      if (mod < 2) return null;
+      if (mod < 2) return isLong ? Range.LONG_RANGE : Range.INT_RANGE;
       return modRange(minValue(isLong), maxValue(isLong), mod, 1).plus(constVal, isLong);
     }
     if (this instanceof Point && other instanceof ModRange) {
@@ -278,7 +221,7 @@ public abstract class LongRangeSet {
     if (other instanceof Point && this instanceof ModRange) {
       return other.plusWiden(this, isLong);
     }
-    return null;
+    return isLong ? Range.LONG_RANGE : Range.INT_RANGE;
   }
 
   public abstract boolean isCardinalityBigger(long cutoff);
@@ -664,7 +607,7 @@ public abstract class LongRangeSet {
     return from < to ? modRange(from, to, Long.SIZE, modBits) : modRange(to, from, Long.SIZE, modBits);
   }
 
-  private static String formatNumber(long value) {
+  private static @NlsSafe String formatNumber(long value) {
     if (value == Long.MAX_VALUE) return "Long.MAX_VALUE";
     if (value == Long.MAX_VALUE - 1) return "Long.MAX_VALUE-1";
     if (value == Long.MIN_VALUE) return "Long.MIN_VALUE";
@@ -895,7 +838,7 @@ public abstract class LongRangeSet {
       return range(ranges[0], ranges[1]);
     }
     else {
-      return new RangeSet(Arrays.copyOfRange(ranges, 0, bound));
+      return new RangeSet(Arrays.copyOf(ranges, bound));
     }
   }
 
@@ -971,7 +914,7 @@ public abstract class LongRangeSet {
 
     @Override
     public String getPresentationText(PsiType type) {
-      return "unknown";
+      return JavaAnalysisBundle.message("long.range.set.presentation.empty");
     }
 
     @Override
@@ -1337,7 +1280,7 @@ public abstract class LongRangeSet {
       if (set != null) {
         if (set.min() == myFrom) {
           if (set.max() == myTo) {
-            return "any value";
+            return JavaAnalysisBundle.message("long.range.set.presentation.any");
           }
           return "<= " + LongRangeSet.formatNumber(myTo);
         }
@@ -1346,9 +1289,9 @@ public abstract class LongRangeSet {
         }
       }
       if (myTo - myFrom == 1) {
-        return myFrom + " or " + myTo;
+        return JavaAnalysisBundle.message("long.range.set.presentation.two.values", myFrom, myTo);
       }
-      return "in " + toString();
+      return JavaAnalysisBundle.message("long.range.set.presentation.range", toString());
     }
 
     @Override
@@ -1690,7 +1633,7 @@ public abstract class LongRangeSet {
     }
 
     @Override
-    public String toString() {
+    public @NlsSafe String toString() {
       return "{" + toString(myFrom, myTo) + "}";
     }
   }
@@ -1715,16 +1658,20 @@ public abstract class LongRangeSet {
         set = modRange(set.min(), set.max(), myMod, myBits);
         String prefix = null;
         if (set.min() == myFrom) {
-          prefix = set.max() == myTo ? "" : "<= " + LongRangeSet.formatNumber(myTo) + "; ";
+          prefix = set.max() == myTo ? "" : "<= " + LongRangeSet.formatNumber(myTo);
         }
         else if (set.max() == myTo) {
-          prefix = ">= " + LongRangeSet.formatNumber(myFrom) + "; ";
+          prefix = ">= " + LongRangeSet.formatNumber(myFrom);
         }
         if (prefix != null) {
-          return prefix + getSuffix();
+          if (prefix.isEmpty()) {
+            return getSuffix();
+          }
+          return JavaAnalysisBundle.message("long.range.set.presentation.range.with.mod", prefix, getSuffix());
         }
       }
-      return "in " + super.toString() + "; " + getSuffix();
+      String rangeMessage = JavaAnalysisBundle.message("long.range.set.presentation.range", super.toString());
+      return JavaAnalysisBundle.message("long.range.set.presentation.range.with.mod", rangeMessage, getSuffix());
     }
 
     @Override
@@ -1941,15 +1888,18 @@ public abstract class LongRangeSet {
       return super.toString() + ": " + getSuffix();
     }
 
-    private String getSuffix() {
+    private @Nls String getSuffix() {
       String suffix;
       if (myMod == 2) {
-        suffix = myBits == 1 ? "even" : "odd";
+        suffix = myBits == 1 ? 
+                 JavaAnalysisBundle.message("long.range.set.presentation.even") : 
+                 JavaAnalysisBundle.message("long.range.set.presentation.odd");
       }
       else if (myBits == 1) {
-        suffix = "divisible by " + myMod;
+        suffix = JavaAnalysisBundle.message("long.range.set.presentation.divisible.by", myMod);
       }
       else {
+        //noinspection HardCodedStringLiteral
         suffix = IntStreamEx.of(BitSet.valueOf(new long[]{myBits})).joining(", ", "<", "> mod " + myMod);
       }
       return suffix;
@@ -2156,13 +2106,15 @@ public abstract class LongRangeSet {
             diff.min() == set.min() ? "" : diff.min() == set.min() + 1 ? formatNumber(set.min()) : "<= " + formatNumber(diff.min() - 1);
           String max =
             diff.max() == set.max() ? "" : diff.max() == set.max() - 1 ? formatNumber(set.max()) : ">= " + formatNumber(diff.max() + 1);
-          return StreamEx.of(min, max).without("").joining(" or ");
+          if (min.isEmpty()) return max;
+          if (max.isEmpty()) return min;
+          return JavaAnalysisBundle.message("long.range.set.presentation.two.values", min, max);
         }
       }
       if (myRanges.length == 4 && myRanges[0] == myRanges[1] && myRanges[2] == myRanges[3]) {
-        return myRanges[0] + " or " + myRanges[2];
+        return JavaAnalysisBundle.message("long.range.set.presentation.two.values", myRanges[0], myRanges[2]);
       }
-      return "in " + toString();
+      return JavaAnalysisBundle.message("long.range.set.presentation.range", toString());
     }
 
     @Override

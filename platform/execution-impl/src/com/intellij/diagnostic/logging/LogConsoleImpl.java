@@ -17,6 +17,8 @@
 package com.intellij.diagnostic.logging;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.NotNull;
@@ -28,7 +30,7 @@ import java.nio.file.Files;
 import java.util.Arrays;
 
 public abstract class LogConsoleImpl extends LogConsoleBase {
-  private final String myPath;
+  private final @NlsSafe String myPath;
   @NotNull
   private final File myFile;
   @NotNull
@@ -39,7 +41,7 @@ public abstract class LogConsoleImpl extends LogConsoleBase {
                         @NotNull File file,
                         @NotNull Charset charset,
                         long skippedContents,
-                        @NotNull String title,
+                        @NlsContexts.TabTitle @NotNull String title,
                         final boolean buildInActions,
                         final GlobalSearchScope searchScope) {
     super(project, getReader(file, charset, skippedContents), title, buildInActions, new DefaultLogFilterModel(project),

@@ -1,42 +1,43 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl.welcomeScreen;
 
 import com.intellij.application.Topics;
 import com.intellij.diagnostic.IdeMessagePanel;
 import com.intellij.diagnostic.MessagePool;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeBundle;
+import com.intellij.ide.actions.AboutPopup;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.impl.widget.IdeNotificationArea;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.actionSystem.ex.CustomComponentAction;
 import com.intellij.openapi.actionSystem.impl.MenuItemPresentationFactory;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
+import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.ui.VerticalFlowLayout;
-import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
-import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.impl.ProjectFrameHelper;
-import com.intellij.ui.*;
+import com.intellij.ui.BalloonLayout;
+import com.intellij.ui.ClickListener;
+import com.intellij.ui.Gray;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.border.CustomLineBorder;
-import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.labels.ActionLink;
 import com.intellij.ui.components.panels.NonOpaquePanel;
-import com.intellij.ui.components.panels.Wrapper;
 import com.intellij.ui.popup.PopupFactoryImpl;
 import com.intellij.util.IconUtil;
-import com.intellij.util.ui.JBDimension;
+import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.MouseEventAdapter;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.AccessibleContextDelegate;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -45,7 +46,10 @@ import javax.accessibility.AccessibleContext;
 import javax.accessibility.AccessibleRole;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.Collections;
 import java.util.Objects;
 
@@ -53,10 +57,8 @@ import static com.intellij.openapi.wm.impl.welcomeScreen.WelcomeScreenFocusManag
 import static com.intellij.openapi.wm.impl.welcomeScreen.WelcomeScreenUIManager.*;
 import static com.intellij.util.ui.UIUtil.FontSize.SMALL;
 
-public class WelcomeScreenComponentFactory {
-
-  @NotNull
-  static JComponent createSmallLogo() {
+public final class WelcomeScreenComponentFactory {
+  @NotNull static JComponent createSmallLogo() {
     ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
 
     NonOpaquePanel panel = new NonOpaquePanel(new BorderLayout());
@@ -78,7 +80,10 @@ public class WelcomeScreenComponentFactory {
     JLabel appName = new JLabel(applicationName);
     appName.setForeground(JBColor.foreground());
     appName.setFont(appName.getFont().deriveFont(Font.PLAIN));
-    appName.setHorizontalAlignment(SwingConstants.CENTER);
+
+    ActionLink copyAbout = new ActionLink("", EmptyIcon.ICON_16, createCopyAboutAction());
+    copyAbout.setHoveringIcon(AllIcons.Actions.Copy);
+    copyAbout.setToolTipText(IdeBundle.message("welcome.screen.copy.about.action.text"));
 
     String appVersion = appInfo.getFullVersion();
 
@@ -88,19 +93,31 @@ public class WelcomeScreenComponentFactory {
 
     JLabel version = new JLabel(appVersion);
     version.setFont(UIUtil.getLabelFont(SMALL));
-    version.setHorizontalAlignment(SwingConstants.CENTER);
     version.setForeground(Gray._128);
     NonOpaquePanel textPanel = new NonOpaquePanel();
-    textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+    textPanel.setLayout(new VerticalFlowLayout(0, 0));
     textPanel.setBorder(JBUI.Borders.empty(28, 10, 25, 10));
-    textPanel.add(appName);
+    JPanel namePanel = JBUI.Panels.simplePanel(appName).andTransparent().addToRight(copyAbout);
+    textPanel.add(namePanel);
     textPanel.add(version);
     panel.add(textPanel, BorderLayout.CENTER);
+    panel.setToolTipText(applicationName + " " + appVersion);
+
+    panel.addMouseListener(new MouseAdapter() {
+      @Override
+      public void mouseEntered(MouseEvent e) {
+        copyAbout.setIcon(AllIcons.Actions.Copy);
+      }
+
+      @Override
+      public void mouseExited(MouseEvent e) {
+        copyAbout.setIcon(EmptyIcon.ICON_16);
+      }
+    });
     return panel;
   }
 
-  @NotNull
-  static JComponent createLogo() {
+  @NotNull static JComponent createLogo() {
     ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
 
     NonOpaquePanel panel = new NonOpaquePanel(new BorderLayout());
@@ -120,9 +137,7 @@ public class WelcomeScreenComponentFactory {
     appName.setForeground(JBColor.foreground());
     appName.setFont(getProductFont(36).deriveFont(Font.PLAIN));
     appName.setHorizontalAlignment(SwingConstants.CENTER);
-    String appVersion = "Version ";
-
-    appVersion += appInfo.getFullVersion();
+    String appVersion = IdeBundle.message("welcome.screen.logo.version.label", appInfo.getFullVersion());
 
     if (appInfo.isEAP() && !appInfo.getBuild().isSnapshot()) {
       appVersion += " (" + appInfo.getBuild().asStringWithoutProductCode() + ")";
@@ -139,6 +154,12 @@ public class WelcomeScreenComponentFactory {
     return panel;
   }
 
+  private static AnAction createCopyAboutAction() {
+    return DumbAwareAction.create(e -> {
+      CopyPasteManager.getInstance().setContents(new StringSelection(AboutPopup.getAboutText()));
+    });
+  }
+
   static JComponent createRecentProjects(Disposable parentDisposable) {
     JPanel panel = new JPanel(new BorderLayout());
     panel.add(new NewRecentProjectPanel(parentDisposable), BorderLayout.CENTER);
@@ -148,9 +169,8 @@ public class WelcomeScreenComponentFactory {
   }
 
   static JLabel createArrow(final ActionLink link) {
-    JLabel arrow = new JLabel(AllIcons.General.ArrowDown);
+    JLabel arrow = new JLabel(AllIcons.General.LinkDropTriangle);
     arrow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-    arrow.setVerticalAlignment(SwingConstants.BOTTOM);
     new ClickListener() {
       @Override
       public boolean onClick(@NotNull MouseEvent e, int clickCount) {
@@ -165,7 +185,7 @@ public class WelcomeScreenComponentFactory {
   /**
    * Wraps an {@link ActionLink} component and delegates accessibility support to it.
    */
-  protected static class JActionLinkPanel extends JPanel {
+  protected static final class JActionLinkPanel extends JPanel {
     @NotNull private final ActionLink myActionLink;
 
     public JActionLinkPanel(@NotNull ActionLink actionLink) {
@@ -213,13 +233,9 @@ public class WelcomeScreenComponentFactory {
     }
   }
 
-  static JComponent createActionLink(@NotNull Container parentContainer,
-                                     @Nls String text,
-                                     final String groupId,
-                                     Icon icon,
-                                     @Nullable Component focusOnLeft) {
-    final Ref<ActionLink> ref = new Ref<>(null);
-    AnAction action = new AnAction() {
+  @NotNull
+  public static AnAction createShowPopupAction(@NonNls @NotNull String groupId) {
+    return new AnAction() {
       @Override
       public void actionPerformed(@NotNull AnActionEvent e) {
         ActionGroup configureGroup = (ActionGroup)ActionManager.getInstance().getAction(groupId);
@@ -228,30 +244,41 @@ public class WelcomeScreenComponentFactory {
           false, false, false, false, null, -1, null,
           ActionPlaces.WELCOME_SCREEN,
           new MenuItemPresentationFactory(true), false);
-        popup.showUnderneathOfLabel(ref.get());
+        popup.showUnderneathOf(Objects.requireNonNull(e.getInputEvent().getComponent()));
       }
     };
-    JComponent panel = createActionLink(text, icon, ref, action);
+  }
+
+  static JComponent createActionLink(@NotNull Container parentContainer,
+                                     @Nls String text,
+                                     final String groupId,
+                                     Icon icon,
+                                     @Nullable Component focusOnLeft) {
+    AnAction action = createShowPopupAction(groupId);
+    JComponent panel = wrapActionLink(new ActionLink(text, icon, action));
     installFocusable(parentContainer, panel, action, KeyEvent.VK_DOWN, KeyEvent.VK_UP, focusOnLeft);
     return panel;
   }
 
-  static JComponent createActionLink(@Nls String text, Icon icon, Ref<? super ActionLink> ref, AnAction action) {
-    ActionLink link = new ActionLink(text, icon, action);
-    ref.set(link);
+  public static JComponent wrapActionLink(@NotNull ActionLink link) {
+    JPanel panel = (JPanel)wrapActionLinkWithoutArrow(link);
+    if (!StringUtil.isEmptyOrSpaces(link.getText())) {
+      panel.add(createArrow(link), BorderLayout.EAST);
+    }
+    return panel;
+  }
+
+  public static JComponent wrapActionLinkWithoutArrow(@NotNull ActionLink link) {
     // Don't allow focus, as the containing panel is going to be focusable.
     link.setFocusable(false);
     link.setPaintUnderline(false);
     link.setNormalColor(getLinkNormalColor());
     JActionLinkPanel panel = new JActionLinkPanel(link);
     panel.setBorder(JBUI.Borders.empty(4, 6));
-    if (!StringUtil.isEmptyOrSpaces(text)) {
-      panel.add(createArrow(link), BorderLayout.EAST);
-    }
     return panel;
   }
 
-  static JComponent createErrorsLink(Disposable parent) {
+  public static JComponent createErrorsLink(Disposable parent) {
     IdeMessagePanel panel = new IdeMessagePanel(null, MessagePool.getInstance());
     panel.setBorder(JBUI.Borders.emptyRight(13));
     panel.setOpaque(false);
@@ -260,9 +287,8 @@ public class WelcomeScreenComponentFactory {
   }
 
   @NotNull
-  static Component createEventLink(@NotNull @Nls String linkText, @NotNull Disposable parentDisposable) {
-    final Ref<ActionLink> actionLinkRef = new Ref<>();
-    final JComponent panel = createActionLink(linkText, AllIcons.Ide.Notification.NoEvents, actionLinkRef, new AnAction() {
+  public static Component createEventLink(@NotNull @Nls String linkText, @NotNull Disposable parentDisposable) {
+    ActionLink actionLink = new ActionLink(linkText, AllIcons.Ide.Notification.NoEvents, new AnAction() {
       @Override
       public void actionPerformed(@NotNull AnActionEvent e) {
         BalloonLayout balloonLayout = WelcomeFrame.getInstance().getBalloonLayout();
@@ -275,28 +301,21 @@ public class WelcomeScreenComponentFactory {
         }
       }
     });
+    final JComponent panel = wrapActionLink(actionLink);
     panel.setVisible(false);
     Topics.subscribe(WelcomeBalloonLayoutImpl.BALLOON_NOTIFICATION_TOPIC, parentDisposable, types -> {
       if (!types.isEmpty()) {
         NotificationType type = Collections.max(types);
-        actionLinkRef.get().setIcon(IdeNotificationArea.createIconWithNotificationCount(actionLinkRef.get(), type, types.size(), false));
+        actionLink.setIcon(type == NotificationType.IDE_UPDATE
+                           ? AllIcons.Ide.Notification.IdeUpdate
+                           : IdeNotificationArea.createIconWithNotificationCount(panel, type, types.size(), false));
       }
       panel.setVisible(!types.isEmpty());
     });
     return panel;
   }
 
-  public static void collectAllActions(@NotNull DefaultActionGroup group, @NotNull ActionGroup actionGroup) {
-    for (AnAction action : actionGroup.getChildren(null)) {
-      if (action instanceof ActionGroup && !((ActionGroup)action).isPopup()) {
-        collectAllActions(group, (ActionGroup)action);
-      }
-      else {
-        group.add(action);
-      }
-    }
-  }
-
+  @Nls
   public static String getApplicationTitle() {
     String title = IdeBundle.message("label.welcome.to.0", ApplicationNamesInfo.getInstance().getFullProductName());
     if (Boolean.getBoolean("ide.ui.version.in.title")) {
@@ -307,135 +326,5 @@ public class WelcomeScreenComponentFactory {
       title += " (" + suffix + ")";
     }
     return title;
-  }
-
-  static class ToolbarTextButtonWrapper extends AnActionButton.AnActionButtonWrapper implements CustomComponentAction {
-    final JButton myButton;
-
-    ToolbarTextButtonWrapper(@NotNull AnAction action) {
-      super(action.getTemplatePresentation(), action);
-      myButton = new JButton(getTemplateText());
-      myButton.setOpaque(false);
-      myButton.addActionListener(createActionListenerForComponent(myButton, action));
-    }
-
-    @Override
-    public @NotNull JComponent createCustomComponent(@NotNull Presentation presentation, @NotNull String place) {
-      return myButton;
-    }
-
-    @Override
-    public void updateButton(@NotNull AnActionEvent e) {
-      getDelegate().update(e);
-      myButton.setText(e.getPresentation().getText());
-      myButton.setVisible(e.getPresentation().isVisible());
-      myButton.setEnabled(e.getPresentation().isEnabled());
-    }
-
-    public static ToolbarTextButtonWrapper wrapAsTextButton(@NotNull AnAction action) {
-      return new ToolbarTextButtonWrapper(action);
-    }
-  }
-
-  static boolean isActionAvailable(@NotNull AnAction action) {
-    AnActionEvent event = AnActionEvent.createFromAnAction(action, null, ActionPlaces.WELCOME_SCREEN, DataContext.EMPTY_CONTEXT);
-    action.update(event);
-    return event.getPresentation().isEnabledAndVisible();
-  }
-
-  @NotNull
-  static ActionListener createActionListenerForComponent(@NotNull JComponent component, @NotNull AnAction action) {
-    return l -> {
-      ActionToolbar toolbar = ComponentUtil.getParentOfType(ActionToolbar.class, component);
-      DataContext dataContext = toolbar != null ? toolbar.getToolbarDataContext() : DataManager.getInstance().getDataContext(component);
-      action.actionPerformed(AnActionEvent.createFromAnAction(action, null, ActionPlaces.WELCOME_SCREEN, dataContext));
-    };
-  }
-
-  static class LargeIconWithTextWrapper extends AnActionButton.AnActionButtonWrapper implements CustomComponentAction {
-    final JButton myIconButton;
-    final JBLabel myLabel;
-    private final JPanel myPanel;
-
-    LargeIconWithTextWrapper(@NotNull AnAction action) {
-      super(action.getTemplatePresentation(), action);
-      myIconButton = new JButton();
-      myIconButton.setBorder(JBUI.Borders.empty());
-      myIconButton.setHorizontalAlignment(SwingConstants.CENTER);
-      myIconButton.setOpaque(false);
-      myIconButton.setPreferredSize(new JBDimension(60, 60));
-      myIconButton.putClientProperty("JButton.focusedBackgroundColor", getActionsButtonBackground(true));
-      myIconButton.putClientProperty("JButton.backgroundColor", getActionsButtonBackground(false));
-
-      myIconButton.addFocusListener(new FocusListener() {
-        @Override
-        public void focusGained(FocusEvent e) {
-          updateIconBackground(true);
-        }
-
-        @Override
-        public void focusLost(FocusEvent e) {
-          updateIconBackground(false);
-        }
-      });
-      myIconButton.addActionListener(createActionListenerForComponent(myIconButton, action));
-      Wrapper iconWrapper = new Wrapper(myIconButton);
-      iconWrapper.setBorder(JBUI.Borders.empty(0, 30));
-
-      myLabel = new JBLabel(Objects.requireNonNull(getTemplateText()), SwingConstants.CENTER);
-      myLabel.setOpaque(false);
-
-      myPanel = new NonOpaquePanel(new VerticalFlowLayout(VerticalFlowLayout.TOP, 0, JBUI.scale(12), false, false));
-      myPanel.add(iconWrapper);
-      myPanel.add(myLabel);
-    }
-
-    void updateIconBackground(boolean selected) {
-      myIconButton.setSelected(selected);
-      myIconButton.putClientProperty("JButton.backgroundColor", getActionsButtonBackground(selected));
-      myIconButton.repaint();
-    }
-
-    @Override
-    public @NotNull JComponent createCustomComponent(@NotNull Presentation presentation, @NotNull String place) {
-      return myPanel;
-    }
-
-    @Override
-    public void updateButton(@NotNull AnActionEvent e) {
-      getDelegate().update(e);
-      myIconButton.setIcon(e.getPresentation().getIcon());
-      myIconButton.setSelectedIcon(e.getPresentation().getSelectedIcon());
-      myLabel.setText(e.getPresentation().getText());
-      UIUtil.setEnabled(myPanel, e.getPresentation().isEnabled(), true);
-    }
-
-    public static @NotNull WelcomeScreenComponentFactory.LargeIconWithTextWrapper wrapAsBigIconWithText(AnAction action) {
-      return new LargeIconWithTextWrapper(action);
-    }
-  }
-
-  static Couple<DefaultActionGroup> splitActionGroupToMainAndMore(@NotNull ActionGroup actionGroup, int mainButtonsNum) {
-    DefaultActionGroup group = new DefaultActionGroup();
-    collectAllActions(group, actionGroup);
-    AnAction[] actions = group.getChildren(null);
-
-    DefaultActionGroup main = new DefaultActionGroup();
-    DefaultActionGroup more = new DefaultActionGroup(IdeBundle.message("welcome.screen.empty.projects.more.text"), true) {
-      @Override
-      public boolean hideIfNoVisibleChildren() {
-        return true;
-      }
-    };
-    for (AnAction child : actions) {
-      if (!isActionAvailable(child)) continue;
-      if (main.getChildrenCount() < mainButtonsNum) {
-        main.addAction(child);
-      }
-      else {
-        more.addAction(child);
-      }
-    }
-    return Couple.of(main, more);
   }
 }

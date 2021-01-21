@@ -80,7 +80,7 @@ public class InstalledPackagesPanel extends JPanel {
         return tableCellRenderer;
       }
     };
-    myPackagesTable.setStriped(true);
+    myPackagesTable.setShowGrid(false);
     myPackagesTable.getTableHeader().setReorderingAllowed(false);
     new TableSpeedSearch(myPackagesTable);
 
@@ -218,7 +218,7 @@ public class InstalledPackagesPanel extends JPanel {
 
   private void upgradePackage(@NotNull final InstalledPackage pkg, @Nullable final String toVersion) {
     final PackageManagementService selPackageManagementService = myPackageManagementService;
-    myPackageManagementService.fetchPackageVersions(pkg.getName(), new CatchingConsumer<List<String>, Exception>() {
+    myPackageManagementService.fetchPackageVersions(pkg.getName(), new CatchingConsumer<>() {
       @Override
       public void consume(List<String> releases) {
         if (!releases.isEmpty() && !isUpdateAvailable(pkg.getVersion(), releases.get(0))) {
@@ -248,8 +248,7 @@ public class InstalledPackagesPanel extends JPanel {
                   myNotificationArea.showSuccess(IdeBundle.message("package.successfully.upgraded", packageName));
                 }
                 else {
-                  myNotificationArea.showError(IdeBundle.message("upgrade.packages.failed") +
-                                               " <a href=\"xxx\">" + IdeBundle.message("upgrade.packages.failure.details") + "</a>",
+                  myNotificationArea.showError(IdeBundle.message("upgrade.packages.failed"),
                                                IdeBundle.message("upgrade.packages.failed.dialog.title"),
                                                errorDescription);
                 }
@@ -367,8 +366,7 @@ public class InstalledPackagesPanel extends JPanel {
               }
             }
             else {
-              myNotificationArea.showError(IdeBundle.message("uninstall.packages.failed") +
-                                           " <a href=\"xxx\">" + IdeBundle.message("uninstall.packages.failure.details") + "</a>",
+              myNotificationArea.showError(IdeBundle.message("uninstall.packages.failed"),
                                            IdeBundle.message("uninstall.packages.failed.dialog.title"),
                                            errorDescription);
             }
@@ -478,7 +476,7 @@ public class InstalledPackagesPanel extends JPanel {
     for (int i = 0; i < packageCount; ++i) {
       final int finalIndex = i;
       final InstalledPackage pkg = getInstalledPackageAt(finalIndex);
-      serviceEx.fetchLatestVersion(pkg, new CatchingConsumer<String, Exception>() {
+      serviceEx.fetchLatestVersion(pkg, new CatchingConsumer<>() {
 
         private void decrement() {
           if (inProgressPackageCount.decrementAndGet() == 0) {

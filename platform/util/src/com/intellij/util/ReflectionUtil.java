@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util;
 
 import com.intellij.openapi.diagnostic.ControlFlowException;
@@ -6,7 +6,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.DifferenceFilter;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.JBTreeTraverser;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -72,7 +72,7 @@ public final class ReflectionUtil {
   }
 
   @NotNull
-  public static String declarationToString(@NotNull GenericDeclaration anInterface) {
+  private  static String declarationToString(@NotNull GenericDeclaration anInterface) {
     return anInterface.toString() + Arrays.asList(anInterface.getTypeParameters()) + " loaded by " + ((Class<?>)anInterface).getClassLoader();
   }
 
@@ -130,7 +130,7 @@ public final class ReflectionUtil {
   }
 
   @NotNull
-  public static Field findField(@NotNull Class<?> clazz, @Nullable final Class<?> type, @NotNull final String name) throws NoSuchFieldException {
+  public static Field findField(@NotNull Class<?> clazz, @Nullable final Class<?> type, @NotNull @NonNls final String name) throws NoSuchFieldException {
     Field result = findFieldInHierarchy(clazz, field -> name.equals(field.getName()) && (type == null || field.getType().equals(type)));
     if (result != null) return result;
 
@@ -138,7 +138,7 @@ public final class ReflectionUtil {
   }
 
   @NotNull
-  public static Field findAssignableField(@NotNull Class<?> clazz, @Nullable("null means any type") final Class<?> fieldType, @NotNull final String fieldName) throws NoSuchFieldException {
+  public static Field findAssignableField(@NotNull Class<?> clazz, @Nullable("null means any type") final Class<?> fieldType, @NotNull @NonNls String fieldName) throws NoSuchFieldException {
     Field result = findFieldInHierarchy(clazz, field -> fieldName.equals(field.getName()) && (fieldType == null || fieldType.isAssignableFrom(field.getType())));
     if (result != null) {
       return result;
@@ -147,7 +147,7 @@ public final class ReflectionUtil {
   }
 
   public static @Nullable Field findFieldInHierarchy(@NotNull Class<?> rootClass,
-                                                     @NotNull java.util.function.Predicate<? super Field> checker) {
+                                                     @NotNull Predicate<? super Field> checker) {
     for (Class<?> aClass = rootClass; aClass != null; aClass = aClass.getSuperclass()) {
       for (Field field : aClass.getDeclaredFields()) {
         if (checker.test(field)) {
@@ -164,7 +164,7 @@ public final class ReflectionUtil {
   @Nullable
   private static Field processInterfaces(Class<?> @NotNull [] interfaces,
                                          @NotNull Set<? super Class<?>> visited,
-                                         @NotNull java.util.function.Predicate<? super Field> checker) {
+                                         @NotNull Predicate<? super Field> checker) {
     for (Class<?> anInterface : interfaces) {
       if (!visited.add(anInterface)) {
         continue;
@@ -185,7 +185,7 @@ public final class ReflectionUtil {
     return null;
   }
 
-  public static void resetField(@NotNull Class<?> clazz, @Nullable("null means of any type") Class<?> type, @NotNull String name)  {
+  public static void resetField(@NotNull Class<?> clazz, @Nullable("null means of any type") Class<?> type, @NotNull @NonNls String name)  {
     try {
       resetField(null, findField(clazz, type, name));
     }
@@ -194,16 +194,7 @@ public final class ReflectionUtil {
     }
   }
 
-  public static void resetField(@NotNull Object object, @Nullable("null means any type") Class<?> type, @NotNull String name)  {
-    try {
-      resetField(object, findField(object.getClass(), type, name));
-    }
-    catch (NoSuchFieldException e) {
-      LOG.info(e);
-    }
-  }
-
-  public static void resetField(@NotNull Object object, @NotNull String name) {
+  public static void resetField(@NotNull Object object, @NotNull @NonNls String name) {
     try {
       resetField(object, findField(object.getClass(), null, name));
     }
@@ -419,7 +410,7 @@ public final class ReflectionUtil {
   }
 
   /**
-   * Like {@link Class#newInstance()} but also handles private classes
+   * Handles private classes.
    */
   @NotNull
   public static <T> T newInstance(@NotNull Class<T> aClass) {
@@ -433,8 +424,7 @@ public final class ReflectionUtil {
       try {
         constructor.setAccessible(true);
       }
-      catch (SecurityException e) {
-        return aClass.newInstance();
+      catch (SecurityException ignored) {
       }
       return constructor.newInstance();
     }
@@ -455,11 +445,9 @@ public final class ReflectionUtil {
         }
       }
 
-      ExceptionUtil.rethrow(e);
+      ExceptionUtilRt.rethrowUnchecked(e);
+      throw new RuntimeException(e);
     }
-
-    // error will be thrown
-    return null;
   }
 
   @Nullable
@@ -565,7 +553,7 @@ public final class ReflectionUtil {
       if (sourceFields.contains(field)) {
         if (isPublic(field) && !isFinal(field)) {
           try {
-            if (diffFilter == null || diffFilter.isAccept(field)) {
+            if (diffFilter == null || diffFilter.test(field)) {
               copyFieldValue(from, to, field);
               valuesChanged = true;
             }
@@ -580,20 +568,16 @@ public final class ReflectionUtil {
   }
 
   public static <T> boolean comparePublicNonFinalFields(@NotNull T first, @NotNull T second) {
-    return compareFields(first, second, field -> isPublic(field) && !isFinal(field));
-  }
-
-  public static <T> boolean compareFields(@NotNull T defaultSettings, @NotNull T newSettings, @NotNull Predicate<? super Field> useField) {
-    Class<?> defaultClass = defaultSettings.getClass();
+    Class<?> defaultClass = first.getClass();
     Field[] fields = defaultClass.getDeclaredFields();
-    if (defaultClass != newSettings.getClass()) {
-      fields = ArrayUtil.mergeArrays(fields, newSettings.getClass().getDeclaredFields());
+    if (defaultClass != second.getClass()) {
+      fields = ArrayUtil.mergeArrays(fields, second.getClass().getDeclaredFields());
     }
     for (Field field : fields) {
-      if (!useField.test(field)) continue;
+      if (!isPublic(field) || isFinal(field)) continue;
       field.setAccessible(true);
       try {
-        if (!Comparing.equal(field.get(newSettings), field.get(defaultSettings))) {
+        if (!Comparing.equal(field.get(second), field.get(first))) {
           return false;
         }
       }
@@ -615,11 +599,11 @@ public final class ReflectionUtil {
     }
   }
 
-  private static boolean isPublic(final Field field) {
+  private static boolean isPublic(@NotNull Field field) {
     return (field.getModifiers() & Modifier.PUBLIC) != 0;
   }
 
-  private static boolean isFinal(final Field field) {
+  private static boolean isFinal(@NotNull Field field) {
     return (field.getModifiers() & Modifier.FINAL) != 0;
   }
 
@@ -671,6 +655,30 @@ public final class ReflectionUtil {
     return found;
   }
 
+  private static final Object unsafe;
+  static {
+    Class<?> unsafeClass;
+    try {
+      unsafeClass = Class.forName("sun.misc.Unsafe");
+    }
+    catch (ClassNotFoundException e) {
+      throw new RuntimeException(e);
+    }
+    unsafe = getStaticFieldValue(unsafeClass, unsafeClass, "theUnsafe");
+    if (unsafe == null) {
+      throw new RuntimeException("Could not find 'theUnsafe' field in the Unsafe class");
+    }
+  }
+
+  /**
+   * Use {@link java.lang.invoke.VarHandle} or {@link java.util.concurrent.ConcurrentHashMap} or other standard JDK concurrent facilities
+   */
+  @ApiStatus.Internal
+  @Deprecated
+  public static @NotNull Object getUnsafe() {
+    return unsafe;
+  }
+
 
   private static final class MySecurityManager extends SecurityManager {
     private static final MySecurityManager INSTANCE = new MySecurityManager();
@@ -702,10 +710,5 @@ public final class ReflectionUtil {
 
   public static boolean isAssignable(@NotNull Class<?> ancestor, @NotNull Class<?> descendant) {
     return ancestor == descendant || ancestor.isAssignableFrom(descendant);
-  }
-
-  @NotNull
-  public static JBTreeTraverser<Class<?>> classTraverser(@Nullable Class<?> root) {
-    return ReflectionStartupUtil.classTraverser(root);
   }
 }

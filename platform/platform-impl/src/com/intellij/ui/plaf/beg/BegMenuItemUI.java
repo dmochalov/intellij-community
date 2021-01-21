@@ -9,10 +9,13 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.impl.ActionMenuItem;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.keymap.KeymapUtil;
-import com.intellij.openapi.util.SystemInfoRt;
+import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.IconUtil;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -49,6 +52,7 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
   @NonNls public static final String PLAY_SOUND_METHOD = "playSound";
   @NonNls public static final String AQUA_LOOK_AND_FEEL_CLASS_NAME = "apple.laf.AquaLookAndFeel";
   @NonNls public static final String GET_KEY_MODIFIERS_TEXT = "getKeyModifiersText";
+  public static final Key<String> CUSTOM_KEY_STROKE_TEXT = new Key<>("CUSTOM_KEY_STROKE_TEXT");
 
   private Border myAquaSelectedBackgroundPainter;
 
@@ -106,12 +110,7 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
     g.setFont(font1);
     FontMetrics fontmetrics = g.getFontMetrics(font1);
     FontMetrics fontmetrics1 = g.getFontMetrics(acceleratorFont);
-    String keyStrokeText;
-    if (jmenuitem instanceof ActionMenuItem) {
-      keyStrokeText = ((ActionMenuItem)jmenuitem).getFirstShortcutText();
-    }else{
-      keyStrokeText = getKeyStrokeText(jmenuitem.getAccelerator());
-    }
+    String keyStrokeText = getKeyStrokeText(jmenuitem);
     String s1 = layoutMenuItem(fontmetrics, jmenuitem.getText(), fontmetrics1, keyStrokeText, icon1, icon2, arrowIcon, jmenuitem.getVerticalAlignment(), jmenuitem.getHorizontalAlignment(), jmenuitem.getVerticalTextPosition(), jmenuitem.getHorizontalTextPosition(), f, l, j, c, h, d, jmenuitem.getText() != null ? defaultTextIconGap : 0, defaultTextIconGap);
     Color color2 = g.getColor();
     if (comp.isOpaque() || (StartupUiUtil.isUnderDarcula() || UIUtil.isUnderIntelliJLaF())){
@@ -136,8 +135,8 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
       else{
         g.setColor(jmenuitem.getForeground());
       }
-      if (useCheckAndArrow()){
-        icon2.paintIcon(comp, g, h.x, h.y);
+      if (useCheckAndArrow()) {
+        IconUtil.paintSelectionAwareIcon(icon2, jmenuitem, g, h.x, h.y, isSelected(jmenuitem));
       }
       g.setColor(color2);
       if (menuItem.isArmed()){
@@ -155,8 +154,8 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
             icon1 = jmenuitem.getIcon();
           }
         }
-      if (icon1 != null){
-        icon1.paintIcon(comp, g, l.x, l.y);
+      if (icon1 != null) {
+        IconUtil.paintSelectionAwareIcon(icon1, jmenuitem, g, l.x, l.y, isSelected(jmenuitem));
       }
     }
     if (s1 != null && s1.length() > 0){
@@ -223,6 +222,19 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
     g.setFont(font);
   }
 
+  private static @NlsSafe String getKeyStrokeText(@NotNull JMenuItem item) {
+    if (item instanceof ActionMenuItem) {
+      AnAction action = ((ActionMenuItem)item).getAnAction();
+      if (action instanceof UserDataHolder) {
+        String customText = ((UserDataHolder)action).getUserData(CUSTOM_KEY_STROKE_TEXT);
+        if (!StringUtil.isEmptyOrSpaces(customText)) return customText;
+      }
+      return ((ActionMenuItem)item).getFirstShortcutText();
+    }
+    return getKeyStrokeText(item.getAccelerator());
+  }
+
+  @NlsSafe
   private static String getKeyStrokeText(KeyStroke keystroke) {
     String s1 = "";
     if (keystroke != null){
@@ -291,9 +303,9 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
 
   private String layoutMenuItem(
     FontMetrics fontmetrics,
-    String text,
+    @NlsContexts.Command String text,
     FontMetrics fontmetrics1,
-    String keyStrokeText,
+    @NlsContexts.Label String keyStrokeText,
     Icon icon,
     Icon checkIcon,
     Icon arrowIcon,
@@ -382,12 +394,7 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
     Icon icon1 = getIcon();
     Icon icon2 = getAllowedIcon();
     String text = jmenuitem.getText();
-    String keyStrokeText;
-    if (jmenuitem instanceof ActionMenuItem) {
-      keyStrokeText = ((ActionMenuItem)jmenuitem).getFirstShortcutText();
-    }else{
-      keyStrokeText = getKeyStrokeText(jmenuitem.getAccelerator());
-    }
+    String keyStrokeText = getKeyStrokeText(jmenuitem);
     Font font = jmenuitem.getFont();
     FontMetrics fontmetrics = comp.getFontMetrics(font);
     FontMetrics fontmetrics1 = comp.getFontMetrics(acceleratorFont);

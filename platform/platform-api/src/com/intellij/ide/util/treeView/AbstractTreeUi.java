@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.util.treeView;
 
 import com.intellij.ide.IdeBundle;
@@ -25,10 +25,7 @@ import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.util.ui.update.Activatable;
 import com.intellij.util.ui.update.UiNotifyConnector;
 import gnu.trove.THashSet;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 import org.jetbrains.concurrency.AsyncPromise;
 import org.jetbrains.concurrency.Promise;
 import org.jetbrains.concurrency.Promises;
@@ -63,7 +60,7 @@ public class AbstractTreeUi {
 
   private Comparator<? super NodeDescriptor<?>> myNodeDescriptorComparator;
 
-  private final Comparator<TreeNode> myNodeComparator = new Comparator<TreeNode>() {
+  private final Comparator<TreeNode> myNodeComparator = new Comparator<>() {
     @Override
     public int compare(TreeNode n1, TreeNode n2) {
       if (isLoadingNode(n1) && isLoadingNode(n2)) return 0;
@@ -737,7 +734,7 @@ public class AbstractTreeUi {
 
     if (bgLoading) {
       queueToBackground(build, update)
-        .onSuccess(new TreeConsumer<Void>("AbstractTreeUi.initRootNodeNowIfNeeded: on processed queueToBackground") {
+        .onSuccess(new TreeConsumer<>("AbstractTreeUi.initRootNodeNowIfNeeded: on processed queueToBackground") {
           @Override
           public void perform() {
             invokeLaterIfNeeded(false, new TreeRunnable("AbstractTreeUi.initRootNodeNowIfNeeded: on processed queueToBackground later") {
@@ -1082,7 +1079,7 @@ public class AbstractTreeUi {
           if (descriptor != null) {
             DefaultMutableTreeNode node = (DefaultMutableTreeNode)path.getLastPathComponent();
             maybeYield(() -> update(descriptor, false)
-              .onSuccess(new TreeConsumer<Boolean>("AbstractTreeUi.updateRow: inner") {
+              .onSuccess(new TreeConsumer<>("AbstractTreeUi.updateRow: inner") {
                 @Override
                 public void perform() {
                   updateRow(row + 1, pass);
@@ -1258,7 +1255,7 @@ public class AbstractTreeUi {
       else {
         if (!descriptorIsReady) {
           update(descriptor, false)
-            .onSuccess(new TreeConsumer<Boolean>("AbstractTreeUi.doUpdateChildren") {
+            .onSuccess(new TreeConsumer<>("AbstractTreeUi.doUpdateChildren") {
               @Override
               public void perform() {
                 if (processAlwaysLeaf(node) || !updateChildren) return;
@@ -1416,13 +1413,13 @@ public class AbstractTreeUi {
           });
         }
       })
-      .onError(new TreeConsumer<Throwable>("AbstractTreeUi.updateNodeChildrenNow: on reject processExistingNodes") {
+      .onError(new TreeConsumer<>("AbstractTreeUi.updateNodeChildrenNow: on reject processExistingNodes") {
         @Override
         public void perform() {
           removeFromUpdatingChildren(node);
           processNodeActionsIfReady(node);
         }
-    });
+      });
   }
 
   private boolean isDisposed(@NotNull DefaultMutableTreeNode node) {
@@ -2617,7 +2614,7 @@ public class AbstractTreeUi {
 
     final DefaultMutableTreeNode[] nodeToProcessActions = new DefaultMutableTreeNode[1];
 
-    final TreeConsumer<Void> finalizeRunnable = new TreeConsumer<Void>("AbstractTreeUi.queueBackgroundUpdate: finalize") {
+    final TreeConsumer<Void> finalizeRunnable = new TreeConsumer<>("AbstractTreeUi.queueBackgroundUpdate: finalize") {
       @Override
       public void perform() {
         invokeLaterIfNeeded(false, new TreeRunnable("AbstractTreeUi.queueBackgroundUpdate: finalize later") {
@@ -2747,7 +2744,7 @@ public class AbstractTreeUi {
     };
     queueToBackground(buildRunnable, updateRunnable)
       .onSuccess(finalizeRunnable)
-      .onError(new TreeConsumer<Throwable>("AbstractTreeUi.queueBackgroundUpdate: on rejected") {
+      .onError(new TreeConsumer<>("AbstractTreeUi.queueBackgroundUpdate: on rejected") {
         @Override
         public void perform() {
           updateInfo.getPass().expire();
@@ -2934,7 +2931,7 @@ public class AbstractTreeUi {
     return null;
   }
 
-  private static String getLoadingNodeText() {
+  private static @Nls String getLoadingNodeText() {
     return IdeBundle.message("progress.searching");
   }
 
@@ -3020,7 +3017,7 @@ public class AbstractTreeUi {
           }
 
           promise
-            .onSuccess(new TreeConsumer<Boolean>("AbstractTreeUi.processExistingNode: on done index updating after update") {
+            .onSuccess(new TreeConsumer<>("AbstractTreeUi.processExistingNode: on done index updating after update") {
               @Override
               public void perform() {
                 if (childDesc.get().getIndex() != index.intValue()) {
@@ -3032,7 +3029,7 @@ public class AbstractTreeUi {
         }
 
         promise
-          .onSuccess(new TreeConsumer<Boolean>("AbstractTreeUi.processExistingNode: on done index updating") {
+          .onSuccess(new TreeConsumer<>("AbstractTreeUi.processExistingNode: on done index updating") {
             @Override
             public void perform() {
               if (!oldElement.equals(newElement.get()) || forceRemapping.get()) {
@@ -3740,7 +3737,7 @@ public class AbstractTreeUi {
           }
 
           clearSelection();
-          Set<Object> toSelect = new THashSet<>();
+          Set<Object> toSelect = new HashSet<>();
           ContainerUtil.addAllNotNull(toSelect, elements);
           if (addToSelection) {
             ContainerUtil.addAllNotNull(toSelect, currentElements);

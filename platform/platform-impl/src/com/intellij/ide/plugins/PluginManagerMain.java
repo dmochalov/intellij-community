@@ -1,7 +1,6 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins;
 
-import com.intellij.CommonBundle;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.marketplace.MarketplaceRequests;
@@ -21,10 +20,13 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.updateSettings.impl.UpdateChecker;
 import com.intellij.openapi.updateSettings.impl.UpdateSettings;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.xml.util.XmlStringUtil;
 import org.jetbrains.annotations.NotNull;
@@ -40,19 +42,17 @@ import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
-import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
-
-/**
- * @author stathik
- * @author Konstantin Bulenkov
- */
-public abstract class PluginManagerMain {
+public final class PluginManagerMain {
   private static final String TEXT_SUFFIX = "</body></html>";
   private static final String HTML_PREFIX = "<a href=\"";
   private static final String HTML_SUFFIX = "</a>";
 
-  private static String getTextPrefix() {
+  private PluginManagerMain() {
+  }
+
+  private static @NlsSafe String getTextPrefix() {
     int fontSize = JBUIScale.scale(12);
     int m1 = JBUIScale.scale(2);
     int m2 = JBUIScale.scale(5);
@@ -81,6 +81,19 @@ public abstract class PluginManagerMain {
                                         Runnable onSuccess,
                                         PluginEnabler pluginEnabler,
                                         @Nullable Runnable cleanup) throws IOException {
+    Function<Boolean, Void> function = cleanup == null ? null : aBoolean -> {
+      cleanup.run();
+      return null;
+    };
+    return downloadPlugins(plugins, customPlugins, allowInstallWithoutRestart, onSuccess, pluginEnabler, function);
+  }
+
+  public static boolean downloadPlugins(List<PluginNode> plugins,
+                                        List<? extends IdeaPluginDescriptor> customPlugins,
+                                        boolean allowInstallWithoutRestart,
+                                        Runnable onSuccess,
+                                        PluginEnabler pluginEnabler,
+                                        @Nullable Function<Boolean, Void> function) throws IOException {
     boolean[] result = new boolean[1];
     try {
       ProgressManager.getInstance().run(new Task.Backgroundable(null, IdeBundle.message("progress.download.plugins"), true, PluginManagerUISettings.getInstance()) {
@@ -92,8 +105,8 @@ public abstract class PluginManagerMain {
             }
           }
           finally {
-            if (cleanup != null) {
-              ApplicationManager.getApplication().invokeLater(cleanup);
+            if (function != null) {
+              ApplicationManager.getApplication().invokeLater(() -> function.apply(result[0]));
             }
           }
         }
@@ -119,15 +132,16 @@ public abstract class PluginManagerMain {
       header.getPanel().setVisible(false);
       return;
     }
+
     StringBuilder sb = new StringBuilder();
     header.setPlugin(plugin);
     String description = plugin.getDescription();
-    if (!isEmptyOrSpaces(description)) {
+    if (!Strings.isEmptyOrSpaces(description)) {
       sb.append(description);
     }
 
     String changeNotes = plugin.getChangeNotes();
-    if (!isEmptyOrSpaces(changeNotes)) {
+    if (!Strings.isEmptyOrSpaces(changeNotes)) {
       sb.append("<h4>Change Notes</h4>");
       sb.append(changeNotes);
     }
@@ -136,16 +150,16 @@ public abstract class PluginManagerMain {
       String vendor = plugin.getVendor();
       String vendorEmail = plugin.getVendorEmail();
       String vendorUrl = plugin.getVendorUrl();
-      if (!isEmptyOrSpaces(vendor) || !isEmptyOrSpaces(vendorEmail) || !isEmptyOrSpaces(vendorUrl)) {
+      if (!Strings.isEmptyOrSpaces(vendor) || !Strings.isEmptyOrSpaces(vendorEmail) || !Strings.isEmptyOrSpaces(vendorUrl)) {
         sb.append("<h4>Vendor</h4>");
 
-        if (!isEmptyOrSpaces(vendor)) {
+        if (!Strings.isEmptyOrSpaces(vendor)) {
           sb.append(vendor);
         }
-        if (!isEmptyOrSpaces(vendorUrl)) {
+        if (!Strings.isEmptyOrSpaces(vendorUrl)) {
           sb.append("<br>").append(composeHref(vendorUrl));
         }
-        if (!isEmptyOrSpaces(vendorEmail)) {
+        if (!Strings.isEmptyOrSpaces(vendorEmail)) {
           sb.append("<br>")
             .append(HTML_PREFIX)
             .append("mailto:").append(vendorEmail)
@@ -156,12 +170,7 @@ public abstract class PluginManagerMain {
       String pluginDescriptorUrl = plugin.getUrl();
       try {
         List<String> marketplacePlugins = MarketplaceRequests.getInstance().getMarketplaceCachedPlugins();
-        if (marketplacePlugins != null){
-          if (marketplacePlugins.contains(plugin.getPluginId().getIdString())){
-            // Prevent the link to the marketplace from showing to external plugins
-            setPluginHomePage(pluginDescriptorUrl, sb);
-          }
-        } else {
+        if (marketplacePlugins == null) {
           // There are no marketplace plugins in the cache, but we should show the title anyway.
           setPluginHomePage(pluginDescriptorUrl, sb);
           // will get the marketplace plugins ids next time
@@ -172,11 +181,16 @@ public abstract class PluginManagerMain {
             catch (IOException ignore) {}
           });
         }
+        else if (marketplacePlugins.contains(plugin.getPluginId().getIdString())) {
+          // Prevent the link to the marketplace from showing to external plugins
+          setPluginHomePage(pluginDescriptorUrl, sb);
+        }
       }
-      catch (IOException ignore) {}
+      catch (IOException ignore) {
+      }
 
       String size = plugin instanceof PluginNode ? ((PluginNode)plugin).getSize() : null;
-      if (!isEmptyOrSpaces(size)) {
+      if (!Strings.isEmptyOrSpaces(size)) {
         sb.append("<h4>Size</h4>").append(PluginManagerColumnInfo.getFormattedSize(size));
       }
     }
@@ -185,7 +199,7 @@ public abstract class PluginManagerMain {
   }
 
   private static void setPluginHomePage(String pluginDescriptorUrl, StringBuilder sb){
-    if (!isEmptyOrSpaces(pluginDescriptorUrl)) {
+    if (!Strings.isEmptyOrSpaces(pluginDescriptorUrl)) {
       sb.append("<h4>Plugin homepage</h4>").append(composeHref(pluginDescriptorUrl));
     }
   }
@@ -194,7 +208,8 @@ public abstract class PluginManagerMain {
     if (text != null) {
       text.insert(0, getTextPrefix());
       text.append(TEXT_SUFFIX);
-      pane.setText(SearchUtil.markup(text.toString(), filter).trim());
+      @NlsSafe String markup = SearchUtil.markup(text.toString(), filter);
+      pane.setText(markup.trim());
       pane.setCaretPosition(0);
     }
     else {
@@ -227,19 +242,33 @@ public abstract class PluginManagerMain {
   }
 
   public static boolean isAccepted(@Nullable String filter, @NotNull Set<String> search, @NotNull IdeaPluginDescriptor descriptor) {
-    if (StringUtil.isEmpty(filter)) return true;
-    if (StringUtil.containsIgnoreCase(descriptor.getName(), filter) || isAccepted(search, filter, descriptor.getName())) return true;
-    if (isAccepted(search, filter, descriptor.getDescription())) return true;
+    if (Strings.isEmpty(filter) ||
+        StringUtil.indexOfIgnoreCase(descriptor.getName(), filter, 0) >= 0 ||
+        isAccepted(search, filter, descriptor.getName())) {
+      return true;
+    }
+    if (isAccepted(search, filter, descriptor.getDescription())) {
+      return true;
+    }
+
     String category = descriptor.getCategory();
     return category != null && (StringUtil.containsIgnoreCase(category, filter) || isAccepted(search, filter, category));
   }
 
   public static boolean isAccepted(@NotNull Set<String> search, @NotNull String filter, @Nullable String description) {
-    if (StringUtil.isEmpty(description)) return false;
-    if (filter.length() <= 2) return false;
+    if (Strings.isEmpty(description) || filter.length() <= 2) {
+      return false;
+    }
+
     Set<String> words = SearchableOptionsRegistrar.getInstance().getProcessedWords(description);
-    if (words.contains(filter)) return true;
-    if (search.isEmpty()) return false;
+    if (words.contains(filter)) {
+      return true;
+    }
+
+    if (search.isEmpty()) {
+      return false;
+    }
+
     Set<String> descriptionSet = new HashSet<>(search);
     descriptionSet.removeAll(words);
     return descriptionSet.isEmpty();
@@ -274,52 +303,58 @@ public abstract class PluginManagerMain {
     if (!disabled.isEmpty() || !disabledDependants.isEmpty()) {
       String message = "";
       if (disabled.size() == 1) {
-        message += "Updated plugin '" + disabled.iterator().next().getName() + "' is disabled.";
+        message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part1", disabled.iterator().next().getName());
       }
       else if (!disabled.isEmpty()) {
-        message += "Updated plugins " + StringUtil.join(disabled, pluginDescriptor -> pluginDescriptor.getName(), ", ") + " are disabled.";
+        message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part2", StringUtil.join(disabled, pluginDescriptor -> pluginDescriptor.getName(), ", "));
       }
 
       if (!disabledDependants.isEmpty()) {
         message += "<br>";
-        message += "Updated plugin" + (list.size() > 1 ? "s depend " : " depends ") + "on disabled";
+        message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part3", list.size());
+        message += " ";
         if (disabledDependants.size() == 1) {
-          message += " plugin '" + disabledDependants.iterator().next().getName() + "'.";
+          message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part4", disabledDependants.iterator().next().getName());
         }
         else {
-          message += " plugins " + StringUtil.join(disabledDependants, pluginDescriptor -> pluginDescriptor.getName(), ", ") + ".";
+          message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part5", StringUtil.join(disabledDependants, pluginDescriptor -> pluginDescriptor.getName(), ", "));
         }
       }
-      message += " Disabled plugins " + (disabled.isEmpty() ? "and plugins which depend on disabled " :"") + "won't be activated after restart.";
+      message += " ";
+      message += IdeBundle.message(disabled.isEmpty() ? "plugin.manager.main.suggest.to.enable.message.part6" : "plugin.manager.main.suggest.to.enable.message.part7");
 
-      int result;
+      boolean result;
       if (!disabled.isEmpty() && !disabledDependants.isEmpty()) {
-        result =
-          Messages.showYesNoCancelDialog(XmlStringUtil.wrapInHtml(message), IdeBundle.message("dialog.title.dependent.plugins.found"),
-                                         IdeBundle.message("button.enable.all"),
-                                         IdeBundle.message("button.enable.updated.plugin.0", disabled.size()), CommonBundle.getCancelButtonText(),
-                                         Messages.getQuestionIcon());
-        if (result == Messages.CANCEL) return false;
+        int code =
+          MessageDialogBuilder.yesNoCancel(IdeBundle.message("dialog.title.dependent.plugins.found"), XmlStringUtil.wrapInHtml(message))
+            .yesText(IdeBundle.message("button.enable.all"))
+            .noText(IdeBundle.message("button.enable.updated.plugin.0", disabled.size()))
+            .guessWindowAndAsk();
+        if (code == Messages.CANCEL) {
+          return false;
+        }
+        result = code == Messages.YES;
       }
       else {
-        message += "<br>Would you like to enable ";
+        message += "<br>";
         if (!disabled.isEmpty()) {
-          message += "updated plugin" + (disabled.size() > 1 ? "s" : "");
+          message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part8", disabled.size());
         }
         else {
-          message += "plugin " +
-                     StringUtil.pluralize("dependency", disabledDependants.size());
+          message += IdeBundle.message("plugin.manager.main.suggest.to.enable.message.part9", disabledDependants.size());
         }
         message += "?";
-        result = Messages.showYesNoDialog(XmlStringUtil.wrapInHtml(message), IdeBundle.message("dialog.title.dependent.plugins.found"), Messages.getQuestionIcon());
-        if (result == Messages.NO) return false;
+        result = MessageDialogBuilder.yesNo(IdeBundle.message("dialog.title.dependent.plugins.found"), XmlStringUtil.wrapInHtml(message)).guessWindowAndAsk();
+        if (!result) {
+          return false;
+        }
       }
 
-      if (result == Messages.YES) {
+      if (result) {
         disabled.addAll(disabledDependants);
         pluginEnabler.enablePlugins(disabled);
       }
-      else if (result == Messages.NO && !disabled.isEmpty()) {
+      else if (!disabled.isEmpty()) {
         pluginEnabler.enablePlugins(disabled);
       }
       return true;
@@ -328,20 +363,21 @@ public abstract class PluginManagerMain {
   }
 
   public interface PluginEnabler {
-    void enablePlugins(Set<? extends IdeaPluginDescriptor> disabled);
-    void disablePlugins(Set<? extends IdeaPluginDescriptor> disabled);
+    void enablePlugins(@NotNull Set<? extends IdeaPluginDescriptor> plugins);
+
+    void disablePlugins(@NotNull Set<? extends IdeaPluginDescriptor> plugins);
 
     boolean isDisabled(@NotNull PluginId pluginId);
 
     class HEADLESS implements PluginEnabler {
       @Override
-      public void enablePlugins(Set<? extends IdeaPluginDescriptor> disabled) {
-        DisabledPluginsState.enablePlugins(disabled, true);
+      public void enablePlugins(@NotNull Set<? extends IdeaPluginDescriptor> plugins) {
+        DisabledPluginsState.enablePlugins(plugins, true);
       }
 
       @Override
-      public void disablePlugins(Set<? extends IdeaPluginDescriptor> disabled) {
-        for (IdeaPluginDescriptor descriptor : disabled) {
+      public void disablePlugins(@NotNull Set<? extends IdeaPluginDescriptor> plugins) {
+        for (IdeaPluginDescriptor descriptor : plugins) {
           PluginManagerCore.disablePlugin(descriptor.getPluginId());
         }
       }
@@ -355,15 +391,16 @@ public abstract class PluginManagerMain {
 
   public static void notifyPluginsUpdated(@Nullable Project project) {
     ApplicationEx app = ApplicationManagerEx.getApplicationEx();
-    String title = IdeBundle.message("updates.plugins.ready.title", ApplicationNamesInfo.getInstance().getFullProductName());
-    String action = IdeBundle.message("ide.restart.required.notification",
-                                      IdeBundle.message(app.isRestartCapable() ? "ide.restart.action" : "ide.shutdown.action"));
+    String title = IdeBundle.message("updates.notification.title", ApplicationNamesInfo.getInstance().getFullProductName());
+    String action = IdeBundle.message("ide.restart.required.notification", app.isRestartCapable() ? 1 : 0);
     Notification notification = UpdateChecker.getNotificationGroup().createNotification(title, "", NotificationType.INFORMATION, null, "plugins.updated.suggest.restart");
     notification.addAction(new NotificationAction(action) {
       @Override
       public void actionPerformed(@NotNull AnActionEvent e, @NotNull Notification notification) {
-        notification.expire();
-        app.restart(true);
+        if (PluginManagerConfigurable.showRestartDialog() == Messages.YES) {
+          notification.expire();
+          ApplicationManagerEx.getApplicationEx().restart(true);
+        }
       }
     });
     notification.notify(project);

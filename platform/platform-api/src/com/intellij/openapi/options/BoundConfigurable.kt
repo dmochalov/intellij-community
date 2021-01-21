@@ -5,7 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.util.ClearableLazyValue
 import com.intellij.openapi.util.Disposer
-import org.jetbrains.annotations.Nls
+import com.intellij.openapi.util.NlsContexts
 import org.jetbrains.annotations.NonNls
 import javax.swing.JComponent
 
@@ -13,11 +13,14 @@ import javax.swing.JComponent
  * @author yole
  */
 abstract class BoundConfigurable(
-  @Nls private val displayName: String,
+  @NlsContexts.ConfigurableName private val displayName: String,
   @NonNls private val helpTopic: String? = null
 ) : DslConfigurableBase(), Configurable {
   override fun getDisplayName(): String = displayName
   override fun getHelpTopic(): String? = helpTopic
+  override fun getPreferredFocusedComponent(): JComponent? {
+    return super<DslConfigurableBase>.getPreferredFocusedComponent()
+  }
 }
 
 abstract class DslConfigurableBase : UnnamedConfigurable {
@@ -49,6 +52,10 @@ abstract class DslConfigurableBase : UnnamedConfigurable {
     panel.value.apply()
   }
 
+  open fun getPreferredFocusedComponent(): JComponent? {
+    return panel.value.preferredFocusedComponent
+  }
+
   override fun disposeUIResources() {
     disposable?.let {
       Disposer.dispose(it)
@@ -59,7 +66,7 @@ abstract class DslConfigurableBase : UnnamedConfigurable {
   }
 }
 
-abstract class BoundSearchableConfigurable(displayName: String, helpTopic: String, private val _id: String = helpTopic)
+abstract class BoundSearchableConfigurable(@NlsContexts.ConfigurableName displayName: String, helpTopic: String, private val _id: String = helpTopic)
   : BoundConfigurable(displayName, helpTopic), SearchableConfigurable {
   override fun getId(): String = _id
 }

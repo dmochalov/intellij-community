@@ -10,6 +10,9 @@ import com.intellij.openapi.progress.util.BackgroundTaskUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.vcs.VcsNotifier
+import git4idea.GitNotificationIdsHolder.Companion.REBASE_COMMIT_EDIT_UNDO_ERROR
+import git4idea.GitNotificationIdsHolder.Companion.REBASE_COMMIT_EDIT_UNDO_ERROR_PROTECTED_BRANCH
+import git4idea.GitNotificationIdsHolder.Companion.REBASE_COMMIT_EDIT_UNDO_ERROR_REPO_CHANGES
 import git4idea.i18n.GitBundle
 import git4idea.rebase.log.GitCommitEditingOperationResult.Complete.UndoPossibility
 import git4idea.rebase.log.GitCommitEditingOperationResult.Complete.UndoResult
@@ -48,17 +51,21 @@ internal fun GitCommitEditingOperationResult.Complete.notifySuccess(
 }
 
 internal fun UndoResult.Error.notifyUndoError(project: Project, @NlsContexts.NotificationTitle title: String) {
-  VcsNotifier.getInstance(project).notifyError(title, errorHtml)
+  VcsNotifier.getInstance(project).notifyError(REBASE_COMMIT_EDIT_UNDO_ERROR, title, errorHtml)
 }
 
 internal fun UndoPossibility.Impossible.notifyUndoImpossible(project: Project, @NlsContexts.NotificationTitle title: String) {
   val notifier = VcsNotifier.getInstance(project)
   when (this) {
     UndoPossibility.Impossible.HeadMoved -> {
-      notifier.notifyError(title, GitBundle.getString("rebase.log.reword.action.notification.undo.not.allowed.repository.changed.message"))
+      notifier.notifyError(REBASE_COMMIT_EDIT_UNDO_ERROR_REPO_CHANGES,
+                           title,
+                           GitBundle.message("rebase.log.reword.action.notification.undo.not.allowed.repository.changed.message"))
     }
     is UndoPossibility.Impossible.PushedToProtectedBranch -> {
-      notifier.notifyError(title, GitBundle.message("rebase.log.undo.impossible.pushed.to.protected.branch.notification.text", branch))
+      notifier.notifyError(REBASE_COMMIT_EDIT_UNDO_ERROR_PROTECTED_BRANCH,
+                           title,
+                           GitBundle.message("rebase.log.undo.impossible.pushed.to.protected.branch.notification.text", branch))
     }
   }
 }

@@ -181,6 +181,8 @@ public class XmlTagBlock extends AbstractXmlBlock{
       else {
         return createXmlTextBlocks(result, child, wrap, alignment);
       }
+    } else if (type == XmlElementType.HTML_RAW_TEXT) {
+      return createXmlTextBlocks(result, child, wrap, alignment);
     }
     else if (type == XmlElementType.XML_COMMENT) {
       if (buildInjectedPsiBlocks(result, child, wrap, alignment, indent)) return child;
@@ -197,22 +199,22 @@ public class XmlTagBlock extends AbstractXmlBlock{
    * between <code>{{</code> and <code>}}</code>:
    * <pre> foo   bar{{1+ 2   }}   a {{ 12*23}} b </pre>
    * <p>by Injected Block Builder ({@code withInjections} parameter) is split into 5 blocks (T - HTML text block, FL - foreign language block):
-   * <p><code>
-   *  T≪ foo   bar{{≫,
-   *  FL≪1+ 2   ≫,
-   *  T≪}}   a {{≫,
-   *  FL≪ 12*23 ≫,
-   *  T≪}} b ≫,
-   * </code>
+   * <p>{@code
+   *  T< foo   bar{{>,
+   *  FL<1+ 2   >,
+   *  T<}}   a {{>,
+   *  FL< 12*23 >,
+   *  T<}} b >,
+   * }
    * <p>Such division will allow to properly format injections, but will fail to format HTML text, where continuous spaces should be reduced
    * to a single space. On the other hand the regular HTML formatting ({@code regularBlocks} parameter) of the fragment would result in
-   * following text blocks: <p><code>≪foo≫, ≪bar{{1+≫, ≪2≫, ≪}}≫, ≪a≫, ≪{{≫, ≪12*23}}≫, ≪b≫</code>
+   * following text blocks: <p><code><foo>, <bar{{1+>, <2>, <}}>, <a>, <{{>, <12*23}}>, <b></code>
    * <p>
    * Here HTML text blocks intersect with injection blocks. These two representations are combined together by the procedure into {@code result}
    * parameter and for the given example following formatting blocks are created:
-   * <p><code>
-   *   T≪foo≫, T≪bar{{≫, FL≪1+ 2 ≫, T≪}}≫, T≪a≫, T≪{{≫, FL≪12*23≫, T≪}}≫, T≪b≫
-   * </code>
+   * <p>{@code
+   *   T<foo>, T<bar{{>, FL<1+ 2 >, T<}}>, T<a>, T<{{>, FL<12*23>, T<}}>, T<b>
+   * }
    */
   private void combineRegularBlocksWithInjected(@NotNull ASTNode injectionHost, @NotNull List<Block> result,
                                                 @NotNull List<Block> withInjections, @NotNull List<Block> regularBlocks) {
@@ -331,24 +333,24 @@ public class XmlTagBlock extends AbstractXmlBlock{
     return myIndent;
   }
 
-  private ASTNode createXmlTextBlocks(final List<Block> list, final ASTNode textNode, final Wrap wrap, final Alignment alignment) {
+  private ASTNode createXmlTextBlocks(final List<Block> list, final @NotNull ASTNode textNode, final Wrap wrap, final Alignment alignment) {
     ASTNode child = textNode.getFirstChildNode();
     return createXmlTextBlocks(list, textNode, child, wrap, alignment);
   }
 
   private ASTNode createXmlTextBlocks(final List<Block> list, final ASTNode textNode, ASTNode child,
                                       final Wrap wrap,
-                                      final Alignment alignment
-  ) {
+                                      final Alignment alignment) {
     while (child != null) {
-      if (!AbstractXmlBlock.containsWhiteSpacesOnly(child) && child.getTextLength() > 0){
+      if (!AbstractXmlBlock.containsWhiteSpacesOnly(child) && child.getTextLength() > 0) {
         final Indent indent = getChildrenIndent();
-        child = processChild(list,child,  wrap, alignment, indent);
-        if (child == null) return child;
+        child = processChild(list, child, wrap, alignment, indent);
+        if (child == null) return null;
         if (child.getTreeParent() != textNode) {
           if (child.getTreeParent() != myNode) {
             return createXmlTextBlocks(list, child.getTreeParent(), child.getTreeNext(), wrap, alignment);
-          } else {
+          }
+          else {
             return child;
           }
         }

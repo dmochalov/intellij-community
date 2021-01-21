@@ -32,8 +32,8 @@ import javax.swing.SwingUtilities
  * Module to support legacy configurations.
  *
  * When legacy configuration is ought to be dropped, just remove this module and all references to it.
- * It supports switching back to old runners (see [isNewTestsModeEnabled]) and importing old configs to new one.
- * [projectInitialized] shall be called for that.
+ * It supports switching back to old runners (see isNewTestsModeEnabled) and importing old configs to new one.
+ * projectInitialized shall be called for that.
  *
  * @author Ilya.Kazakevich
  */
@@ -84,7 +84,7 @@ class PyTestLegacyConfigurationAdapter<in T : PyAbstractTestConfiguration>(newCo
    *
    * Null means "false" and used here to prevent saving useless "false" value in .xml for new configurations.
    */
-  @ConfigField
+  @ConfigField("runcfg.pytest.config.parameters") // Fake i18n, which will be deleted soon along with outdated code
   var legacyInformationCopiedToNew: Boolean? = null
 
   init {

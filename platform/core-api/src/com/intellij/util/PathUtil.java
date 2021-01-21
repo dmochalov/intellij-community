@@ -2,6 +2,7 @@
 package com.intellij.util;
 
 import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
@@ -17,7 +18,7 @@ public final class PathUtil {
   private PathUtil() { }
 
   @Nullable
-  public static String getLocalPath(@Nullable VirtualFile file) {
+  public static @NlsSafe String getLocalPath(@Nullable VirtualFile file) {
     if (file == null || !file.isValid()) {
       return null;
     }
@@ -28,7 +29,7 @@ public final class PathUtil {
   }
 
   @NotNull
-  public static String getLocalPath(@NotNull String path) {
+  public static @NlsSafe String getLocalPath(@NotNull String path) {
     return FileUtil.toSystemDependentName(StringUtil.trimEnd(path, URLUtil.JAR_SEPARATOR));
   }
 
@@ -40,7 +41,7 @@ public final class PathUtil {
   }
 
   @NotNull
-  public static String toPresentableUrl(@NotNull String url) {
+  public static @NlsSafe String toPresentableUrl(@NotNull String url) {
     return getLocalPath(VirtualFileManager.extractPath(url));
   }
 
@@ -53,27 +54,27 @@ public final class PathUtil {
   }
 
   @NotNull
-  public static String getFileName(@NotNull String path) {
+  public static @NlsSafe String getFileName(@NotNull String path) {
     return PathUtilRt.getFileName(path);
   }
 
   @Nullable
-  public static String getFileExtension(@NotNull String name) {
+  public static @NlsSafe String getFileExtension(@NotNull String name) {
     return PathUtilRt.getFileExtension(name);
   }
 
   @NotNull
-  public static String getParentPath(@NotNull String path) {
+  public static @NlsSafe String getParentPath(@NotNull String path) {
     return PathUtilRt.getParentPath(path);
   }
 
   @NotNull
-  public static String suggestFileName(@NotNull String text) {
+  public static @NlsSafe String suggestFileName(@NotNull String text) {
     return PathUtilRt.suggestFileName(text);
   }
 
   @NotNull
-  public static String suggestFileName(@NotNull String text, final boolean allowDots, final boolean allowSpaces) {
+  public static @NlsSafe String suggestFileName(@NotNull String text, final boolean allowDots, final boolean allowSpaces) {
     return PathUtilRt.suggestFileName(text, allowDots, allowSpaces);
   }
 
@@ -91,7 +92,7 @@ public final class PathUtil {
   }
 
   @Contract("null -> null; !null -> !null")
-  public static String toSystemDependentName(@Nullable String path) {
+  public static @NlsSafe String toSystemDependentName(@Nullable String path) {
     return path == null ? null : FileUtilRt.toSystemDependentName(path);
   }
 

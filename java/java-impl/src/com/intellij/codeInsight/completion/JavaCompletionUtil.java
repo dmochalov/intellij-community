@@ -48,6 +48,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.siyeh.ig.psiutils.SideEffectChecker;
 import gnu.trove.THashSet;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
@@ -142,7 +143,7 @@ public final class JavaCompletionUtil {
     }
 
     T result = new PsiTypeMapper() {
-      private final Set<PsiClassType> myVisited = ContainerUtil.newIdentityTroveSet();
+      private final Set<PsiClassType> myVisited = new ReferenceOpenHashSet<>();
 
       @Override
       public PsiType visitClassType(@NotNull final PsiClassType classType) {
@@ -231,12 +232,12 @@ public final class JavaCompletionUtil {
     return subst.get().substitute(rawType);
   }
 
-  public static Set<LookupElement> processJavaReference(final PsiElement element,
-                                                        final PsiJavaReference javaReference,
-                                                        final ElementFilter elementFilter,
-                                                        final JavaCompletionProcessor.Options options,
-                                                        final PrefixMatcher matcher,
-                                                        final CompletionParameters parameters) {
+  static Set<LookupElement> processJavaReference(PsiElement element,
+                                                 PsiJavaCodeReferenceElement javaReference,
+                                                 ElementFilter elementFilter,
+                                                 JavaCompletionProcessor.Options options,
+                                                 Condition<? super String> nameCondition,
+                                                 CompletionParameters parameters) {
     PsiElement elementParent = element.getContext();
     if (elementParent instanceof PsiReferenceExpression) {
       final PsiExpression qualifierExpression = ((PsiReferenceExpression)elementParent).getQualifierExpression();
@@ -257,7 +258,7 @@ public final class JavaCompletionUtil {
                 if (qualifierType == null) return;
 
                 PsiReferenceExpression fakeRef = createReference("xxx.xxx", createContextWithXxxVariable(element, qualifierType));
-                set.addAll(processJavaQualifiedReference(fakeRef.getReferenceNameElement(), fakeRef, elementFilter, options, matcher, parameters));
+                set.addAll(processJavaQualifiedReference(fakeRef.getReferenceNameElement(), fakeRef, elementFilter, options, nameCondition, parameters));
               });
               if (overloadsFound) return set;
             }
@@ -265,14 +266,16 @@ public final class JavaCompletionUtil {
         }
       }
     }
-    return processJavaQualifiedReference(element, javaReference, elementFilter, options, matcher, parameters);
+    return processJavaQualifiedReference(element, javaReference, elementFilter, options, nameCondition, parameters);
   }
 
-  private static Set<LookupElement> processJavaQualifiedReference(PsiElement element, PsiJavaReference javaReference, ElementFilter elementFilter,
-                                                        JavaCompletionProcessor.Options options,
-                                                        final PrefixMatcher matcher, CompletionParameters parameters) {
+  private static Set<LookupElement> processJavaQualifiedReference(PsiElement element,
+                                                                  PsiJavaCodeReferenceElement javaReference,
+                                                                  ElementFilter elementFilter,
+                                                                  JavaCompletionProcessor.Options options,
+                                                                  Condition<? super String> nameCondition,
+                                                                  CompletionParameters parameters) {
     final Set<LookupElement> set = new LinkedHashSet<>();
-    final Condition<String> nameCondition = matcher::prefixMatches;
 
     final JavaCompletionProcessor processor = new JavaCompletionProcessor(element, elementFilter, options, nameCondition);
     final PsiType plainQualifier = processor.getQualifierType();
@@ -302,8 +305,11 @@ public final class JavaCompletionUtil {
       for (LookupElement item : createLookupElements(completionElement, javaReference)) {
         item.putUserData(QUALIFIER_TYPE_ATTR, plainQualifier);
         final Object o = item.getObject();
-        if (o instanceof PsiClass && !isSourceLevelAccessible(element, (PsiClass)o, pkgContext)) {
-          continue;
+        if (o instanceof PsiClass) {
+          PsiClass specifiedQualifierClass = javaReference.isQualified() ? qualifierClass : ((PsiClass)o).getContainingClass();
+          if (!isSourceLevelAccessible(element, (PsiClass)o, pkgContext, specifiedQualifierClass)) {
+            continue;
+          }
         }
         if (o instanceof PsiMember) {
           if (honorExcludes && isInExcludedPackage((PsiMember)o, true)) {
@@ -317,19 +323,17 @@ public final class JavaCompletionUtil {
       }
     }
 
-    if (javaReference instanceof PsiJavaCodeReferenceElement) {
-      PsiElement refQualifier = ((PsiJavaCodeReferenceElement)javaReference).getQualifier();
-      if (refQualifier == null && PsiTreeUtil.getParentOfType(element, PsiPackageStatement.class, PsiImportStatementBase.class) == null) {
-        final StaticMemberProcessor memberProcessor = new JavaStaticMemberProcessor(parameters);
-        memberProcessor.processMembersOfRegisteredClasses(matcher, (member, psiClass) -> {
-          if (!mentioned.contains(member) && processor.satisfies(member, ResolveState.initial())) {
-            ContainerUtil.addIfNotNull(set, memberProcessor.createLookupElement(member, psiClass, true));
-          }
-        });
-      }
-      else if (refQualifier instanceof PsiSuperExpression && ((PsiSuperExpression)refQualifier).getQualifier() == null) {
-        set.addAll(SuperCalls.suggestQualifyingSuperCalls(element, javaReference, elementFilter, options, nameCondition));
-      }
+    PsiElement refQualifier = javaReference.getQualifier();
+    if (refQualifier == null && PsiTreeUtil.getParentOfType(element, PsiPackageStatement.class, PsiImportStatementBase.class) == null) {
+      final StaticMemberProcessor memberProcessor = new JavaStaticMemberProcessor(parameters);
+      memberProcessor.processMembersOfRegisteredClasses(nameCondition, (member, psiClass) -> {
+        if (!mentioned.contains(member) && processor.satisfies(member, ResolveState.initial())) {
+          ContainerUtil.addIfNotNull(set, memberProcessor.createLookupElement(member, psiClass, true));
+        }
+      });
+    }
+    else if (refQualifier instanceof PsiSuperExpression && ((PsiSuperExpression)refQualifier).getQualifier() == null) {
+      set.addAll(SuperCalls.suggestQualifyingSuperCalls(element, javaReference, elementFilter, options, nameCondition));
     }
 
     return set;
@@ -409,7 +413,7 @@ public final class JavaCompletionUtil {
 
   @NotNull
   private static LookupElement castQualifier(@NotNull LookupElement item, @NotNull PsiTypeLookupItem castTypeItem) {
-    return new LookupElementDecorator<LookupElement>(item) {
+    return new LookupElementDecorator<>(item) {
       @Override
       public void handleInsert(@NotNull InsertionContext context) {
         final Document document = context.getEditor().getDocument();
@@ -466,7 +470,7 @@ public final class JavaCompletionUtil {
                                                 @NotNull Object object,
                                                 @NotNull PsiElement place) {
     if (shouldMarkRed(object, place)) {
-      return PrioritizedLookupElement.withExplicitProximity(LookupElementDecorator.withRenderer(item, new LookupElementRenderer<LookupElementDecorator<LookupElement>>() {
+      return PrioritizedLookupElement.withExplicitProximity(LookupElementDecorator.withRenderer(item, new LookupElementRenderer<>() {
         @Override
         public void renderElement(LookupElementDecorator<LookupElement> element, LookupElementPresentation presentation) {
           element.getDelegate().renderElement(presentation);
@@ -475,7 +479,7 @@ public final class JavaCompletionUtil {
       }), -1);
     }
     if (containsMember(qualifierType, object, false) && !qualifierType.equalsToText(CommonClassNames.JAVA_LANG_OBJECT)) {
-      LookupElementDecorator<LookupElement> bold = LookupElementDecorator.withRenderer(item, new LookupElementRenderer<LookupElementDecorator<LookupElement>>() {
+      LookupElementDecorator<LookupElement> bold = LookupElementDecorator.withRenderer(item, new LookupElementRenderer<>() {
         @Override
         public void renderElement(LookupElementDecorator<LookupElement> element, LookupElementPresentation presentation) {
           element.getDelegate().renderElement(presentation);
@@ -773,8 +777,8 @@ public final class JavaCompletionUtil {
       ThreeState hasParameters = hasParams;
       boolean spaceBetweenParentheses = hasParams == ThreeState.YES && styleSettings.SPACE_WITHIN_METHOD_CALL_PARENTHESES ||
                                         hasParams == ThreeState.UNSURE && styleSettings.SPACE_WITHIN_EMPTY_METHOD_CALL_PARENTHESES;
-      new ParenthesesInsertHandler<LookupElement>(styleSettings.SPACE_BEFORE_METHOD_CALL_PARENTHESES, spaceBetweenParentheses,
-                                                  needRightParenth, styleSettings.METHOD_PARAMETERS_LPAREN_ON_NEXT_LINE) {
+      new ParenthesesInsertHandler<>(styleSettings.SPACE_BEFORE_METHOD_CALL_PARENTHESES, spaceBetweenParentheses,
+                                     needRightParenth, styleSettings.METHOD_PARAMETERS_LPAREN_ON_NEXT_LINE) {
         @Override
         protected boolean placeCaretInsideParentheses(InsertionContext context1, LookupElement item1) {
           return hasParameters != ThreeState.NO;
@@ -873,8 +877,17 @@ public final class JavaCompletionUtil {
     return contextFile instanceof PsiClassOwner && StringUtil.isNotEmpty(((PsiClassOwner)contextFile).getPackageName());
   }
 
-  public static boolean isSourceLevelAccessible(PsiElement context, PsiClass psiClass, final boolean pkgContext) {
-    if (!JavaPsiFacade.getInstance(psiClass.getProject()).getResolveHelper().isAccessible(psiClass, context, psiClass.getContainingClass())) {
+  public static boolean isSourceLevelAccessible(@NotNull PsiElement context,
+                                                @NotNull PsiClass psiClass,
+                                                final boolean pkgContext) {
+    return isSourceLevelAccessible(context, psiClass, pkgContext, psiClass.getContainingClass());
+  }
+
+  private static boolean isSourceLevelAccessible(PsiElement context,
+                                                 @NotNull PsiClass psiClass,
+                                                 final boolean pkgContext,
+                                                 @Nullable PsiClass qualifierClass) {
+    if (!JavaPsiFacade.getInstance(psiClass.getProject()).getResolveHelper().isAccessible(psiClass, context, qualifierClass)) {
       return false;
     }
 

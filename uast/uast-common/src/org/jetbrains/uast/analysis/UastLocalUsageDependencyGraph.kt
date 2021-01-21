@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.uast.analysis
 
 import com.intellij.openapi.diagnostic.Logger
@@ -14,7 +14,6 @@ import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.castSafelyTo
-import gnu.trove.THashSet
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
@@ -77,7 +76,7 @@ private class VisitorWithVariablesTracking(
   val dependencies: MutableMap<UElement, MutableSet<Dependency>> = mutableMapOf()
 ) : AbstractUastVisitor() {
 
-  private val elementsProcessedAsReceiver: MutableSet<UExpression> = THashSet()
+  private val elementsProcessedAsReceiver: MutableSet<UExpression> = HashSet()
 
   private fun createVisitor(scope: LocalScopeContext) =
     VisitorWithVariablesTracking(scope, currentDepth, dependents, dependencies)
@@ -351,20 +350,20 @@ private class VisitorWithVariablesTracking(
   private fun registerDependency(dependent: Dependent,
                                  dependency: Dependency) {
     for (el in dependency.elements) {
-      dependents.getOrPut(el) { THashSet() }.add(dependent)
+      dependents.getOrPut(el) { HashSet() }.add(dependent)
     }
-    dependencies.getOrPut(dependent.element) { THashSet() }.add(dependency)
+    dependencies.getOrPut(dependent.element) { HashSet() }.add(dependency)
   }
 
   companion object {
-    val maxBuildDepth = Registry.intValue("reactor.default.recursion.depth.limit", 30)
+    val maxBuildDepth = Registry.intValue("uast.usage.graph.default.recursion.depth.limit", 30)
 
     object BuildOverflowException : RuntimeException("graph building is overflowed", null, false, false)
   }
 }
 
 private fun UExpression.extractBranchesResultAsDependency(): Dependency {
-  val branchResults = THashSet<UExpression>().apply { accumulateBranchesResult(this) }
+  val branchResults = HashSet<UExpression>().apply { accumulateBranchesResult(this) }
 
   if (branchResults.size > 1)
     return Dependency.BranchingDependency(branchResults)
@@ -390,15 +389,7 @@ private fun UExpression.accumulateBranchesResult(results: MutableSet<UExpression
 
 private val UExpression.lastExpression: UExpression?
   get() = when (this) {
-    is USwitchClauseExpressionWithBody -> {
-      //FIXME: workaround for KT-35574
-      if (lang.id == "kotlin" && getParentOfType<USwitchExpression>()?.getExpressionType() != null) {
-        // skip last break statement, which doesn't make sense
-        body.expressions.getOrNull(body.expressions.lastIndex - 1)
-      } else {
-        body.expressions.lastOrNull()
-      }
-    }
+    is USwitchClauseExpressionWithBody -> body.expressions.lastOrNull()
     is UBlockExpression -> this.expressions.lastOrNull()
     is UExpressionList -> this.expressions.lastOrNull()
     else -> this
@@ -463,8 +454,8 @@ object KotlinExtensionConstants {
 }
 
 private class LocalScopeContext(private val parent: LocalScopeContext?) {
-  private val definedInScopeVariables = THashSet<UElement>()
-  private val definedInScopeVariablesNames = THashSet<String>()
+  private val definedInScopeVariables = HashSet<UElement>()
+  private val definedInScopeVariablesNames = HashSet<String>()
 
   private val lastAssignmentOf = mutableMapOf<UElement, Set<UElement>>()
   private val lastDeclarationOf = mutableMapOf<String?, UElement>()
@@ -501,13 +492,15 @@ private class LocalScopeContext(private val parent: LocalScopeContext?) {
   fun createChild() = LocalScopeContext(this)
 
   val variables: Iterable<UElement>
-    get() = generateSequence(this) { it.parent }
-      .flatMap { it.definedInScopeVariables.asSequence() }
-      .asIterable()
+    get() {
+      return generateSequence(this) { it.parent }
+        .flatMap { it.definedInScopeVariables.asSequence() }
+        .asIterable()
+    }
 
   fun mergeWith(others: Iterable<LocalScopeContext>) {
     for (variable in variables) {
-      this[variable] = THashSet<UElement>().apply {
+      this[variable] = HashSet<UElement>().apply {
         for (other in others) {
           other[variable]?.let { addAll(it) }
           other[variable]?.let { addAll(it) }

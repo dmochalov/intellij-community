@@ -64,7 +64,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -116,13 +118,14 @@ public abstract class UsefulTestCase extends TestCase {
 
   private @Nullable Disposable myTestRootDisposable;
 
+  private @Nullable List<Path> myPathsToKeep;
   private @Nullable Path myTempDir;
 
   private static final String DEFAULT_SETTINGS_EXTERNALIZED;
   private static final CodeInsightSettings defaultSettings = new CodeInsightSettings();
 
   static {
-    IdeaForkJoinWorkerThreadFactory.setupPoisonFactory();
+    IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true);
     Logger.setFactory(TestLoggerFactory.class);
 
     // Radar #5755208: Command line Java applications need a way to launch without a Dock icon.
@@ -262,8 +265,21 @@ public abstract class UsefulTestCase extends TestCase {
   }
 
   @ApiStatus.Internal
-  void removeGlobalTempDirectory(@NotNull Path dir) {
-    PathKt.delete(dir);
+  void removeGlobalTempDirectory(@NotNull Path dir) throws Exception {
+    if (myPathsToKeep == null || myPathsToKeep.isEmpty()) {
+      PathKt.delete(dir);
+    }
+    else {
+      try (DirectoryStream<Path> directoryStream = Files.newDirectoryStream(dir)) {
+        for (Path file : directoryStream) {
+          if (!shouldKeepTmpFile(file)) {
+            FileUtil.delete(file);
+          }
+        }
+      }
+      catch (NoSuchFileException ignore) {
+      }
+    }
   }
 
   protected boolean isIconRequired() {
@@ -282,16 +298,41 @@ public abstract class UsefulTestCase extends TestCase {
       () -> {
         if (myTempDir != null) {
           FileUtil.resetCanonicalTempPathCache(ORIGINAL_TEMP_DIR);
-          removeGlobalTempDirectory(myTempDir);
+          try {
+            removeGlobalTempDirectory(myTempDir);
+          }
+          catch (Throwable e) {
+            printThreadDump();
+            throw e;
+          }
         }
       },
       () -> waitForAppLeakingThreads(10, TimeUnit.SECONDS),
       () -> clearFields(this)
-    ).run(ObjectUtils.notNull(mySuppressedExceptions, Collections.emptyList()));
+    ).run(mySuppressedExceptions);
   }
 
   protected final void disposeRootDisposable() {
     Disposer.dispose(getTestRootDisposable());
+  }
+
+  protected void addTmpFileToKeep(@NotNull Path file) {
+    if (myPathsToKeep == null) {
+      myPathsToKeep = new ArrayList<>();
+    }
+    myPathsToKeep.add(file.toAbsolutePath());
+  }
+
+  private boolean shouldKeepTmpFile(@NotNull Path file) {
+    if (myPathsToKeep == null || myPathsToKeep.isEmpty()) {
+      return false;
+    }
+    for (Path pathToKeep : myPathsToKeep) {
+      if (file.equals(pathToKeep)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static final Set<String> DELETE_ON_EXIT_HOOK_DOT_FILES;
@@ -341,8 +382,8 @@ public abstract class UsefulTestCase extends TestCase {
     final CodeInsightSettings settings = CodeInsightSettings.getInstance();
     // don't use method references here to make stack trace reading easier
     //noinspection Convert2MethodRef
-    new RunAll()
-      .append(() -> {
+    new RunAll(
+      () -> {
         try {
           checkCodeInsightSettingsEqual(defaultSettings, settings);
         }
@@ -357,8 +398,8 @@ public abstract class UsefulTestCase extends TestCase {
           }
           throw error;
         }
-      })
-      .append(() -> {
+      },
+      () -> {
         currentCodeStyleSettings.getIndentOptions(FileTypeManager.getInstance().getStdFileType("JAVA"));
         try {
           checkCodeStyleSettingsEqual(oldCodeStyleSettings, currentCodeStyleSettings);
@@ -366,8 +407,8 @@ public abstract class UsefulTestCase extends TestCase {
         finally {
           currentCodeStyleSettings.clearCodeStyleSettings();
         }
-      })
-      .run();
+      }
+    ).run();
   }
 
   /**
@@ -378,10 +419,11 @@ public abstract class UsefulTestCase extends TestCase {
    */
   @NotNull
   public Disposable getTestRootDisposable() {
-    if (myTestRootDisposable == null) {
-      myTestRootDisposable = new TestDisposable();
+    Disposable disposable = myTestRootDisposable;
+    if (disposable == null) {
+      myTestRootDisposable = disposable = new TestDisposable();
     }
-    return myTestRootDisposable;
+    return disposable;
   }
 
   /**
@@ -441,7 +483,7 @@ public abstract class UsefulTestCase extends TestCase {
    *
    * @param cost setup cost in milliseconds
    */
-  private void logPerClassCost(long cost, @NotNull Object2LongOpenHashMap<String> costMap) {
+  private void logPerClassCost(long cost, @NotNull Object2LongOpenHashMap<? super String> costMap) {
     costMap.addTo(getClass().getSuperclass().getName(), cost);
   }
 
@@ -491,6 +533,10 @@ public abstract class UsefulTestCase extends TestCase {
       try {
         testRunnable.run();
         success = true;
+      }
+      catch (AssumptionViolatedException e) {
+        success = true;
+        throw e;
       }
       finally {
         TestLoggerFactory.onTestFinished(success);
@@ -778,16 +824,12 @@ public abstract class UsefulTestCase extends TestCase {
   }
 
   public static <T> T assertOneElement(@NotNull Collection<? extends T> collection) {
-    Iterator<? extends T> iterator = collection.iterator();
-    String toString = toString(collection);
-    Assert.assertTrue(toString, iterator.hasNext());
-    T t = iterator.next();
-    Assert.assertFalse(toString, iterator.hasNext());
-    return t;
+    Assert.assertEquals(collection.toString(), 1, collection.size());
+    return collection.iterator().next();
   }
 
   public static <T> T assertOneElement(T @NotNull [] ts) {
-    Assert.assertEquals(Arrays.asList(ts).toString(), 1, ts.length);
+    Assert.assertEquals(Arrays.toString(ts), 1, ts.length);
     return ts[0];
   }
 
@@ -1004,9 +1046,11 @@ public abstract class UsefulTestCase extends TestCase {
    * Checks that code block throw corresponding exception.
    *
    * @param exceptionCase Block annotated with some exception type
+   * @deprecated Use {@link #assertThrows(Class, ThrowableRunnable)} instead
    */
+  @Deprecated
   protected void assertException(@NotNull AbstractExceptionCase<?> exceptionCase) {
-    assertException(exceptionCase, null);
+    assertThrows(exceptionCase.getExpectedExceptionClass(), null, ()-> exceptionCase.tryClosure());
   }
 
   /**
@@ -1015,10 +1059,11 @@ public abstract class UsefulTestCase extends TestCase {
    *
    * @param exceptionCase    Block annotated with some exception type
    * @param expectedErrorMsg expected error message
+   * @deprecated Use {@link #assertThrows(Class, String, ThrowableRunnable)} instead
    */
-  protected void assertException(@NotNull AbstractExceptionCase exceptionCase, @Nullable String expectedErrorMsg) {
-    //noinspection unchecked
-    assertExceptionOccurred(true, exceptionCase, expectedErrorMsg);
+  @Deprecated
+  protected void assertException(@NotNull AbstractExceptionCase<?> exceptionCase, @Nullable String expectedErrorMsg) {
+    assertThrows(exceptionCase.getExpectedExceptionClass(), expectedErrorMsg, ()->exceptionCase.tryClosure());
   }
 
   /**
@@ -1027,8 +1072,7 @@ public abstract class UsefulTestCase extends TestCase {
    * @param exceptionClass   Expected exception type
    * @param runnable         Block annotated with some exception type
    */
-  public static <T extends Throwable> void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
-                                                        @NotNull ThrowableRunnable<T> runnable) {
+  public static void assertThrows(@NotNull Class<? extends Throwable> exceptionClass, @NotNull ThrowableRunnable<?> runnable) {
     assertThrows(exceptionClass, null, runnable);
   }
 
@@ -1040,49 +1084,12 @@ public abstract class UsefulTestCase extends TestCase {
    * @param expectedErrorMsgPart expected error message, of any
    * @param runnable         Block annotated with some exception type
    */
-  @SuppressWarnings({"unchecked", "SameParameterValue"})
-  public static <T extends Throwable> void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
-                                                        @Nullable String expectedErrorMsgPart,
-                                                        @NotNull ThrowableRunnable<T> runnable) {
-    assertExceptionOccurred(true, new AbstractExceptionCase() {
-      @Override
-      public Class<Throwable> getExpectedExceptionClass() {
-        return (Class<Throwable>)exceptionClass;
-      }
-
-      @Override
-      public void tryClosure() throws Throwable {
-        runnable.run();
-      }
-    }, expectedErrorMsgPart);
-  }
-
-  /**
-   * Checks that code block doesn't throw corresponding exception.
-   *
-   * @param exceptionCase Block annotated with some exception type
-   */
-  protected <T extends Throwable> void assertNoException(@NotNull AbstractExceptionCase<T> exceptionCase) throws T {
-    assertExceptionOccurred(false, exceptionCase, null);
-  }
-
-  protected void assertNoThrowable(@NotNull Runnable closure) {
-    String throwableName = null;
-    try {
-      closure.run();
-    }
-    catch (Throwable thr) {
-      throwableName = thr.getClass().getName();
-    }
-    assertNull(throwableName);
-  }
-
-  private static <T extends Throwable> void assertExceptionOccurred(boolean shouldOccur,
-                                                                    @NotNull AbstractExceptionCase<T> exceptionCase,
-                                                                    String expectedErrorMsgPart) throws T {
+  public static void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
+                                  @Nullable String expectedErrorMsgPart,
+                                  @NotNull ThrowableRunnable<?> runnable) {
     boolean wasThrown = false;
     try {
-      exceptionCase.tryClosure();
+      runnable.run();
     }
     catch (Throwable e) {
       Throwable cause = e;
@@ -1090,16 +1097,49 @@ public abstract class UsefulTestCase extends TestCase {
         cause = cause.getCause();
       }
 
-      if (shouldOccur) {
-        wasThrown = true;
-        assertInstanceOf(cause, exceptionCase.getExpectedExceptionClass());
-        if (expectedErrorMsgPart != null) {
-          assertTrue(cause.getMessage(), cause.getMessage().contains(expectedErrorMsgPart));
-        }
+      wasThrown = true;
+      if (!exceptionClass.isInstance(cause)) {
+        throw new AssertionError("Expected instance of: " + exceptionClass + " actual: " + cause.getClass(), cause);
       }
-      else if (exceptionCase.getExpectedExceptionClass().equals(cause.getClass())) {
-        wasThrown = true;
 
+      if (expectedErrorMsgPart != null) {
+        assertTrue(cause.getMessage(), cause.getMessage().contains(expectedErrorMsgPart));
+      }
+    }
+    finally {
+      if (!wasThrown) {
+        fail(exceptionClass + " must be thrown.");
+      }
+    }
+  }
+
+  /**
+   * Checks that code block doesn't throw corresponding exception.
+   *
+   * @param exceptionCase Block annotated with some exception type
+   * @deprecated Use {@link #assertNoException(Class, ThrowableRunnable)} instead
+   */
+  @Deprecated
+  protected <T extends Throwable> void assertNoException(@NotNull AbstractExceptionCase<T> exceptionCase) throws T {
+    try {
+      assertNoException(exceptionCase.getExpectedExceptionClass(), () -> exceptionCase.tryClosure());
+    }
+    catch (Throwable throwable) {
+      throw new RuntimeException(throwable);
+    }
+  }
+
+  protected static <T extends Throwable> void assertNoException(@NotNull Class<? extends Throwable> exceptionClass, @NotNull ThrowableRunnable<T> runnable) throws T {
+    try {
+      runnable.run();
+    }
+    catch (Throwable e) {
+      Throwable cause = e;
+      while (cause instanceof LoggedErrorProcessor.TestLoggerAssertionError && cause.getCause() != null) {
+        cause = cause.getCause();
+      }
+
+      if (exceptionClass.equals(cause.getClass())) {
         //noinspection UseOfSystemOutOrSystemErr
         System.out.println();
         //noinspection UseOfSystemOutOrSystemErr
@@ -1111,11 +1151,17 @@ public abstract class UsefulTestCase extends TestCase {
         throw e;
       }
     }
-    finally {
-      if (shouldOccur && !wasThrown) {
-        fail(exceptionCase.getExpectedExceptionClass().getName() + " must be thrown.");
-      }
+  }
+
+  protected void assertNoThrowable(@NotNull Runnable closure) {
+    String throwableName = null;
+    try {
+      closure.run();
     }
+    catch (Throwable thr) {
+      throwableName = thr.getClass().getName();
+    }
+    assertNull(throwableName);
   }
 
   protected boolean annotatedWith(@NotNull Class<? extends Annotation> annotationClass) {
@@ -1176,8 +1222,7 @@ public abstract class UsefulTestCase extends TestCase {
   protected final class TestDisposable implements Disposable {
     private volatile boolean myDisposed;
 
-    public TestDisposable() {
-    }
+    public TestDisposable() { }
 
     @Override
     public void dispose() {

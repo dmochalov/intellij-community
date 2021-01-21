@@ -1,8 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
 package com.intellij.util.io.storage;
 
 import com.intellij.openapi.util.io.BufferExposingByteArrayOutputStream;
@@ -70,7 +66,7 @@ public class RefCountingStorage extends AbstractStorage {
 
     try (InflaterInputStream in = new CustomInflaterInputStream(result)) {
       final BufferExposingByteArrayOutputStream outputStream = new BufferExposingByteArrayOutputStream();
-      StreamUtil.copyStreamContent(in, outputStream);
+      StreamUtil.copy(in, outputStream);
       return outputStream;
     }
   }
@@ -140,7 +136,7 @@ public class RefCountingStorage extends AbstractStorage {
   private void zipAndWrite(ByteArraySequence bytes, int record, boolean fixedSize) throws IOException {
     BufferExposingByteArrayOutputStream s = new BufferExposingByteArrayOutputStream();
     try (DeflaterOutputStream out = new DeflaterOutputStream(s)) {
-      out.write(bytes.getBytes(), bytes.getOffset(), bytes.getLength());
+      out.write(bytes.getInternalBuffer(), bytes.getOffset(), bytes.getLength());
     }
 
     withWriteLock(() -> {

@@ -10,12 +10,12 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Ref;
-import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.VcsNotifier;
 import com.intellij.openapi.vcs.changes.Change;
-import com.intellij.openapi.vcs.changes.ChangeListManager;
 import com.intellij.openapi.vcs.impl.LocalChangesUnderRoots;
 import com.intellij.openapi.vcs.update.UpdatedFiles;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -38,16 +38,18 @@ import git4idea.repo.GitRepository;
 import git4idea.repo.GitSubmodule;
 import git4idea.repo.GitSubmoduleKt;
 import git4idea.util.GitPreservingProcess;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
 import static com.intellij.dvcs.DvcsUtil.getShortRepositoryName;
+import static git4idea.GitNotificationIdsHolder.*;
 import static git4idea.GitUtil.getRootsFromRepositories;
 import static git4idea.GitUtil.mention;
 import static git4idea.fetch.GitFetchSupport.fetchSupport;
-import static git4idea.util.GitUIUtil.*;
+import static git4idea.util.GitUIUtil.code;
 
 /**
  * Handles update process (pull via merge or rebase) for several roots.
@@ -59,8 +61,6 @@ public final class GitUpdateProcess {
 
   @NotNull private final Project myProject;
   @NotNull private final Git myGit;
-  @NotNull private final ProjectLevelVcsManager myVcsManager;
-  @NotNull private final ChangeListManager myChangeListManager;
 
   @NotNull private final List<GitRepository> myRepositories;
   @NotNull private final Map<GitRepository, GitSubmodule> mySubmodulesInDetachedHead;
@@ -71,18 +71,8 @@ public final class GitUpdateProcess {
   @NotNull private final ProgressIndicator myProgressIndicator;
   @NotNull private final GitMerger myMerger;
 
-  @NotNull private final Map<GitRepository, String> mySkippedRoots = new LinkedHashMap<>();
+  @NotNull private final Map<GitRepository, @Nls String> mySkippedRoots = new LinkedHashMap<>();
   @Nullable private Map<GitRepository, HashRange> myUpdatedRanges;
-
-  @SuppressWarnings("unused") //used in a 3-party plugin
-  public GitUpdateProcess(@NotNull Project project,
-                          @Nullable ProgressIndicator progressIndicator,
-                          @NotNull Collection<GitRepository> repositories,
-                          @NotNull UpdatedFiles updatedFiles,
-                          boolean checkRebaseOverMergeProblem,
-                          boolean checkForTrackedBranchExistence) {
-    this(project, progressIndicator, repositories, updatedFiles, null, checkRebaseOverMergeProblem, checkForTrackedBranchExistence);
-  }
 
   public GitUpdateProcess(@NotNull Project project,
                           @Nullable ProgressIndicator progressIndicator,
@@ -95,8 +85,6 @@ public final class GitUpdateProcess {
     myCheckRebaseOverMergeProblem = checkRebaseOverMergeProblem;
     myCheckForTrackedBranchExistence = checkForTrackedBranchExistence;
     myGit = Git.getInstance();
-    myChangeListManager = ChangeListManager.getInstance(project);
-    myVcsManager = ProjectLevelVcsManager.getInstance(project);
     myUpdatedFiles = updatedFiles;
     myUpdateConfig = updateConfig;
 
@@ -146,12 +134,13 @@ public final class GitUpdateProcess {
       return GitUpdateResult.NOT_READY;
     }
 
-    if (!fetchAndNotify(myRepositories)) {
+    Collection<GitRepository> repositoriesToFetch = myUpdateConfig != null ? trackedBranches.keySet() : myRepositories;
+    if (!fetchAndNotify(repositoriesToFetch)) {
       return GitUpdateResult.NOT_READY;
     }
 
     GitUpdateResult result;
-    try (AccessToken ignore = DvcsUtil.workingTreeChangeStarted(myProject, "VCS Update")) {
+    try (AccessToken ignore = DvcsUtil.workingTreeChangeStarted(myProject, GitBundle.message("activity.name.update"))) {
       result = updateImpl(updateMethod);
     }
     myProgressIndicator.setText(oldText);
@@ -171,7 +160,11 @@ public final class GitUpdateProcess {
     }
     catch (VcsException e) {
       LOG.info(e);
-      notifyError(myProject, "Git update failed", e.getMessage(), true, e);
+      VcsNotifier.getInstance(myProject)
+        .notifyError(UPDATE_ERROR, GitBundle.message("notification.title.update.failed"),
+                     e.getMessage(),
+                     Collections.singleton(e)
+        );
       return GitUpdateResult.ERROR;
     }
 
@@ -225,30 +218,33 @@ public final class GitUpdateProcess {
       final Ref<Boolean> incomplete = Ref.create(false);
       final Ref<GitUpdateResult> compoundResult = Ref.create();
       final Map<GitRepository, GitUpdater> finalUpdaters = updaters;
-      new GitPreservingProcess(myProject, myGit, myRootsToSave, "Update", "Remote",
+      new GitPreservingProcess(myProject, myGit, myRootsToSave, GitBundle.message("git.update.operation"),
+                               GitBundle.message("progress.update.destination.remote"),
                                GitVcsSettings.getInstance(myProject).getSaveChangesPolicy(), myProgressIndicator, () -> {
-                                 LOG.info("updateImpl: updating...");
-                                 GitRepository currentlyUpdatedRoot = null;
-                                 try {
-                                   for (GitRepository repo : finalUpdaters.keySet()) {
-                                     GitUpdater updater = finalUpdaters.get(repo);
-                                     if (updater == null) continue;
-                                     currentlyUpdatedRoot = repo;
-                                     GitUpdateResult res = updater.update();
-                                     LOG.info("updating root " + currentlyUpdatedRoot + " finished: " + res);
-                                     if (res == GitUpdateResult.INCOMPLETE) {
-                                       incomplete.set(true);
-                                     }
-                                     compoundResult.set(joinResults(compoundResult.get(), res));
-                                   }
-                                 }
-                                 catch (VcsException e) {
-                                   String rootName = (currentlyUpdatedRoot == null) ? "" : getShortRepositoryName(currentlyUpdatedRoot);
-                                   LOG.info("Error updating changes for root " + currentlyUpdatedRoot, e);
-                                   notifyImportantError(myProject, "Error updating " + rootName,
-                                                        "Updating " + rootName + " failed with an error: " + e.getLocalizedMessage());
-                                 }
-                               }).execute(() -> {
+        LOG.info("updateImpl: updating...");
+        GitRepository currentlyUpdatedRoot = null;
+        try {
+          for (GitRepository repo : finalUpdaters.keySet()) {
+            GitUpdater updater = finalUpdaters.get(repo);
+            if (updater == null) continue;
+            currentlyUpdatedRoot = repo;
+            GitUpdateResult res = updater.update();
+            LOG.info("updating root " + currentlyUpdatedRoot + " finished: " + res);
+            if (res == GitUpdateResult.INCOMPLETE) {
+              incomplete.set(true);
+            }
+            compoundResult.set(joinResults(compoundResult.get(), res));
+          }
+        }
+        catch (VcsException e) {
+          String rootName = (currentlyUpdatedRoot == null) ? "" : getShortRepositoryName(currentlyUpdatedRoot);
+          LOG.info("Error updating changes for root " + currentlyUpdatedRoot, e);
+          VcsNotifier.getInstance(myProject)
+                                     .notifyError(UPDATE_ERROR, GitBundle.message("notification.title.error.updating.root", rootName),
+                               GitBundle.message("notification.content.updating.root.failed.with.error", rootName,
+                                                 e.getLocalizedMessage()));
+        }
+      }).execute(() -> {
         // Note: compoundResult normally should not be null, because the updaters map was checked for non-emptiness.
         // But if updater.update() fails with exception for the first root, then the value would not be assigned.
         // In this case we don't restore local changes either, because update failed.
@@ -340,7 +336,8 @@ public final class GitUpdateProcess {
 
   // fetch all roots. If an error happens, return false and notify about errors.
   private boolean fetchAndNotify(@NotNull Collection<GitRepository> repositories) {
-    return fetchSupport(myProject).fetchDefaultRemote(repositories).showNotificationIfFailed("Update failed");
+    return fetchSupport(myProject).fetchDefaultRemote(repositories)
+      .showNotificationIfFailed(GitBundle.message("notification.title.update.failed"));
   }
 
   /**
@@ -376,7 +373,7 @@ public final class GitUpdateProcess {
     }
     else {
       for (GitRepository repo : detachedHeads) {
-        mySkippedRoots.put(repo, "detached HEAD");
+        mySkippedRoots.put(repo, GitBundle.message("update.skip.root.reason.detached.head"));
       }
     }
 
@@ -403,7 +400,7 @@ public final class GitUpdateProcess {
     }
     else {
       for (GitRepository repo : noTrackedBranch) {
-        mySkippedRoots.put(repo, "no tracked branch");
+        mySkippedRoots.put(repo, GitBundle.message("update.skip.root.reason.no.tracked.branch"));
       }
     }
 
@@ -413,7 +410,7 @@ public final class GitUpdateProcess {
   private void notifyNoTrackedBranchError(@NotNull GitRepository repository, @NotNull GitLocalBranch currentBranch) {
     VcsNotifier.getInstance(repository.getProject())
       .notifyError(
-        GitBundle.message("update.notification.update.error"),
+        UPDATE_NO_TRACKED_BRANCH, GitBundle.message("update.notification.update.error"),
         getNoTrackedBranchError(repository, currentBranch.getName()),
         NotificationAction.createSimple(
           GitBundle.message("update.notification.choose.upstream.branch"),
@@ -437,25 +434,27 @@ public final class GitUpdateProcess {
   }
 
   private static void notifyDetachedHeadError(@NotNull GitRepository repository) {
-    notifyImportantError(repository.getProject(), "Can't Update: No Current Branch", getDetachedHeadErrorNotificationContent(repository));
+    VcsNotifier.getInstance(repository.getProject())
+      .notifyError(UPDATE_DETACHED_HEAD_ERROR, GitBundle.message("notification.title.can.t.update.no.current.branch"),
+                         getDetachedHeadErrorNotificationContent(repository));
   }
 
+  @NlsContexts.NotificationContent
   @VisibleForTesting
   @NotNull
   static String getDetachedHeadErrorNotificationContent(@NotNull GitRepository repository) {
-    return "You are in 'detached HEAD' state, which means that you're not on any branch" +
-           mention(repository) + "<br/>" +
-           "Checkout a branch to make update possible.";
+    return GitBundle.message("notification.content.detached.state.in.root.checkout.branch", mention(repository));
   }
 
   private boolean isSyncControl() {
     return GitVcsSettings.getInstance(myProject).getSyncSetting() == DvcsSyncSettings.Value.SYNC;
   }
 
+  @NlsContexts.NotificationContent
   @VisibleForTesting
   @NotNull
-  static String getNoTrackedBranchError(@NotNull GitRepository repository, @NotNull String branchName) {
-    return code(branchName) + mention(repository) + " has no tracked branch";
+  static String getNoTrackedBranchError(@NotNull GitRepository repository, @NotNull @NlsSafe String branchName) {
+    return GitBundle.message("notification.content.branch.in.repo.has.no.tracked.branch", code(branchName), mention(repository));
   }
 
   /**

@@ -43,7 +43,9 @@ import com.intellij.openapi.ui.popup.util.PopupUtil;
 import com.intellij.openapi.util.DimensionService;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.InvalidDataException;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -69,9 +71,7 @@ import com.intellij.ui.scale.ScaleContext;
 import com.intellij.util.*;
 import com.intellij.util.ui.*;
 import com.intellij.util.ui.accessibility.ScreenReader;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 import org.jetbrains.ide.BuiltInServerManager;
 
 import javax.imageio.ImageIO;
@@ -117,7 +117,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   private static final JBDimension MIN_DEFAULT = new JBDimension(300, 36);
 
   private static final Pattern EXTERNAL_LINK_PATTERN = Pattern.compile("(<a\\s*href=[\"']http[^>]*>)([^>]*)(</a>)");
-  private static final String EXTERNAL_LINK_REPLACEMENT = "$1$2<icon src='AllIcons.Ide.External_link_arrow'>$3";
+  private static final @NlsSafe String EXTERNAL_LINK_REPLACEMENT = "$1$2<icon src='AllIcons.Ide.External_link_arrow'>$3";
 
   private final ExternalDocAction myExternalDocAction;
 
@@ -139,7 +139,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   private DocumentationProvider myProvider;
   private Reference<Component> myReferenceComponent;
 
-  private final MyDictionary<String, Image> myImageProvider = new MyDictionary<String, Image>() {
+  private final MyDictionary<String, Image> myImageProvider = new MyDictionary<>() {
     @Override
     public Image get(Object key) {
       return getImageByKeyImpl(key);
@@ -151,8 +151,8 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
   private final MyScrollPane myScrollPane;
   private final JEditorPane myEditorPane;
-  private String myText; // myEditorPane.getText() surprisingly crashes.., let's cache the text
-  private String myDecoratedText; // myEditorPane.getText() surprisingly crashes.., let's cache the text
+  private @Nls String myText; // myEditorPane.getText() surprisingly crashes.., let's cache the text
+  private @Nls String myDecoratedText; // myEditorPane.getText() surprisingly crashes.., let's cache the text
   private final JComponent myControlPanel;
   private boolean myControlPanelVisible;
   private int myHighlightedLink = -1;
@@ -337,6 +337,10 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     actions.add(forward);
     actions.add(edit);
 
+    for (DocumentationActionProvider provider: DocumentationActionProvider.EP_NAME.getExtensions()) {
+      provider.additionalActions(this).forEach(actions::add);
+    }
+
     try {
       String backKey = ScreenReader.isActive() ? "alt LEFT" : "LEFT";
       CustomShortcutSet backShortcutSet = new CustomShortcutSet(KeyboardShortcut.fromString(backKey),
@@ -377,7 +381,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     DefaultActionGroup toolbarActions = new DefaultActionGroup();
     toolbarActions.add(actions);
     toolbarActions.addAction(new ShowAsToolwindowAction()).setAsSecondary(true);
-    toolbarActions.addAction(new ToggleShowDocsOnHoverAction()).setAsSecondary(true);
+    toolbarActions.addAction(new ToggleShowDocsOnHoverAction(myManager, true)).setAsSecondary(true);
     toolbarActions.addAction(new MyShowSettingsAction(true)).setAsSecondary(true);
     toolbarActions.addAction(new ShowToolbarAction()).setAsSecondary(true);
     toolbarActions.addAction(new RestoreDefaultSizeAction()).setAsSecondary(true);
@@ -438,7 +442,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     DefaultActionGroup gearActions = new MyGearActionGroup();
     ShowAsToolwindowAction showAsToolwindowAction = new ShowAsToolwindowAction();
     gearActions.add(showAsToolwindowAction);
-    gearActions.add(new ToggleShowDocsOnHoverAction());
+    gearActions.add(new ToggleShowDocsOnHoverAction(myManager, false));
     gearActions.add(new MyShowSettingsAction(false));
     gearActions.add(new ShowToolbarAction());
     gearActions.add(new RestoreDefaultSizeAction());
@@ -468,7 +472,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
       public void hyperlinkUpdate(HyperlinkEvent e) {
         HyperlinkEvent.EventType type = e.getEventType();
         if (type == HyperlinkEvent.EventType.ACTIVATED) {
-          manager.navigateByLink(DocumentationComponent.this, e.getDescription());
+          manager.navigateByLink(DocumentationComponent.this, null, e.getDescription());
         }
       }
     };
@@ -588,7 +592,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
   @Override
   public Object getData(@NotNull @NonNls String dataId) {
-    if (DocumentationManager.SELECTED_QUICK_DOC_TEXT.getName().equals(dataId)) {
+    if (DocumentationManager.SELECTED_QUICK_DOC_TEXT.is(dataId)) {
       // Javadocs often contain &nbsp; symbols (non-breakable white space). We don't want to copy them as is and replace
       // with raw white spaces. See IDEA-86633 for more details.
       String selectedText = myEditorPane.getSelectedText();
@@ -688,11 +692,11 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     return myElement != null ? PsiModificationTracker.SERVICE.getInstance(myElement.getProject()).getModificationCount() : -1;
   }
 
-  public void setText(@NotNull String text, @Nullable PsiElement element, @Nullable DocumentationProvider provider) {
+  public void setText(@NotNull @Nls String text, @Nullable PsiElement element, @Nullable DocumentationProvider provider) {
     setData(element, text, null, null, provider);
   }
 
-  public void replaceText(@NotNull String text, @Nullable PsiElement element) {
+  public void replaceText(@NotNull @Nls String text, @Nullable PsiElement element) {
     PsiElement current = getElement();
     if (current == null || !current.getManager().areElementsEquivalent(current, element)) return;
     restoreContext(saveContext().withText(text));
@@ -711,7 +715,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   }
 
   public void setData(@Nullable PsiElement element,
-                      @NotNull String text,
+                      @NotNull @Nls String text,
                       @Nullable String effectiveExternalUrl,
                       @Nullable String ref,
                       @Nullable DocumentationProvider provider) {
@@ -727,7 +731,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   }
 
   private void setDataInternal(@Nullable SmartPsiElementPointer<PsiElement> element,
-                               @NotNull String text,
+                               @NotNull @Nls String text,
                                @NotNull Rectangle viewRect,
                                @Nullable String ref) {
     myIsEmpty = false;
@@ -741,6 +745,10 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     myDecoratedText = decorate(text);
 
     showHint(viewRect, ref);
+
+    if (myManager != null) {
+      myManager.getProject().getMessageBus().syncPublisher(DocumentationComponentListener.TOPIC).onComponentDataChanged();
+    }
   }
 
   protected void showHint(@NotNull Rectangle viewRect, @Nullable String ref) {
@@ -836,7 +844,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   @Override
   public int getPreferredWidth() {
     int minWidth = JBUIScale.scale(300);
-    int maxWidth = getPopupAnchor() != null ? JBUIScale.scale(435) : MAX_DEFAULT.width;
+    int maxWidth = getPopupAnchor() != null ? JBUIScale.scale(435) : JBUIScale.scale(MAX_DEFAULT.width);
 
     int width = definitionPreferredWidth();
     if (width < 0) { // no definition found
@@ -915,6 +923,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     return null;
   }
 
+  @Contract(pure = true)
   private String decorate(String text) {
     text = StringUtil.replaceIgnoreCase(text, "</html>", "");
     text = StringUtil.replaceIgnoreCase(text, "</body>", "");
@@ -956,7 +965,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   }
 
   @Nullable
-  private static String getExternalText(@NotNull DocumentationManager manager,
+  private static @Nls String getExternalText(@NotNull DocumentationManager manager,
                                         @Nullable PsiElement element,
                                         @Nullable String externalUrl,
                                         @Nullable DocumentationProvider provider) {
@@ -968,14 +977,11 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     }
 
     String title = manager.getTitle(element);
-    if (title != null) {
-      title = StringUtil.escapeXmlEntities(title);
-    }
     if (externalUrl == null) {
       List<String> urls = provider.getUrlFor(element, originalElement);
       if (urls != null) {
         boolean hasBadUrl = false;
-        StringBuilder result = new StringBuilder();
+        @Nls StringBuilder result = new StringBuilder();
         for (String url : urls) {
           String link = getLink(title, url);
           if (link == null) {
@@ -997,27 +1003,25 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
       if (link != null) return link;
     }
 
-    return "<a href='external_doc'>External documentation" +
-           (title == null ? "" : (" for `" + title + "`")) +
-           "<icon src='AllIcons.Ide.External_link_arrow'></a></div>";
+    String linkText = CodeInsightBundle.message("html.external.documentation.component.header", title, title == null ? 0 : 1);
+    return HtmlChunk.link("external_doc", linkText)
+      .child(HtmlChunk.tag("icon").attr("src", "AllIcons.Ide.External_link_arrow")).toString();
   }
 
-  private static String getLink(String title, String url) {
-    StringBuilder result = new StringBuilder();
+  private static @Nls String getLink(@Nls String title, String url) {
     String hostname = getHostname(url);
     if (hostname == null) {
       return null;
     }
 
-    result.append("<a href='").append(url).append("'>");
+    String linkText;
     if (title == null) {
-      result.append("Documentation");
+      linkText = CodeInsightBundle.message("link.text.documentation.on", hostname);
     }
     else {
-      result.append("`").append(title).append("`");
+      linkText = CodeInsightBundle.message("link.text.element.documentation.on.url", title, hostname);
     }
-    result.append(" on ").append(hostname).append("</a>");
-    return result.toString();
+    return HtmlChunk.link(url, linkText).toString();
   }
 
   static boolean shouldShowExternalDocumentationLink(DocumentationProvider provider,
@@ -1062,11 +1066,12 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     return "<div class='" + (hasContent ? "bottom" : "bottom-no-content") + "'>";
   }
 
+  @Contract(pure = true)
   public static String addExternalLinksIcon(String text) {
     return EXTERNAL_LINK_PATTERN.matcher(text).replaceAll(EXTERNAL_LINK_REPLACEMENT);
   }
 
-  private String getLocationText() {
+  private @NlsSafe String getLocationText() {
     PsiElement element = getElement();
     if (element != null) {
       PsiFile file = element.getContainingFile();
@@ -1467,7 +1472,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     }
   }
 
-  public String getText() {
+  public @Nls String getText() {
     return myText;
   }
 
@@ -1541,20 +1546,20 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     HTMLDocument.Iterator link = getLink(n);
     if (link != null) {
       String href = (String)link.getAttributes().getAttribute(HTML.Attribute.HREF);
-      myManager.navigateByLink(this, href);
+      myManager.navigateByLink(this, null, href);
     }
   }
 
   private static class Context {
     final SmartPsiElementPointer<PsiElement> element;
-    final String text;
+    final @Nls String text;
     final String externalUrl;
     final DocumentationProvider provider;
     final Rectangle viewRect;
     final int highlightedLink;
 
     Context(SmartPsiElementPointer<PsiElement> element,
-            String text,
+            @Nls String text,
             String externalUrl,
             DocumentationProvider provider,
             Rectangle viewRect,
@@ -1568,7 +1573,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     }
 
     @NotNull
-    Context withText(@NotNull String text) {
+    Context withText(@NotNull @Nls String text) {
       return new Context(element, text, externalUrl, provider, viewRect, highlightedLink);
     }
   }

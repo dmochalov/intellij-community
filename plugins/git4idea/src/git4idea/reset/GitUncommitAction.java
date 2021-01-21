@@ -1,11 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.reset;
 
-import com.intellij.notification.Notification;
-import com.intellij.notification.NotificationType;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
@@ -13,7 +10,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.VcsNotifier;
-import com.intellij.openapi.vcs.changes.*;
+import com.intellij.openapi.vcs.changes.Change;
+import com.intellij.openapi.vcs.changes.ChangeListManager;
+import com.intellij.openapi.vcs.changes.LocalChangeList;
 import com.intellij.openapi.vcs.changes.ui.ChangeListChooser;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.vcs.log.Hash;
@@ -35,7 +34,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 
-import static com.intellij.openapi.vcs.VcsNotifier.STANDARD_NOTIFICATION;
+import static git4idea.GitNotificationIdsHolder.COULD_NOT_LOAD_CHANGES_OF_COMMIT;
 import static git4idea.reset.GitResetMode.SOFT;
 import static java.util.Collections.singletonMap;
 
@@ -69,13 +68,19 @@ public class GitUncommitAction extends GitSingleCommitEditingAction {
   public void actionPerformedAfterChecks(@NotNull SingleCommitEditingData commitEditingData) {
     Project project = commitEditingData.getProject();
     VcsShortCommitDetails commit = commitEditingData.getSelectedCommit();
-    ChangeListChooser chooser = new ChangeListChooser(project, ChangeListManager.getInstance(project).getChangeListsCopy(),
-                                                      null, GitBundle.message("git.undo.action.select.target.changelist.title"), commit.getSubject());
-    chooser.show();
-    LocalChangeList selectedList = chooser.getSelectedList();
-    if (selectedList != null) {
-      resetInBackground(commitEditingData.getLogData(), commitEditingData.getRepository(), commit, selectedList);
+    LocalChangeList targetList;
+    if (ChangeListManager.getInstance(project).areChangeListsEnabled()) {
+      ChangeListChooser chooser = new ChangeListChooser(project, null, null,
+                                                        GitBundle.message("git.undo.action.select.target.changelist.title"),
+                                                        commit.getSubject());
+      if (!chooser.showAndGet()) return;
+
+      targetList = chooser.getSelectedList();
     }
+    else {
+      targetList = null;
+    }
+    resetInBackground(commitEditingData.getLogData(), commitEditingData.getRepository(), commit, targetList);
   }
 
   @NotNull
@@ -87,7 +92,7 @@ public class GitUncommitAction extends GitSingleCommitEditingAction {
   private static void resetInBackground(@NotNull VcsLogData data,
                                         @NotNull GitRepository repository,
                                         @NotNull VcsShortCommitDetails commit,
-                                        @NotNull LocalChangeList changeList) {
+                                        @Nullable LocalChangeList targetChangeList) {
     Project project = repository.getProject();
     new Task.Backgroundable(project, GitBundle.message("git.undo.action.undoing.last.commit.process"), true) {
       @Override
@@ -99,19 +104,24 @@ public class GitUncommitAction extends GitSingleCommitEditingAction {
         catch (VcsException e) {
           String message = GitBundle.message("git.undo.action.could.not.load.changes.of.commit", commit.getId().asString());
           LOG.warn(message, e);
-          Notification notification = STANDARD_NOTIFICATION.createNotification("", message, NotificationType.ERROR, null);
-          VcsNotifier.getInstance(project).notify(notification);
+          VcsNotifier.getInstance(project).notifyError(COULD_NOT_LOAD_CHANGES_OF_COMMIT,
+                                                       "",
+                                                       message);
           return;
         }
 
         // TODO change notification title
         new GitResetOperation(project, singletonMap(repository, commit.getParents().get(0)), SOFT, indicator).execute();
 
-        ChangeListManagerImpl changeListManager = ChangeListManagerImpl.getInstanceImpl(project);
-        changeListManager.invokeAfterUpdate(() -> {
-          Collection<Change> changes = GitUtil.findCorrespondentLocalChanges(changeListManager, changesInCommit);
-          changeListManager.moveChangesTo(changeList, changes.toArray(new Change[0]));
-        }, InvokeAfterUpdateMode.SYNCHRONOUS_CANCELLABLE, GitBundle.message("git.undo.action.refreshing.changes.process"), ModalityState.defaultModalityState());
+        if (targetChangeList != null) {
+          ChangeListManager changeListManager = ChangeListManager.getInstance(project);
+          changeListManager.invokeAfterUpdateWithModal(true,
+                                                       GitBundle.message("git.undo.action.refreshing.changes.process"), () -> {
+              Collection<Change> changes = GitUtil.findCorrespondentLocalChanges(changeListManager, changesInCommit);
+              changeListManager.moveChangesTo(targetChangeList, changes.toArray(new Change[0]));
+            }
+          );
+        }
       }
     }.queue();
   }

@@ -1,15 +1,13 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.templateLanguages;
 
-import com.intellij.lang.ASTNode;
-import com.intellij.lang.Language;
-import com.intellij.lang.LanguageExtension;
-import com.intellij.lang.LanguageParserDefinitions;
+import com.intellij.lang.*;
 import com.intellij.lexer.Lexer;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.LanguageFileType;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.VolatileNotNullLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.FileViewProvider;
 import com.intellij.psi.PsiFile;
@@ -41,6 +39,8 @@ import java.util.function.Function;
  * @author peter
  */
 public class TemplateDataElementType extends IFileElementType implements ITemplateDataElementType {
+  private static final Logger LOG = Logger.getInstance(TemplateDataElementType.class);
+  private static final int CHECK_PROGRESS_AFTER_TOKENS = 1000;
   public static final LanguageExtension<TreePatcher> TREE_PATCHER =
     new LanguageExtension<>("com.intellij.lang.treePatcher", new SimpleTreePatcher());
 
@@ -146,7 +146,7 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
     return ((RangeCollectorImpl)rangeCollector).applyTemplateDataModifications(sourceCode, modifications);
   }
 
-  private final NotNullLazyValue<Boolean> REQUIRES_OLD_CREATE_TEMPLATE_TEXT = VolatileNotNullLazyValue.createValue(() -> {
+  private final NotNullLazyValue<Boolean> REQUIRES_OLD_CREATE_TEMPLATE_TEXT = NotNullLazyValue.volatileLazy(() -> {
     Class<?> implementationClass = ReflectionUtil.getMethodDeclaringClass(
       getClass(), "appendCurrentTemplateToken", StringBuilder.class, CharSequence.class, Lexer.class, RangeCollector.class);
     return implementationClass != TemplateDataElementType.class;
@@ -159,7 +159,11 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
     baseLexer.start(sourceCode);
 
     TextRange currentRange = TextRange.EMPTY_RANGE;
+    int tokenCounter = 0;
     while (baseLexer.getTokenType() != null) {
+      if (++tokenCounter % CHECK_PROGRESS_AFTER_TOKENS == 0) {
+        ProgressManager.checkCanceled();
+      }
       TextRange newRange = TextRange.create(baseLexer.getTokenStart(), baseLexer.getTokenEnd());
       assert currentRange.getEndOffset() == newRange.getStartOffset() :
         "Inconsistent tokens stream from " + baseLexer +
@@ -187,7 +191,11 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
     TemplateDataModifications modifications = new TemplateDataModifications();
     baseLexer.start(sourceCode);
     TextRange currentRange = TextRange.EMPTY_RANGE;
+    int tokenCounter = 0;
     while (baseLexer.getTokenType() != null) {
+      if (++tokenCounter % CHECK_PROGRESS_AFTER_TOKENS == 0) {
+        ProgressManager.checkCanceled();
+      }
       TextRange newRange = TextRange.create(baseLexer.getTokenStart(), baseLexer.getTokenEnd());
       assert currentRange.getEndOffset() == newRange.getStartOffset() :
         "Inconsistent tokens stream from " + baseLexer +
@@ -198,7 +206,7 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
         modifications.addAll(tokenModifications);
       }
       else {
-        modifications.addOuterRange(currentRange, getTemplateDataInsertionTokens().contains(baseLexer.getTokenType()));
+        modifications.addOuterRange(currentRange, isInsertionToken(baseLexer.getTokenType(), baseLexer.getTokenSequence()));
       }
       baseLexer.advance();
     }
@@ -233,22 +241,49 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
   }
 
   /**
-   * Returns token types of template elements which are expected to insert some strings into resulting file.
-   * It's fine to include only starting token of the whole insertion range. For example, if
-   * <code><?=$myVar?></code> has three tokens <code><?=</code>, <code>$myVar</code> and <code>?></code>, only type of <code><?=</code>
-   * may be included. Moreover, other tokens shouldn't be included if they can be a part of a non-insertion range like
-   * <code><?$myVar?></code>.
+   * @deprecated Use {@link #isInsertionToken(IElementType, CharSequence)} instead.
+   */
+  @Deprecated
+  protected @NotNull TokenSet getTemplateDataInsertionTokens() {
+    return TokenSet.EMPTY;
+  }
+
+  /**
+   * Returns true if a string is expected to be inserted into resulting file in place of a current token.
+   *
+   * If insertion range contains several tokens, <code>true</code> may be returned only for the starting one. For example, if
+   * <code><?=$myVar?></code> has three tokens <code><?=</code>, <code>$myVar</code> and <code>?></code>, only <code><?=</code>
+   * may be an insertion token.
    *
    * Override this method when overriding {@link #collectTemplateModifications(CharSequence, Lexer)} is not required.
    *
    * @see RangeCollector#addOuterRange(TextRange, boolean)
    */
-  protected @NotNull TokenSet getTemplateDataInsertionTokens() {
-    return TokenSet.EMPTY;
+  protected boolean isInsertionToken(@Nullable IElementType tokenType, @NotNull CharSequence tokenSequence) {
+    return false;
   }
 
+  /**
+   * @return instance of {@link OuterLanguageElementImpl} for outer element
+   * @apiNote there are few ways to resolve error from this method:
+   * <ul>
+   * <li> Create your own {@link ASTFactory} and create proper element for your outer element</li>
+   * <li> Use {@link com.intellij.psi.tree.OuterLanguageElementType} for your outer element type</li>
+   * </ul>
+   * @deprecated this method is going to be removed and com.intellij.lang.ASTFactory#leaf(com.intellij.psi.tree.IElementType, java.lang.CharSequence) going to be used instead
+   */
+  @Deprecated
   protected OuterLanguageElementImpl createOuterLanguageElement(@NotNull CharSequence internedTokenText,
                                                                 @NotNull IElementType outerElementType) {
+    var factoryCreatedElement = ASTFactory.leaf(outerElementType, internedTokenText);
+    if (factoryCreatedElement instanceof OuterLanguageElementImpl) {
+      return (OuterLanguageElementImpl)factoryCreatedElement;
+    }
+    LOG.error(
+      "Wrong element created by ASTFactory. See method documentation for details. Here is what we have:" +
+      " elementType: " + outerElementType +
+      "; language: " + outerElementType.getLanguage() +
+      "; element from factory: " + factoryCreatedElement);
     return new OuterLanguageElementImpl(outerElementType, internedTokenText);
   }
 
@@ -273,7 +308,7 @@ public class TemplateDataElementType extends IFileElementType implements ITempla
 
   public static @NotNull ASTNode parseWithOuterAndRemoveRangesApplied(@NotNull ASTNode chameleon,
                                                                       @NotNull Language language,
-                                                                      @NotNull Function<@NotNull CharSequence, @NotNull ASTNode> parser) {
+                                                                      @NotNull Function<? super @NotNull CharSequence, ? extends @NotNull ASTNode> parser) {
     RangeCollectorImpl collector = chameleon.getUserData(RangeCollectorImpl.OUTER_ELEMENT_RANGES);
     return collector != null ? collector.applyRangeCollectorAndExpandChameleon(chameleon, language, parser)
                              : parser.apply(chameleon.getChars());

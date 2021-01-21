@@ -47,6 +47,7 @@ import com.intellij.util.ui.EdtInvocationManager;
 import com.intellij.util.ui.tree.TreeModelAdapter;
 import com.intellij.util.ui.tree.TreeUtil;
 import gnu.trove.THashSet;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -146,6 +147,7 @@ public class InspectionTree extends Tree {
   @Nullable
   public InspectionToolWrapper getSelectedToolWrapper(boolean allowDummy) {
     InspectionProfileImpl profile = myView.getCurrentProfile();
+    if (profile == null) return null;
     String singleToolName = profile.getSingleTool();
     final TreePath[] paths = getSelectionPaths();
     if (paths == null) {
@@ -359,7 +361,7 @@ public class InspectionTree extends Tree {
       LOG.error("groupPath is empty for tool: " + toolWrapper.getShortName() + ", class: " + toolWrapper.getTool().getClass());
     }
 
-    for (String subGroup : groupPath) {
+    for (@Nls String subGroup : groupPath) {
       currentNode = myModel.createGroupNode(subGroup, currentNode);
     }
 
@@ -428,6 +430,19 @@ public class InspectionTree extends Tree {
       }
     }
 
+    InspectionTreeNode nodeToSelect = null;
+    if (selected.length == 1) {
+      final Object selectedNode = selected[0].getLastPathComponent();
+      if (selectedNode instanceof InspectionTreeNode) {
+        final var children = ((InspectionTreeNode) selectedNode).myParent.myChildren;
+        if (children != null && children.myChildren.length > 1) {
+          final int index = ArrayUtil.indexOf(children.myChildren, selectedNode);
+          final boolean last = index + 1 == children.myChildren.length;
+          nodeToSelect = children.myChildren[index + (last ? -1 : 1)];
+        }
+      }
+    }
+
     if (toRemove.isEmpty()) return;
     Set<InspectionTreeNode> parents = new THashSet<>();
     for (InspectionTreeNode node : toRemove) {
@@ -441,8 +456,13 @@ public class InspectionTree extends Tree {
     for (InspectionTreeNode parent : parents) {
       parent.dropProblemCountCaches();
     }
-    TreePath commonPath = TreePathUtil.findCommonAncestor(pathsToSelect);
-    if (commonPath != null) TreeUtil.selectPath(this, commonPath);
+
+    if (nodeToSelect == null) {
+      TreePath commonPath = TreePathUtil.findCommonAncestor(pathsToSelect);
+      if (commonPath != null) TreeUtil.selectPath(this, commonPath);
+    } else {
+      TreeUtil.selectNode(this, nodeToSelect);
+    }
 
     revalidate();
     repaint();

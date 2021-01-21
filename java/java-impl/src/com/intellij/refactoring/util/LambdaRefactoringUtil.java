@@ -12,6 +12,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.codeStyle.SuggestedNameInfo;
 import com.intellij.psi.codeStyle.VariableKind;
+import com.intellij.psi.impl.RecaptureTypeMapper;
 import com.intellij.psi.util.MethodSignature;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
@@ -23,6 +24,7 @@ import com.intellij.util.text.UniqueNameGenerator;
 import com.siyeh.ig.psiutils.CommentTracker;
 import com.siyeh.ig.psiutils.ExpressionUtils;
 import com.siyeh.ig.psiutils.SideEffectChecker;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -145,7 +147,7 @@ public final class LambdaRefactoringUtil {
       map.put(parameter, parameterName);
       return parameterName;
     };
-    StringBuilder buf = new StringBuilder();
+    @NonNls StringBuilder buf = new StringBuilder();
     if (parameters.length == 1) {
       buf.append(paramPresentationFunction.fun(parameters[0]));
     }
@@ -263,25 +265,31 @@ public final class LambdaRefactoringUtil {
     }
     Object marker = new Object();
     PsiTreeUtil.mark(methodReferenceExpression, marker);
-    PsiCall copyTopLevelCall = LambdaUtil.copyTopLevelCall(call);
-    if (copyTopLevelCall != null) {
-      PsiMethodReferenceExpression methodReferenceInCopy = (PsiMethodReferenceExpression)PsiTreeUtil.releaseMark(copyTopLevelCall, marker);
-      if (methodReferenceInCopy != null) {
-        PsiClassType functionalInterfaceType = ObjectUtils.tryCast(methodReferenceInCopy.getFunctionalInterfaceType(), PsiClassType.class);
-        if (functionalInterfaceType == null) return false;
-        PsiClassType.ClassResolveResult funcResult = functionalInterfaceType.resolveGenerics();
-        PsiClass funcClass = funcResult.getElement();
-        PsiSubstitutor funcSubstitutor = funcResult.getSubstitutor();
-        PsiLambdaExpression lambdaCopy = (PsiLambdaExpression)methodReferenceInCopy.replace(lambdaExpression);
+    try {
+      RecaptureTypeMapper.encode(methodReferenceExpression);
+      PsiCall copyTopLevelCall = LambdaUtil.copyTopLevelCall(call);
+      if (copyTopLevelCall != null) {
+        PsiMethodReferenceExpression methodReferenceInCopy = (PsiMethodReferenceExpression)PsiTreeUtil.releaseMark(copyTopLevelCall, marker);
+        if (methodReferenceInCopy != null) {
+          PsiClassType functionalInterfaceType = ObjectUtils.tryCast(methodReferenceInCopy.getFunctionalInterfaceType(), PsiClassType.class);
+          if (functionalInterfaceType == null) return false;
+          PsiClassType.ClassResolveResult funcResult = functionalInterfaceType.resolveGenerics();
+          PsiClass funcClass = funcResult.getElement();
+          PsiSubstitutor funcSubstitutor = funcResult.getSubstitutor();
+          PsiLambdaExpression lambdaCopy = (PsiLambdaExpression)methodReferenceInCopy.replace(lambdaExpression);
 
-        PsiClassType lambdaCopyType = (PsiClassType)lambdaCopy.getFunctionalInterfaceType();
-        if (lambdaCopyType == null) return false;
-        PsiClassType.ClassResolveResult lambdaCopyResult = lambdaCopyType.resolveGenerics();
-        PsiClass lambdaCopyClass = lambdaCopyResult.getElement();
-        PsiSubstitutor lambdaCopySubstitutor = lambdaCopyResult.getSubstitutor();
-        return lambdaExpression.getManager().areElementsEquivalent(funcClass, lambdaCopyClass)
-               && funcSubstitutor.equals(lambdaCopySubstitutor);
+          PsiClassType lambdaCopyType = (PsiClassType)lambdaCopy.getFunctionalInterfaceType();
+          if (lambdaCopyType == null) return false;
+          PsiClassType.ClassResolveResult lambdaCopyResult = lambdaCopyType.resolveGenerics();
+          PsiClass lambdaCopyClass = lambdaCopyResult.getElement();
+          PsiSubstitutor lambdaCopySubstitutor = lambdaCopyResult.getSubstitutor();
+          return lambdaExpression.getManager().areElementsEquivalent(funcClass, lambdaCopyClass)
+                 && new RecaptureTypeMapper().recapture(funcSubstitutor).equals(lambdaCopySubstitutor);
+        }
       }
+    }
+    finally {
+      RecaptureTypeMapper.clean(methodReferenceExpression);
     }
     return false;
   }

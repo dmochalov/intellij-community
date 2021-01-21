@@ -7,10 +7,12 @@ import com.intellij.codeInsight.Nullability;
 import com.intellij.codeInspection.dataFlow.*;
 import com.intellij.codeInspection.dataFlow.rangeSet.LongRangeSet;
 import com.intellij.codeInspection.dataFlow.types.DfConstantType;
+import com.intellij.codeInspection.dataFlow.types.DfLongType;
 import com.intellij.codeInspection.dataFlow.types.DfType;
 import com.intellij.codeInspection.dataFlow.types.DfTypes;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.JavaConstantExpressionEvaluator;
+import com.intellij.psi.impl.light.LightRecordMethod;
 import com.intellij.psi.impl.source.PsiImmediateClassType;
 import com.intellij.psi.util.*;
 import com.intellij.util.ObjectUtils;
@@ -26,6 +28,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static com.intellij.codeInspection.dataFlow.types.DfTypes.rangeClamped;
 
 /**
  * @author peter
@@ -234,6 +238,13 @@ public class DfaExpressionFactory {
       return myFactory.fromDfType(SpecialField.ARRAY_LENGTH.asDfType(DfTypes.intValue(length), type));
     }
     DfType dfType = DfTypes.typedObject(type, NullabilityUtil.getExpressionNullability(expression));
+    if (type instanceof PsiPrimitiveType && targetType instanceof PsiPrimitiveType && !type.equals(targetType)) {
+      if (TypeConversionUtil.isIntegralNumberType(targetType)) {
+        LongRangeSet range = DfLongType.extractRange(dfType);
+        return myFactory.fromDfType(rangeClamped(range.castTo((PsiPrimitiveType)targetType), PsiType.LONG.equals(targetType)));
+      }
+      return myFactory.fromDfType(DfTypes.typedObject(targetType, Nullability.UNKNOWN));
+    }
     return DfaUtil.boxUnbox(myFactory.fromDfType(dfType), targetType);
   }
 
@@ -403,7 +414,7 @@ public class DfaExpressionFactory {
 
     public GetterDescriptor(@NotNull PsiMethod getter) {
       myGetter = getter;
-      if (STABLE_METHODS.methodMatches(getter)) {
+      if (STABLE_METHODS.methodMatches(getter) || getter instanceof LightRecordMethod) {
         myStable = true;
       } else {
         PsiField field = PsiUtil.canBeOverridden(getter) ? null : PropertyUtil.getFieldOfGetter(getter);

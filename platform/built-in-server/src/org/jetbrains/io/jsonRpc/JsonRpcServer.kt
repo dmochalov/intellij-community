@@ -19,6 +19,8 @@ import com.intellij.util.io.releaseIfError
 import com.intellij.util.io.writeUtf8
 import io.netty.buffer.*
 import it.unimi.dsi.fastutil.ints.IntArrayList
+import it.unimi.dsi.fastutil.ints.IntList
+import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.concurrency.Promise
 import org.jetbrains.io.JsonReaderEx
@@ -52,6 +54,7 @@ private val gson by lazy {
     .create()
 }
 
+@Suppress("HardCodedStringLiteral")
 class JsonRpcServer(private val clientManager: ClientManager) : MessageServer {
 
   private val messageIdCounter = AtomicInteger()
@@ -154,7 +157,7 @@ class JsonRpcServer(private val clientManager: ClientManager) : MessageServer {
     return JsonRpcDomainBean.EP_NAME.getByKey(domainName, JsonRpcServer::class.java, JsonRpcDomainBean::name)?.instance
   }
 
-  private fun processClientError(client: Client, error: String, messageId: Int) {
+  private fun processClientError(client: Client, @NonNls error: String, messageId: Int) {
     try {
       LOG.error(error)
     }
@@ -329,7 +332,7 @@ private class IntArrayListTypeAdapter<T> : TypeAdapter<T>() {
   override fun write(out: JsonWriter, value: T) {
     var error: IOException? = null
     out.beginArray()
-    val iterator = (value as IntArrayList).iterator()
+    val iterator = (value as IntList).iterator()
     while (iterator.hasNext()) {
       try {
         out.value(iterator.nextInt().toLong())

@@ -1,10 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
 package com.intellij.ui;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.MathUtil;
 import com.intellij.util.NotNullProducer;
 import org.jetbrains.annotations.NotNull;
@@ -160,7 +157,7 @@ public final class ColorUtil {
   }
 
   @NotNull
-  public static String toHtmlColor(@NotNull final Color c) {
+  public static @NlsSafe String toHtmlColor(@NotNull final Color c) {
     return "#"+toHex(c);
   }
 

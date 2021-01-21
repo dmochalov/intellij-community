@@ -1,7 +1,6 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.bookmarks;
 
-import com.intellij.ide.IdeBundle;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
 import com.intellij.openapi.application.ApplicationManager;
@@ -23,6 +22,7 @@ import com.intellij.openapi.startup.StartupActivity;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.Trinity;
@@ -37,6 +37,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.messages.MessageBusConnection;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -141,8 +142,8 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
 
   public void editDescription(@NotNull Bookmark bookmark, @NotNull JComponent popup) {
     ApplicationManager.getApplication().assertIsDispatchThread();
-    String description = Messages.showInputDialog(popup, IdeBundle.message("action.bookmark.edit.description.dialog.message"),
-                       IdeBundle.message("action.bookmark.edit.description.dialog.title"), Messages.getQuestionIcon(),
+    String description = Messages.showInputDialog(popup, BookmarkBundle.message("action.bookmark.edit.description.dialog.message"),
+                       BookmarkBundle.message("action.bookmark.edit.description.dialog.title"), Messages.getQuestionIcon(),
                        bookmark.getDescription(), null);
     if (description != null) {
       setDescription(bookmark, description);
@@ -162,7 +163,7 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
   }
 
   @NotNull
-  public Bookmark addTextBookmark(@NotNull VirtualFile file, int lineIndex, @NotNull String description) {
+  public Bookmark addTextBookmark(@NotNull VirtualFile file, int lineIndex, @NotNull @NlsSafe String description) {
     ApplicationManager.getApplication().assertIsDispatchThread();
 
     Bookmark b = new Bookmark(myProject, file, lineIndex, description);
@@ -179,7 +180,7 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
   }
 
   @TestOnly
-  public void addFileBookmark(@NotNull VirtualFile file, @NotNull String description) {
+  public void addFileBookmark(@NotNull VirtualFile file, @NotNull @NlsSafe String description) {
     if (findFileBookmark(file) != null) {
       return;
     }
@@ -213,16 +214,25 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
     return answer;
   }
 
+  public Collection<Bookmark> getAllBookmarks() {
+    return myBookmarks.values();
+  }
+
   @Nullable
   public Bookmark findEditorBookmark(@NotNull Document document, int line) {
     VirtualFile file = FileDocumentManager.getInstance().getFile(document);
     if (file == null) return null;
+    return findBookmark(file, line);
+  }
+
+  @ApiStatus.Internal
+  public @Nullable Bookmark findBookmark(@NotNull VirtualFile file, int line) {
     return ContainerUtil.find(myBookmarks.get(file), bookmark -> bookmark.getLine() == line);
   }
 
   @Nullable
   public Bookmark findFileBookmark(@NotNull VirtualFile file) {
-    return ContainerUtil.find(myBookmarks.get(file), bookmark -> bookmark.getLine() == -1);
+    return findBookmark(file, -1);
   }
 
   @Nullable
@@ -436,7 +446,7 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
     getPublisher().bookmarkChanged(bookmark);
   }
 
-  public void setDescription(@NotNull Bookmark bookmark, @NotNull String description) {
+  public void setDescription(@NotNull Bookmark bookmark, @NotNull @NlsSafe String description) {
     ApplicationManager.getApplication().assertIsDispatchThread();
     bookmark.setDescription(description);
     getPublisher().bookmarkChanged(bookmark);

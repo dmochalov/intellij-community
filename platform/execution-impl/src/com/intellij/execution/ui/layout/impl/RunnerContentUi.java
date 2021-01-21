@@ -23,13 +23,12 @@ import com.intellij.openapi.ui.AbstractPainter;
 import com.intellij.openapi.ui.ShadowAction;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.ListPopup;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.ActiveRunnable;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.*;
 import com.intellij.openapi.wm.ex.ToolWindowEx;
+import com.intellij.openapi.wm.impl.InternalDecorator;
+import com.intellij.openapi.wm.impl.ToolWindowEventSource;
 import com.intellij.openapi.wm.impl.ToolWindowsPane;
 import com.intellij.openapi.wm.impl.content.SelectContentStep;
 import com.intellij.ui.*;
@@ -51,6 +50,7 @@ import com.intellij.ui.tabs.impl.JBTabsImpl;
 import com.intellij.util.Alarm;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.NotNullFunction;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.AbstractLayoutManager;
 import com.intellij.util.ui.GraphicsUtil;
@@ -68,7 +68,7 @@ import javax.swing.border.Border;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.geom.RoundRectangle2D;
+import java.awt.geom.Rectangle2D;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.List;
@@ -94,7 +94,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
   private final RunnerLayout myLayoutSettings;
 
   private final @NotNull ActionManager myActionManager;
-  private final String mySessionName;
+  private final @NlsSafe String mySessionName;
   private final String myRunnerId;
   private NonOpaquePanel myComponent;
 
@@ -247,6 +247,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     if (myTabs != null) return;
 
     myTabs = JBRunnerTabs.create(myProject, this);
+    myTabs.getComponent().setOpaque(false);
     myTabs.setDataProvider(dataId -> {
       if (ViewContext.CONTENT_KEY.is(dataId)) {
         TabInfo info = myTabs.getTargetInfo();
@@ -266,7 +267,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
 
     myTabs.getPresentation().setPaintFocus(false).setRequestFocusOnLastFocusedComponent(true);
 
-    NonOpaquePanel wrapper = new MyComponent(new BorderLayout(0, 0));
+    NonOpaquePanel wrapper = new MyComponent();
     wrapper.add(myToolbar, BorderLayout.WEST);
     wrapper.add(myTabs.getComponent(), BorderLayout.CENTER);
     wrapper.setBorder(JBUI.Borders.emptyTop(-1));
@@ -414,8 +415,10 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     }
     else if (Content.PROP_DISPLAY_NAME.equals(property)
              || Content.PROP_ICON.equals(property)
+             || Content.PROP_PINNED.equals(property)
              || Content.PROP_ACTIONS.equals(property)
-             || Content.PROP_DESCRIPTION.equals(property)) {
+             || Content.PROP_DESCRIPTION.equals(property)
+             || Content.PROP_TAB_COLOR.equals(property)) {
       cell.updateTabPresentation(content);
       updateTabsUI(false);
     }
@@ -844,7 +847,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
       content.putUserData(RunnerLayout.DEFAULT_INDEX, null);
     }
 
-    TabInfo tab = new TabInfo(grid).setObject(getStateFor(content).getTab()).setText("Tab");
+    TabInfo tab = new TabInfo(grid).setObject(getStateFor(content).getTab()).setText(ExecutionBundle.message("runner.context.tab"));
 
     Wrapper leftWrapper = new Wrapper();
     Wrapper middleWrapper = new Wrapper();
@@ -985,7 +988,10 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
   private void setActions(Wrapper placeHolder, String place, DefaultActionGroup group) {
     String adjustedPlace = place == ActionPlaces.UNKNOWN ? ActionPlaces.TOOLBAR : place;
     ActionToolbar tb = myActionManager.createActionToolbar(adjustedPlace, group, true);
+    tb.setReservePlaceAutoPopupIcon(false);
+    tb.setTargetComponent(myComponent);
     tb.getComponent().setBorder(null);
+    tb.getComponent().setOpaque(false);
 
     placeHolder.setContent(tb.getComponent());
   }
@@ -994,9 +1000,10 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     for (Map.Entry<GridImpl, Wrapper> entry : myMinimizedButtonsPlaceholder.entrySet()) {
       Wrapper eachPlaceholder = entry.getValue();
       ActionToolbar tb = myActionManager.createActionToolbar(ActionPlaces.RUNNER_LAYOUT_BUTTON_TOOLBAR, myViewActions, true);
-      tb.setSecondaryActionsIcon(AllIcons.Debugger.RestoreLayout);
-      tb.setSecondaryActionsTooltip("Layout Settings");
+      tb.setSecondaryActionsIcon(AllIcons.Debugger.RestoreLayout, true);
+      tb.setSecondaryActionsTooltip(ExecutionBundle.message("runner.content.tooltip.layout.settings"));
       tb.setTargetComponent(myComponent);
+      tb.getComponent().setOpaque(false);
       tb.getComponent().setBorder(null);
       tb.setReservePlaceAutoPopupIcon(false);
       JComponent minimized = tb.getComponent();
@@ -1398,7 +1405,6 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
 
   private static class MyDropAreaPainter extends AbstractPainter {
     private Shape myBoundingBox;
-    private final Color myColor = ColorUtil.mix(JBColor.BLUE, JBColor.WHITE, .3);
 
     @Override
     public boolean needsRepaint() {
@@ -1409,10 +1415,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     public void executePaint(Component component, Graphics2D g) {
       if (myBoundingBox == null) return;
       GraphicsUtil.setupAAPainting(g);
-      g.setColor(ColorUtil.toAlpha(myColor, 200));
-      g.setStroke(new BasicStroke(2));
-      g.draw(myBoundingBox);
-      g.setColor(ColorUtil.toAlpha(myColor, 40));
+      g.setColor(JBColor.namedColor("DragAndDrop.areaBackground", 0x3d7dcc, 0x404a57));
       g.fill(myBoundingBox);
     }
 
@@ -1470,18 +1473,37 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
         r = new RelativeRectangle(cellWrapper).getRectangleOn(component);
         break;
       }
-      myBoundingBox = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 16, 16);
+      myBoundingBox = new Rectangle2D.Double(r.x, r.y, r.width, r.height);
     }
   }
 
   private class MyComponent extends NonOpaquePanel implements DataProvider, QuickActionProvider {
     private boolean myWasEverAdded;
 
-    MyComponent(LayoutManager layout) {
-      super(layout);
+    MyComponent() {
+      super(new BorderLayout());
       setOpaque(true);
       setFocusCycleRoot(!ScreenReader.isActive());
       setBorder(new ToolWindowEx.Border(false, false, false, false));
+
+      MouseAdapter adapter = new MouseAdapter() {
+        @Override
+        public void mousePressed(MouseEvent e) {
+          ObjectUtils.consumeIfNotNull(ComponentUtil.getParentOfType(InternalDecorator.class, myComponent),
+                                       decorator -> decorator.activate(ToolWindowEventSource.ToolWindowHeader));
+        }
+      };
+      addMouseListener(adapter);
+      myTabs.getComponent().addMouseListener(adapter);
+    }
+
+    @Override
+    protected void paintChildren(Graphics g) {
+      InternalDecorator decorator = ComponentUtil.getParentOfType(InternalDecorator.class, myComponent);
+      if (decorator != null && myTabs.getTabCount() > 0) {
+        UIUtil.drawHeader(g, 0, getWidth(), decorator.getHeaderHeight(), decorator.isActive(), true, false, false);
+      }
+      super.paintChildren(g);
     }
 
     @Override

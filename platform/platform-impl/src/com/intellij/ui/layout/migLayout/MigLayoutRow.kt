@@ -7,6 +7,7 @@ import com.intellij.openapi.ui.OnePixelDivider
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.ui.panel.ComponentPanelBuilder
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.ui.HideableTitledSeparator
 import com.intellij.ui.SeparatorComponent
 import com.intellij.ui.TitledSeparator
@@ -15,9 +16,8 @@ import com.intellij.ui.components.JBRadioButton
 import com.intellij.ui.components.Label
 import com.intellij.ui.layout.*
 import com.intellij.util.SmartList
-import net.miginfocom.layout.BoundSize
-import net.miginfocom.layout.CC
-import net.miginfocom.layout.LayoutUtil
+import net.miginfocom.layout.*
+import org.jetbrains.annotations.Nls
 import javax.swing.*
 import javax.swing.border.LineBorder
 import kotlin.math.max
@@ -57,7 +57,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     }
 
     // as static method to ensure that members of current row are not used
-    private fun configureSeparatorRow(row: MigLayoutRow, title: String?) {
+    private fun configureSeparatorRow(row: MigLayoutRow, @NlsContexts.Separator title: String?) {
       val separatorComponent = if (title == null) SeparatorComponent(0, OnePixelDivider.BACKGROUND, null) else TitledSeparator(title)
       row.addTitleComponent(separatorComponent, isEmpty = title == null)
     }
@@ -74,6 +74,12 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     private set
 
   var gapAfter: String? = null
+    set(value) {
+      field = value;
+      rowConstraints?.gapAfter = if (value == null) null else ConstraintParser.parseBoundSize(value, true, false)
+    }
+
+  var rowConstraints: DimConstraint? = null;
 
   private var componentIndexWhenCellModeWasEnabled = -1
 
@@ -160,6 +166,9 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
       subRows?.forEach {
         it.visible = value
         it.subRowsVisible = value
+        if (it != subRows!!.last()) {
+          it.gapAfter = if (value) null else "0px!"
+        }
       }
     }
 
@@ -179,7 +188,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
                              label: JLabel? = null,
                              isSeparated: Boolean = false,
                              noGrid: Boolean = false,
-                             title: String? = null,
+                             @NlsContexts.Separator title: String? = null,
                              incrementsIndent: Boolean = true): MigLayoutRow {
     val subRows = getOrCreateSubRowsList()
     val newIndent = if (!this.incrementsIndent) indent else indent + spacing.indentLevel
@@ -234,7 +243,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     addComponent(titleComponent, cc)
   }
 
-  override fun titledRow(title: String, init: Row.() -> Unit): Row {
+  override fun titledRow(@NlsContexts.Separator title: String, init: Row.() -> Unit): Row {
     return createBlockRow(title, true, init)
   }
 
@@ -242,7 +251,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     return createBlockRow(null, false, init)
   }
 
-  private fun createBlockRow(title: String?, isSeparated: Boolean, init: Row.() -> Unit): Row {
+  private fun createBlockRow(@NlsContexts.Separator title: String?, isSeparated: Boolean, init: Row.() -> Unit): Row {
     val parentRow = createChildRow(indent = indent, title = title, isSeparated = isSeparated, incrementsIndent = isSeparated)
     parentRow.init()
     val result = parentRow.createChildRow()
@@ -346,7 +355,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     }
 
     if (builder.hideableRowNestingLevel > 0) {
-      cc.hideMode = 0
+      cc.hideMode = 3
     }
 
     // if this row is not labeled and:
@@ -380,7 +389,7 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
   private val JComponent.constraints: CC
     get() = builder.componentConstraints.getOrPut(this) { CC() }
 
-  fun addCommentRow(comment: String, maxLineLength: Int, forComponent: Boolean) {
+  fun addCommentRow(@Nls comment: String, maxLineLength: Int, forComponent: Boolean) {
     val commentComponent = ComponentPanelBuilder.createCommentComponent(comment, true, maxLineLength, true)
     addCommentRow(commentComponent, forComponent)
   }
@@ -462,6 +471,25 @@ internal class MigLayoutRow(private val parent: MigLayoutRow?,
     builder.isModifiedCallbacks.getOrPut(null, { SmartList() }).add(callback)
     return this
   }
+
+  override fun row(label: String?, separated: Boolean, init: Row.() -> Unit): Row {
+    val newRow = super.row(label, separated, init)
+    if (newRow is MigLayoutRow) {
+      if (newRow.labeled && (newRow.components.size == 2)) {
+        var rowLabel = newRow.components[0]
+        if (rowLabel is JLabel) {
+          rowLabel.labelFor = newRow.components[1]
+        }
+        else {
+          rowLabel = newRow.components[1]
+          if (rowLabel is JLabel) {
+            rowLabel.labelFor = newRow.components[0]
+          }
+        }
+      }
+    }
+    return newRow
+  }
 }
 
 private class CellBuilderImpl<T : JComponent> internal constructor(
@@ -528,6 +556,16 @@ private class CellBuilderImpl<T : JComponent> internal constructor(
     return this
   }
 
+  override fun visible(isVisible: Boolean) {
+    component.isVisible = isVisible
+  }
+
+  override fun visibleIf(predicate: ComponentPredicate): CellBuilder<T> {
+    component.isVisible = predicate()
+    predicate.addListener { component.isVisible = it }
+    return this
+  }
+
   override fun applyIfEnabled(): CellBuilder<T> {
     applyIfEnabled = true
     return this
@@ -572,6 +610,13 @@ private class CellBuilderImpl<T : JComponent> internal constructor(
   override fun withLargeLeftGap(): CellBuilder<T> {
     builder.updateComponentConstraints(component) {
       horizontal.gapBefore = gapToBoundSize(builder.spacing.largeHorizontalGap, true)
+    }
+    return this
+  }
+
+  override fun withLeftGap(): CellBuilder<T> {
+    builder.updateComponentConstraints(component) {
+      horizontal.gapBefore = gapToBoundSize(builder.spacing.horizontalGap, true)
     }
     return this
   }

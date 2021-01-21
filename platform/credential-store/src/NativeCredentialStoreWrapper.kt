@@ -1,7 +1,7 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.credentialStore
 
-import com.google.common.cache.CacheBuilder
+import com.github.benmanes.caffeine.cache.Caffeine
 import com.intellij.credentialStore.keePass.InMemoryCredentialStore
 import com.intellij.jna.JnaLoader
 import com.intellij.notification.NotificationDisplayType
@@ -21,7 +21,8 @@ import java.util.function.BiConsumer
 
 internal val NOTIFICATION_MANAGER by lazy {
   // we use name "Password Safe" instead of "Credentials Store" because it was named so previously (and no much sense to rename it)
-  SingletonNotificationManager(NotificationGroup("Password Safe", NotificationDisplayType.STICKY_BALLOON, true), NotificationType.ERROR)
+  SingletonNotificationManager(NotificationGroup("Password Safe", displayType = NotificationDisplayType.STICKY_BALLOON,
+                                                 isLogByDefault = true), NotificationType.ERROR)
 }
 
 private val REMOVED_CREDENTIALS = Credentials("REMOVED_CREDENTIALS")
@@ -38,7 +39,7 @@ private class NativeCredentialStoreWrapper internal constructor(
 
   private val postponedCredentials = InMemoryCredentialStore()
 
-  private val deniedItems = CacheBuilder.newBuilder().expireAfterAccess(1, TimeUnit.MINUTES).build<CredentialAttributes, Boolean>()
+  private val deniedItems = Caffeine.newBuilder().expireAfterAccess(1, TimeUnit.MINUTES).build<CredentialAttributes, Boolean>()
 
   override fun get(attributes: CredentialAttributes): Credentials? {
     postponedCredentials.get(attributes)?.let {
@@ -115,11 +116,13 @@ private class NativeCredentialStoreWrapper internal constructor(
 
 private fun notifyUnsatisfiedLinkError(e: UnsatisfiedLinkError) {
   LOG.error(e)
-  var message = "Credentials are remembered until ${ApplicationNamesInfo.getInstance().fullProductName} is closed."
+  var message = CredentialStoreBundle.message("notification.content.native.keychain.unavailable",
+                                              ApplicationNamesInfo.getInstance().fullProductName);
   if (SystemInfo.isLinux) {
-    message += "\nPlease install required package libsecret-1-0: sudo apt-get install libsecret-1-0 gnome-keyring"
+    message += "\n";
+    message += CredentialStoreBundle.message("notification.content.native.keychain.unavailable.linux.addition");
   }
-  NOTIFICATION_MANAGER.notify("Cannot Access Native Keychain", message)
+  NOTIFICATION_MANAGER.notify(CredentialStoreBundle.message("notification.title.native.keychain.unavailable"), message)
 }
 
 private class MacOsCredentialStoreFactory : CredentialStoreFactory {

@@ -1,8 +1,7 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.application;
 
 import com.intellij.diagnostic.StartUpMeasurer;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.PropertiesUtil;
 import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.text.StringUtilRt;
@@ -11,7 +10,6 @@ import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.FList;
 import com.intellij.util.io.URLUtil;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -19,11 +17,9 @@ import org.jetbrains.annotations.Nullable;
 import java.io.*;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,11 +41,13 @@ public final class PathManager {
   public static final String DEFAULT_OPTIONS_FILE = "other" + DEFAULT_EXT;
 
   private static final String KOTLIN_IDE_IML_RELATIVE_PATH = "kotlin/idea/kotlin.idea.iml";
+  private static final String KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH = "idea/kotlin.idea.iml";
   private static final String INTELLIJ_SUB_REPO_NAME = "intellij";
 
   private static final String PROPERTY_HOME = "idea.home";  // reduced variant of PROPERTY_HOME_PATH, now deprecated
   private static final String PROPERTY_VENDOR_NAME = "idea.vendor.name";
 
+  private static final String JRE_DIRECTORY = "jbr";
   private static final String LIB_DIRECTORY = "lib";
   private static final String PLUGINS_DIRECTORY = "plugins";
   private static final String BIN_DIRECTORY = "bin";
@@ -102,8 +100,7 @@ public final class PathManager {
       else if (insideIde) {
         result = getHomePathFor(PathManager.class);
         if (result == null) {
-          String advice =
-            SystemInfoRt.isMac ? "reinstall the software." : "make sure bin/idea.properties is present in the installation directory.";
+          String advice = SystemInfoRt.isMac ? "reinstall the software." : "make sure bin/idea.properties is present in the installation directory.";
           throw new RuntimeException("Could not find installation home path. Please " + advice);
         }
       }
@@ -162,8 +159,11 @@ public final class PathManager {
    * This is temp util method and it's supposed to be removed when kotlin-20202 experiment is over
    */
   private static boolean isKotlinIdeRepoHome(@NotNull Path path) {
+    boolean containsRootKotlinModuleFile = Files.isRegularFile(path.resolve(KOTLIN_IDE_IML_RELATIVE_PATH)) ||
+                                           Files.isRegularFile(path.resolve(KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH));
+
     return Files.isDirectory(path) &&
-           Files.isRegularFile(path.resolve(KOTLIN_IDE_IML_RELATIVE_PATH)) &&
+           containsRootKotlinModuleFile &&
            Files.isDirectory(path.resolve(INTELLIJ_SUB_REPO_NAME)) &&
            isIdeaHome(path.resolve(INTELLIJ_SUB_REPO_NAME));
   }
@@ -247,6 +247,10 @@ public final class PathManager {
 
   public static @NotNull String getPreInstalledPluginsPath() {
     return getHomePath() + '/' + PLUGINS_DIRECTORY;
+  }
+
+  public static @NotNull String getBundledRuntimePath() {
+    return getHomePath() + '/' + JRE_DIRECTORY;
   }
 
   // config paths
@@ -367,6 +371,10 @@ public final class PathManager {
     return platformPath(selector, "Caches", "", "LOCALAPPDATA", "", "XDG_CACHE_HOME", ".cache", "");
   }
 
+  public static @NotNull String getDefaultUnixSystemPath(@NotNull String userHome, @NotNull String pathsSelector) {
+    return getUnixPlatformPath(userHome, pathsSelector, null, ".cache", "");
+  }
+
   public static @NotNull String getTempPath() {
     return getSystemPath() + "/tmp";
   }
@@ -414,9 +422,9 @@ public final class PathManager {
   /**
    * Attempts to detect classpath entry containing given resource.
    */
-  public static @Nullable String getResourceRoot(@NotNull ClassLoader cl, @NotNull String resourcePath) {
-    URL url = cl.getResource(resourcePath);
-    return url != null ? extractRoot(url, resourcePath) : null;
+  public static @Nullable String getResourceRoot(@NotNull ClassLoader classLoader, @NotNull String resourcePath) {
+    URL url = classLoader.getResource(resourcePath);
+    return url == null ? null : extractRoot(url, resourcePath);
   }
 
   /**
@@ -431,7 +439,14 @@ public final class PathManager {
     String resultPath = null;
     String protocol = resourceURL.getProtocol();
     if (URLUtil.FILE_PROTOCOL.equals(protocol)) {
-      String path = URLUtil.urlToFile(resourceURL).getPath();
+      File result;
+      try {
+        result = new File(resourceURL.toURI().getSchemeSpecificPart());
+      }
+      catch (URISyntaxException e) {
+        throw new IllegalArgumentException("URL='" + resourceURL + "'", e);
+      }
+      String path = result.getPath();
       String testPath = path.replace('\\', '/');
       String testResourcePath = resourcePath.replace('\\', '/');
       if (StringUtilRt.endsWithIgnoreCase(testPath, testResourcePath)) {
@@ -439,9 +454,10 @@ public final class PathManager {
       }
     }
     else if (URLUtil.JAR_PROTOCOL.equals(protocol)) {
-      Pair<String, String> paths = URLUtil.splitJarUrl(resourceURL.getFile());
-      if (paths != null && paths.first != null) {
-        resultPath = paths.first;
+      // do not use URLUtil.splitJarUrl here - used in bootstrap
+      String jarPath = splitJarUrl(resourceURL.getFile());
+      if (jarPath != null) {
+        resultPath = jarPath;
       }
     }
     else if (URLUtil.JRT_PROTOCOL.equals(protocol)) {
@@ -456,6 +472,58 @@ public final class PathManager {
     return Paths.get(resultPath).normalize().toString();
   }
 
+  // do not use URLUtil.splitJarUrl here - used in bootstrap
+  private static @Nullable String splitJarUrl(@NotNull String url) {
+    int pivot = url.indexOf(URLUtil.JAR_SEPARATOR);
+    if (pivot < 0) {
+      return null;
+    }
+
+    String jarPath = url.substring(0, pivot);
+
+    boolean startsWithConcatenation = true;
+    int offset = 0;
+    for (String prefix : new String[]{URLUtil.JAR_PROTOCOL, ":"}) {
+      int prefixLen = prefix.length();
+      if (!jarPath.regionMatches(offset, prefix, 0, prefixLen)) {
+        startsWithConcatenation = false;
+        break;
+      }
+      offset += prefixLen;
+    }
+    if (startsWithConcatenation) {
+      jarPath = jarPath.substring(URLUtil.JAR_PROTOCOL.length() + 1);
+    }
+
+    if (!jarPath.startsWith(URLUtil.FILE_PROTOCOL)) {
+      return jarPath;
+    }
+
+    try {
+      File result;
+      URL parsedUrl = new URL(jarPath);
+      try {
+        result = new File(parsedUrl.toURI().getSchemeSpecificPart());
+      }
+      catch (URISyntaxException e) {
+        throw new IllegalArgumentException("URL='" + parsedUrl + "'", e);
+      }
+      return result.getPath().replace('\\', '/');
+    }
+    catch (Exception e) {
+      jarPath = jarPath.substring(URLUtil.FILE_PROTOCOL.length());
+      if (jarPath.startsWith(URLUtil.SCHEME_SEPARATOR)) {
+        return jarPath.substring(URLUtil.SCHEME_SEPARATOR.length());
+      }
+      else if (!jarPath.isEmpty() && jarPath.charAt(0) == ':') {
+        return jarPath.substring(1);
+      }
+      else {
+        return jarPath;
+      }
+    }
+  }
+
   public static void loadProperties() {
     Set<String> paths = new LinkedHashSet<>();
     paths.add(System.getProperty(PROPERTIES_FILE));
@@ -467,8 +535,8 @@ public final class PathManager {
 
     Properties sysProperties = System.getProperties();
     for (String path : paths) {
-      Path file = path != null ? Paths.get(path) : null;
-      if (file != null && Files.exists(file)) {
+      Path file = path == null ? null : Paths.get(path);
+      if (file != null) {
         try (Reader reader = Files.newBufferedReader(file)) {
           Map<String, String> properties = PropertiesUtil.loadProperties(reader);
           for (Map.Entry<String, String> entry : properties.entrySet()) {
@@ -480,6 +548,8 @@ public final class PathManager {
               sysProperties.setProperty(key, substituteVars(entry.getValue()));
             }
           }
+        }
+        catch (NoSuchFileException | AccessDeniedException ignore) {
         }
         catch (IOException e) {
           log("Can't read property file '" + path + "': " + e.getMessage());
@@ -559,30 +629,79 @@ public final class PathManager {
   }
 
   public static @Nullable String getJarPathForClass(@NotNull Class<?> aClass) {
+    Path resourceRoot = getJarForClass(aClass);
+    return resourceRoot == null ? null : resourceRoot.toString();
+  }
+
+  public static @Nullable Path getJarForClass(@NotNull Class<?> aClass) {
     String resourceRoot = getResourceRoot(aClass, '/' + aClass.getName().replace('.', '/') + ".class");
-    return resourceRoot != null ? Paths.get(resourceRoot).toAbsolutePath().toString() : null;
+    return resourceRoot == null ? null : Paths.get(resourceRoot).toAbsolutePath();
+  }
+
+  /**
+   * Resolves the path to the jar file of an artifact.
+   *
+   * @param classesRoot  the resource root containing any class of the plugin, see {@link #getJarPathForClass}.
+   * @param artifactName the artifact name, from which the necessary relative paths and the jar name are derived.
+   *                     For an artifact named "foo-bar:jar", we assume that:
+   *                     <li> the artifact jar file name is "foo-bar.jar",
+   *                     <li> the output directory specified in the project structure is named "foo_bar_jar",
+   *                     <li> the "relativeOutputPath" argument of "withArtifact()" in the plugin layout script is just "rt".
+   */
+  public static @NotNull Path getJarArtifactPath(@NotNull String classesRoot,
+                                                 @NotNull String artifactName) {
+    String artifactJarName = Strings.trimEnd(artifactName, ":jar") + ".jar";
+    String artifactDirNameInBuildLayout = artifactName.replaceAll("\\W", "_");
+    return getArtifactPath(classesRoot, artifactJarName, "rt", artifactDirNameInBuildLayout);
+  }
+
+  /**
+   * Resolves the path to an artifact.
+   *
+   * @param classesRoot                   the resource root containing any class of the plugin, see {@link #getJarPathForClass}.
+   * @param artifactFileName              the name of the target artifact file
+   * @param artifactDirNameInPluginLayout the value of "relativeOutputPath" used in the plugin layout for "withArtifact()", usually "rt"
+   * @param artifactDirNameInBuildLayout  the name specified in the output directory property in the project structure
+   */
+  public static @NotNull Path getArtifactPath(@NotNull String classesRoot,
+                                              @NotNull String artifactFileName,
+                                              @NotNull String artifactDirNameInPluginLayout,
+                                              @NotNull String artifactDirNameInBuildLayout) {
+    Path rootPath = Paths.get(classesRoot);
+    if (Files.isRegularFile(rootPath)) {
+      // running regular installation
+      return rootPath.resolveSibling(artifactDirNameInPluginLayout).resolve(artifactFileName);
+    }
+
+    Path outClassesDir = rootPath.getParent().getParent();
+    Path artifactsDir = outClassesDir.resolveSibling("project-artifacts");
+    if (!Files.exists(artifactsDir)) {
+      // running IDE or tests in IDE
+      artifactsDir = outClassesDir.resolve("artifacts");
+    } // otherwise running tests via build scripts
+    return artifactsDir.resolve(artifactDirNameInBuildLayout).resolve(artifactFileName);
   }
 
   public static @NotNull Collection<String> getUtilClassPath() {
     Set<String> classPath = new HashSet<>();
 
     @SuppressWarnings("UnnecessaryFullyQualifiedName") Class<?>[] classes = {
-      PathManager.class,                               // module 'intellij.platform.util'
-      Strings.class,                                   // module 'intellij.platform.util.strings'
-      FList.class,                                     // module 'intellij.platform.util.collections'
-      MinusculeMatcher.class,                          // module 'intellij.platform.util.text.matching'
-      StartUpMeasurer.class,                           // module 'intellij.platform.util.diagnostic'
-      com.intellij.openapi.util.SystemInfoRt.class,    // module 'intellij.platform.util.rt'
-      com.intellij.util.lang.UrlClassLoader.class,     // module 'intellij.platform.util.classLoader'
-      org.intellij.lang.annotations.Flow.class,        // jetbrains-annotations-java5
-      org.jdom.Document.class,                         // jDOM
-      org.apache.log4j.Appender.class,                 // Log4J
-      gnu.trove.THashSet.class,                        // Trove
-      Object2IntMap.class,                             // fastutil
-      com.sun.jna.TypeMapper.class,                    // JNA
-      com.sun.jna.platform.FileUtils.class,            // JNA (jna-platform)
-      org.apache.oro.text.regex.PatternMatcher.class,  // OROMatcher
-      net.jpountz.lz4.LZ4Factory.class,                // LZ4-Java
+      PathManager.class,                                  // module 'intellij.platform.util'
+      Strings.class,                                      // module 'intellij.platform.util.strings'
+      FList.class,                                        // module 'intellij.platform.util.collections'
+      MinusculeMatcher.class,                             // module 'intellij.platform.util.text.matching'
+      StartUpMeasurer.class,                              // module 'intellij.platform.util.diagnostic'
+      com.intellij.openapi.util.SystemInfoRt.class,       // module 'intellij.platform.util.rt'
+      com.intellij.util.lang.UrlClassLoader.class,        // module 'intellij.platform.util.classLoader'
+      org.intellij.lang.annotations.Flow.class,           // jetbrains-annotations-java5
+      org.jdom.Document.class,                            // jDOM
+      org.apache.log4j.Appender.class,                    // Log4J
+      gnu.trove.THashSet.class,                           // Trove
+      it.unimi.dsi.fastutil.objects.Object2IntMap.class,  // fastutil
+      com.sun.jna.TypeMapper.class,                       // JNA
+      com.sun.jna.platform.FileUtils.class,               // JNA (jna-platform)
+      org.apache.oro.text.regex.PatternMatcher.class,     // OROMatcher
+      net.jpountz.lz4.LZ4Factory.class,                   // LZ4-Java
     };
     for (Class<?> aClass : classes) {
       String path = getJarPathForClass(aClass);
@@ -641,15 +760,23 @@ public final class PathManager {
     }
 
     if (SystemInfoRt.isUnix) {
-      String dir = System.getenv(xdgVar);
-      if (dir == null || dir.isEmpty()) dir = userHome + '/' + xdgDfl;
-      dir = dir + '/' + vendorName;
-      if (!selector.isEmpty()) dir = dir + '/' + selector;
-      if (!xdgSub.isEmpty()) dir = dir + '/' + xdgSub;
-      return dir;
+      return getUnixPlatformPath(userHome, selector, xdgVar, xdgDfl, xdgSub);
     }
 
     throw new UnsupportedOperationException("Unsupported OS: " + SystemInfoRt.OS_NAME);
+  }
+
+  @NotNull
+  private static String getUnixPlatformPath(String userHome, String selector,
+                                            String xdgVar,
+                                            String xdgDfl,
+                                            String xdgSub) {
+    String dir = xdgVar != null ? System.getenv(xdgVar) : null;
+    if (dir == null || dir.isEmpty()) dir = userHome + '/' + xdgDfl;
+    dir = dir + '/' + vendorName();
+    if (!selector.isEmpty()) dir = dir + '/' + selector;
+    if (!xdgSub.isEmpty()) dir = dir + '/' + xdgSub;
+    return dir;
   }
 
   private static String vendorName() {

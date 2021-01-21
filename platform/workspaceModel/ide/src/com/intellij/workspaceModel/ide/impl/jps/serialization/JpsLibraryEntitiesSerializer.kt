@@ -1,12 +1,18 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.workspaceModel.ide.impl.jps.serialization
 
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.JDOMUtil
+import com.intellij.util.containers.ConcurrentFactoryMap
 import com.intellij.workspaceModel.ide.JpsFileEntitySource
 import com.intellij.workspaceModel.ide.JpsImportedEntitySource
-import com.intellij.workspaceModel.ide.impl.legacyBridge.library.LibraryBridgeImpl
-import com.intellij.workspaceModel.storage.*
+import com.intellij.workspaceModel.storage.EntitySource
+import com.intellij.workspaceModel.storage.WorkspaceEntity
+import com.intellij.workspaceModel.storage.WorkspaceEntityStorage
+import com.intellij.workspaceModel.storage.WorkspaceEntityStorageBuilder
 import com.intellij.workspaceModel.storage.bridgeEntities.*
+import com.intellij.workspaceModel.storage.url.VirtualFileUrl
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import org.jdom.Element
 import org.jetbrains.jps.model.serialization.JDomSerializationUtil
 import org.jetbrains.jps.model.serialization.SerializationConstants
@@ -43,6 +49,10 @@ internal class JpsLibrariesFileSerializer(entitySource: JpsFileEntitySource.Exac
     get() = false
   override val entityFilter: (LibraryEntity) -> Boolean
     get() = { it.tableId == libraryTableId && (it.entitySource as? JpsImportedEntitySource)?.storedExternally != true }
+
+  override fun deleteObsoleteFile(fileUrl: String, writer: JpsFileContentWriter) {
+    writer.saveComponent(fileUrl, LIBRARY_TABLE_COMPONENT_NAME, null)
+  }
 }
 
 internal class JpsLibrariesExternalFileSerializer(private val externalFile: JpsFileEntitySource.ExactFile,
@@ -63,6 +73,10 @@ internal class JpsLibrariesExternalFileSerializer(private val externalFile: JpsF
     val source = libraryEntity.entitySource
     return (source as? JpsImportedEntitySource)?.externalSystemId
   }
+
+  override fun deleteObsoleteFile(fileUrl: String, writer: JpsFileContentWriter) {
+    writer.saveComponent(fileUrl, LIBRARY_TABLE_COMPONENT_NAME, null)
+  }
 }
 
 internal open class JpsLibraryEntitiesSerializer(override val fileUrl: VirtualFileUrl, override val internalEntitySource: JpsFileEntitySource,
@@ -71,11 +85,24 @@ internal open class JpsLibraryEntitiesSerializer(override val fileUrl: VirtualFi
     get() = LibraryEntity::class.java
 
   override fun loadEntities(builder: WorkspaceEntityStorageBuilder,
-                            reader: JpsFileContentReader, virtualFileManager: VirtualFileUrlManager) {
+                            reader: JpsFileContentReader, errorReporter: ErrorReporter, virtualFileManager: VirtualFileUrlManager) {
     val libraryTableTag = reader.loadComponent(fileUrl.url, LIBRARY_TABLE_COMPONENT_NAME) ?: return
     for (libraryTag in libraryTableTag.getChildren(LIBRARY_TAG)) {
       val source = createEntitySource(libraryTag) ?: continue
       val name = libraryTag.getAttributeValueStrict(JpsModuleRootModelSerializer.NAME_ATTRIBUTE)
+
+      val libraryId = LibraryId(name, libraryTableId)
+      val existingLibraryEntity = builder.resolve(libraryId)
+      if (existingLibraryEntity != null) {
+        logger<JpsLibraryEntitiesSerializer>().error("""Error during entities loading
+          |Entity with this library id already exists.
+          |Library id: $libraryId
+          |fileUrl: ${fileUrl.presentableUrl}
+          |library table id: $libraryTableId
+          |internal entity source: $internalEntitySource
+        """.trimMargin())
+      }
+
       loadLibrary(name, libraryTag, libraryTableId, builder, source, virtualFileManager)
     }
   }
@@ -84,6 +111,7 @@ internal open class JpsLibraryEntitiesSerializer(override val fileUrl: VirtualFi
 
   override fun saveEntities(mainEntities: Collection<LibraryEntity>,
                             entities: Map<Class<out WorkspaceEntity>, List<WorkspaceEntity>>,
+                            storage: WorkspaceEntityStorage,
                             writer: JpsFileContentWriter) {
     if (mainEntities.isEmpty()) return
 
@@ -133,21 +161,23 @@ internal fun loadLibrary(name: String, libraryElement: Element, libraryTableId: 
         for (rootTag in childElement.getChildren(JpsJavaModelSerializerExtension.ROOT_TAG)) {
           val url = rootTag.getAttributeValueStrict(JpsModuleRootModelSerializer.URL_ATTRIBUTE)
           val inclusionOptions = jarDirectories[Pair(rootType, url)] ?: LibraryRoot.InclusionOptions.ROOT_ITSELF
-          roots.add(LibraryRoot(virtualFileManager.fromUrl(url), LibraryRootTypeId(rootType), inclusionOptions))
+          roots.add(LibraryRoot(virtualFileManager.fromUrl(url), libraryRootTypes[rootType]!!, inclusionOptions))
         }
       }
     }
   }
   val libraryEntity = builder.addLibraryEntity(name, libraryTableId, roots, excludedRoots, source)
   if (type != null) {
-    builder.addLibraryPropertiesEntity(libraryEntity, type, properties, source)
+    builder.addLibraryPropertiesEntity(libraryEntity, type, properties)
   }
   return libraryEntity
 }
 
+private val libraryRootTypes = ConcurrentFactoryMap.createMap<String, LibraryRootTypeId> { LibraryRootTypeId(it) }
+
 internal fun saveLibrary(library: LibraryEntity, externalSystemId: String?): Element {
   val libraryTag = Element(LIBRARY_TAG)
-  val legacyName = LibraryBridgeImpl.getLegacyLibraryName(library.persistentId())
+  val legacyName = getLegacyLibraryName(library.persistentId())
   if (legacyName != null) {
     libraryTag.setAttribute(NAME_ATTRIBUTE, legacyName)
   }
@@ -199,4 +229,44 @@ internal fun saveLibrary(library: LibraryEntity, externalSystemId: String?): Ele
   return libraryTag
 }
 
-private val ROOT_TYPES_TO_WRITE_EMPTY_TAG = listOf("CLASSES", "SOURCES", "JAVADOC").map { LibraryRootTypeId(it) }
+private val ROOT_TYPES_TO_WRITE_EMPTY_TAG = listOf("CLASSES", "SOURCES", "JAVADOC").map { libraryRootTypes[it]!! }
+internal const val UNNAMED_LIBRARY_NAME_PREFIX = "#"
+private const val UNIQUE_INDEX_LIBRARY_NAME_SUFFIX = "-d1a6f608-UNIQUE-INDEX-f29c-4df6-"
+
+fun getLegacyLibraryName(libraryId: LibraryId): String? {
+  if (libraryId.name.startsWith(UNNAMED_LIBRARY_NAME_PREFIX)) return null
+  if (libraryId.name.contains(UNIQUE_INDEX_LIBRARY_NAME_SUFFIX)) return libraryId.name.substringBefore(UNIQUE_INDEX_LIBRARY_NAME_SUFFIX)
+  return libraryId.name
+}
+
+fun generateLibraryEntityName(legacyLibraryName: String?, exists: (String) -> Boolean): String {
+  if (legacyLibraryName == null) {
+    var index = 1
+    while (true) {
+      val candidate = "$UNNAMED_LIBRARY_NAME_PREFIX$index"
+      if (!exists(candidate)) {
+        return candidate
+      }
+
+      index++
+    }
+    @Suppress("UNREACHABLE_CODE")
+    error("Unable to suggest unique name for unnamed module library")
+  }
+
+  return generateUniqueLibraryName(legacyLibraryName, exists)
+}
+
+internal fun generateUniqueLibraryName(name: String, exists: (String) -> Boolean): String {
+  if (!exists(name)) return name
+
+  var index = 1
+  while (true) {
+    val candidate = "$name$UNIQUE_INDEX_LIBRARY_NAME_SUFFIX$index"
+    if (!exists(candidate)) {
+      return candidate
+    }
+
+    index++
+  }
+}

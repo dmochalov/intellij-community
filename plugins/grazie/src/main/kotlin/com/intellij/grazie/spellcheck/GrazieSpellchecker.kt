@@ -2,14 +2,17 @@
 package com.intellij.grazie.spellcheck
 
 import com.intellij.grazie.GrazieConfig
+import com.intellij.grazie.GraziePlugin
 import com.intellij.grazie.detector.heuristics.rule.RuleFilter
 import com.intellij.grazie.ide.msg.GrazieStateLifecycle
 import com.intellij.grazie.jlanguage.Lang
 import com.intellij.grazie.jlanguage.LangTool
 import com.intellij.grazie.utils.LinkedSet
 import com.intellij.grazie.utils.toLinkedSet
+import com.intellij.openapi.util.ClassLoaderUtil
 import org.languagetool.JLanguageTool
 import org.languagetool.rules.spelling.SpellingCheckRule
+import org.languagetool.rules.spelling.hunspell.HunspellRule
 import org.slf4j.LoggerFactory
 
 object GrazieSpellchecker : GrazieStateLifecycle {
@@ -27,13 +30,17 @@ object GrazieSpellchecker : GrazieStateLifecycle {
 
   data class SpellerTool(val tool: JLanguageTool, val lang: Lang, val speller: SpellingCheckRule, val suggestLimit: Int) {
     fun check(word: String): Boolean = synchronized(speller) {
-      !speller.isMisspelled(word) || !speller.isMisspelled(word.capitalize())
+      ClassLoaderUtil.computeWithClassLoader<Boolean, Throwable>(GraziePlugin.classLoader) {
+        !speller.isMisspelled(word) || !speller.isMisspelled(word.capitalize())
+      }
     }
 
     fun suggest(text: String): Set<String> = synchronized(speller) {
-      speller.match(tool.getRawAnalyzedSentence(text))
-        .flatMap { it.getSuggestedReplacements() }
-        .take(suggestLimit).toSet()
+      ClassLoaderUtil.computeWithClassLoader<Set<String>, Throwable>(GraziePlugin.classLoader) {
+        speller.match(tool.getRawAnalyzedSentence(text))
+          .flatMap { it.suggestedReplacements }
+          .take(suggestLimit).toSet()
+      }
     }
   }
 
@@ -43,12 +50,27 @@ object GrazieSpellchecker : GrazieStateLifecycle {
   override fun init(state: GrazieConfig.State) {
     checkers = state.availableLanguages.filterNot { it.isEnglish() }.mapNotNull { lang ->
       val tool = LangTool.getTool(lang, state)
-      tool.spellingCheckRule?.let { SpellerTool(tool, lang, it, MAX_SUGGESTIONS_COUNT) }
+      tool.allSpellingCheckRules.firstOrNull()?.let {
+        SpellerTool(tool, lang, it, MAX_SUGGESTIONS_COUNT)
+      }
     }.toLinkedSet()
   }
 
   override fun update(prevState: GrazieConfig.State, newState: GrazieConfig.State) {
     init(newState)
+  }
+
+  private fun Throwable.isFromHunspellRuleInit(): Boolean {
+    return stackTrace.any { it.className == HunspellRule::class.java.canonicalName && it.methodName == "init" }
+  }
+
+  private fun disableHunspellRuleInitialization(rule: SpellingCheckRule) {
+    if (rule !is HunspellRule) return
+
+    val field = HunspellRule::class.java.getDeclaredField("needsInit")
+    if (field.trySetAccessible()) {
+       field.set(rule, false)
+    }
   }
 
   fun isCorrect(word: String): Boolean? {
@@ -61,6 +83,10 @@ object GrazieSpellchecker : GrazieStateLifecycle {
         speller.check(word)
       }
       catch (t: Throwable) {
+        if (t.isFromHunspellRuleInit()) {
+          disableHunspellRuleInitialization(speller.speller)
+        }
+
         logger.warn("Got exception during check for spelling mistakes by LanguageTool with word: $word", t)
         false
       }
@@ -76,6 +102,10 @@ object GrazieSpellchecker : GrazieStateLifecycle {
         speller.suggest(word)
       }
       catch (t: Throwable) {
+        if (t.isFromHunspellRuleInit()) {
+          disableHunspellRuleInitialization(speller.speller)
+        }
+
         logger.warn("Got exception during suggest for spelling mistakes by LanguageTool with word: $word", t)
         null
       }

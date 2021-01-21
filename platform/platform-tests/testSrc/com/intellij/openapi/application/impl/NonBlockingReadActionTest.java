@@ -78,7 +78,7 @@ public class NonBlockingReadActionTest extends LightPlatformTestCase {
 
   public void testDoNotBlockExecutorThreadWhileWaitingForEdtFinish() throws Exception {
     Semaphore semaphore = new Semaphore(1);
-    ExecutorService executor = SequentialTaskExecutor.createSequentialApplicationPoolExecutor(getName());
+    ExecutorService executor = SequentialTaskExecutor.createSequentialApplicationPoolExecutor(StringUtil.capitalize(getName()));
     CancellablePromise<Void> promise = ReadAction
       .nonBlocking(() -> {})
       .finishOnUiThread(ModalityState.defaultModalityState(), __ -> semaphore.up())
@@ -503,7 +503,7 @@ public class NonBlockingReadActionTest extends LightPlatformTestCase {
           }
         }));
       }
-      WriteAction.run(() -> parents.forEach(Disposer::dispose));
+      parents.forEach(Disposer::dispose);
 
       futures.forEach(f -> PlatformTestUtil.waitForFuture(f, 50_000));
     }

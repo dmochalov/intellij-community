@@ -201,7 +201,7 @@ public class FormReferencesSearcher implements QueryExecutor<PsiReference, Refer
     psiManager.startBatchFilesProcessingMode();
 
     try {
-      CommonProcessors.CollectProcessor<VirtualFile> collector = new CommonProcessors.CollectProcessor<VirtualFile>() {
+      CommonProcessors.CollectProcessor<VirtualFile> collector = new CommonProcessors.CollectProcessor<>() {
         @Override
         protected boolean accept(VirtualFile virtualFile) {
           return FileTypeRegistry.getInstance().isFileOfType(virtualFile, GuiFormFileType.INSTANCE);
@@ -233,8 +233,10 @@ public class FormReferencesSearcher implements QueryExecutor<PsiReference, Refer
     final String baseName = ReadAction.compute(() -> propFile.getResourceBundle().getBaseName());
     PsiFile containingFile = ReadAction.compute(() -> propFile.getContainingFile());
 
-    List<PsiFile> files = Arrays.asList(CacheManager.getInstance(project).getFilesWithWord(baseName, UsageSearchContext.IN_PLAIN_TEXT, scope, true));
-    return processReferencesInFiles(files, psiManager, baseName, containingFile, filterScope, processor);
+    PsiFile[] files = ReadAction.nonBlocking(() -> {
+      return CacheManager.getInstance(project).getFilesWithWord(baseName, UsageSearchContext.IN_PLAIN_TEXT, scope, true);
+    }).inSmartMode(project).executeSynchronously();
+    return processReferencesInFiles(Arrays.asList(files), psiManager, baseName, containingFile, filterScope, processor);
   }
 
   private static boolean processReferencesInFiles(List<PsiFile> files,

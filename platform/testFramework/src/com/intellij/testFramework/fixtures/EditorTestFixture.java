@@ -113,6 +113,7 @@ public class EditorTestFixture {
 
       ActionManagerEx.getInstanceEx().fireBeforeEditorTyping(c, getEditorDataContext());
       TypedAction.getInstance().actionPerformed(myEditor, c, getEditorDataContext());
+      ActionManagerEx.getInstanceEx().fireAfterEditorTyping(c, getEditorDataContext());
     });
 
   }
@@ -322,5 +323,9 @@ public class EditorTestFixture {
   public List<Crumb> getBreadcrumbsAtCaret() {
     FileBreadcrumbsCollector breadcrumbsCollector = FileBreadcrumbsCollector.findBreadcrumbsCollector(myProject, myFile);
     return ContainerUtil.newArrayList(breadcrumbsCollector.computeCrumbs(myFile, myEditor.getDocument(), myEditor.getCaretModel().getOffset(), true));
+  }
+
+  public Editor getEditor() {
+    return myEditor;
   }
 }

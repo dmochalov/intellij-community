@@ -11,7 +11,7 @@ import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.pom.java.LanguageLevel
 import com.intellij.workspaceModel.storage.WorkspaceEntityStorageBuilder
-import com.intellij.workspaceModel.storage.VirtualFileUrlManager
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import com.intellij.workspaceModel.ide.getInstance
 import com.intellij.workspaceModel.ide.impl.legacyBridge.module.CompilerModuleExtensionBridge
 import com.intellij.workspaceModel.ide.legacyBridge.ModuleBridge
@@ -44,7 +44,7 @@ class MavenRootModelAdapterBridge(private val myMavenProject: MavenProject,
 
   private var moduleEntity: ModuleEntity = initialModuleEntity
   private val legacyBridge = ModuleRootComponentBridge.getInstance(module)
-  private val modifiableModel = legacyBridge.getModifiableModel(builder, RootConfigurationAccessor())
+  private val modifiableModel = legacyBridge.getModifiableModel(builder, builder.toStorage(), RootConfigurationAccessor())
   private val virtualFileManager: VirtualFileUrlManager = VirtualFileUrlManager.getInstance(project)
   private val entitySource = MavenExternalSource.INSTANCE
 
@@ -96,8 +96,8 @@ class MavenRootModelAdapterBridge(private val myMavenProject: MavenProject,
                                                        entitySource)
 
     when (rootType) {
-      is JavaSourceRootType -> builder.addJavaSourceRootEntity(sourceRootEntity, generated, "", entitySource)
-      is JavaResourceRootType -> builder.addJavaResourceRootEntity(sourceRootEntity, generated, "", entitySource)
+      is JavaSourceRootType -> builder.addJavaSourceRootEntity(sourceRootEntity, generated, "")
+      is JavaResourceRootType -> builder.addJavaResourceRootEntity(sourceRootEntity, generated, "")
       else -> TODO()
     }
   }
@@ -193,8 +193,7 @@ class MavenRootModelAdapterBridge(private val myMavenProject: MavenProject,
     assert(MavenConstants.SCOPE_SYSTEM == artifact.scope) { "Artifact scope should be \"system\"" }
     val roots = ArrayList<LibraryRoot>()
     roots.add(LibraryRoot(virtualFileManager.fromUrl(MavenModelUtil.getArtifactUrlForClassifierAndExtension(artifact, null, null)),
-                          LibraryRootTypeId("CLASSES"),
-                          LibraryRoot.InclusionOptions.ROOT_ITSELF))
+                          LibraryRootTypeId.COMPILED))
 
     val libraryTableId = LibraryTableId.ModuleLibraryTableId(ModuleId(moduleEntity.name))
 
@@ -202,8 +201,7 @@ class MavenRootModelAdapterBridge(private val myMavenProject: MavenProject,
                                                  roots,
                                                  emptyList(), entitySource)
 
-    builder.addLibraryPropertiesEntity(libraryEntity, "repository", "<properties maven-id=\"${artifact.mavenId}\" />",
-                                       MavenExternalSource.INSTANCE)
+    builder.addLibraryPropertiesEntity(libraryEntity, "repository", "<properties maven-id=\"${artifact.mavenId}\" />")
   }
 
   override fun addLibraryDependency(artifact: MavenArtifact,
@@ -213,24 +211,20 @@ class MavenRootModelAdapterBridge(private val myMavenProject: MavenProject,
     val roots = ArrayList<LibraryRoot>()
 
     roots.add(LibraryRoot(virtualFileManager.fromUrl(MavenModelUtil.getArtifactUrlForClassifierAndExtension(artifact, null, null)),
-                          LibraryRootTypeId("CLASSES"),
-                          LibraryRoot.InclusionOptions.ROOT_ITSELF))
+                          LibraryRootTypeId.COMPILED))
     roots.add(
       LibraryRoot(virtualFileManager.fromUrl(MavenModelUtil.getArtifactUrlForClassifierAndExtension(artifact, "javadoc", "jar")),
-                  LibraryRootTypeId("JAVADOC"),
-                  LibraryRoot.InclusionOptions.ROOT_ITSELF))
+                  WorkspaceModuleImporter.JAVADOC_TYPE))
     roots.add(
       LibraryRoot(virtualFileManager.fromUrl(MavenModelUtil.getArtifactUrlForClassifierAndExtension(artifact, "sources", "jar")),
-                  LibraryRootTypeId("SOURCES"),
-                  LibraryRoot.InclusionOptions.ROOT_ITSELF))
+                  LibraryRootTypeId.SOURCES))
 
     val libraryTableId = LibraryTableId.ProjectLibraryTableId; //(ModuleId(moduleEntity.name))
 
     val libraryEntity = builder.addLibraryEntity(artifact.ideaLibraryName(), libraryTableId,
                                                  roots,
                                                  emptyList(), entitySource)
-    builder.addLibraryPropertiesEntity(libraryEntity, "repository", "<properties maven-id=\"${artifact.mavenId}\" />",
-                                       MavenExternalSource.INSTANCE)
+    builder.addLibraryPropertiesEntity(libraryEntity, "repository", "<properties maven-id=\"${artifact.mavenId}\" />")
 
     val libDependency = ModuleDependencyItem.Exportable.LibraryDependency(LibraryId(libraryEntity.name, libraryTableId), false,
                                                                           toEntityScope(scope))

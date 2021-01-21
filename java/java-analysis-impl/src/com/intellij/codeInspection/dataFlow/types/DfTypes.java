@@ -4,14 +4,15 @@ package com.intellij.codeInspection.dataFlow.types;
 import com.intellij.codeInsight.Nullability;
 import com.intellij.codeInspection.dataFlow.*;
 import com.intellij.codeInspection.dataFlow.rangeSet.LongRangeSet;
+import com.intellij.psi.PsiKeyword;
 import com.intellij.psi.PsiPrimitiveType;
 import com.intellij.psi.PsiType;
 import com.intellij.util.ObjectUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Commonly used types and factory methods
@@ -99,7 +100,7 @@ public final class DfTypes {
    * A special value that represents a contract failure after method return (the control flow should immediately proceed
    * with exception handling). This value is like a constant but it's type doesn't correspond to any JVM type.
    */
-  public static final DfType FAIL = new DfConstantType<Object>(ObjectUtils.sentinel("FAIL")) {
+  public static final DfType FAIL = new DfConstantType<>(ObjectUtils.sentinel("FAIL")) {
     @NotNull
     @Override
     public PsiType getPsiType() {
@@ -161,7 +162,7 @@ public final class DfTypes {
 
     @Override
     public String toString() {
-      return "boolean";
+      return PsiKeyword.BOOLEAN;
     }
   };
 
@@ -305,7 +306,7 @@ public final class DfTypes {
 
     @Override
     public String toString() {
-      return "float";
+      return PsiKeyword.FLOAT;
     }
   };
 
@@ -354,7 +355,7 @@ public final class DfTypes {
 
     @Override
     public String toString() {
-      return "double";
+      return PsiKeyword.DOUBLE;
     }
   };
 
@@ -387,7 +388,7 @@ public final class DfTypes {
    * A reference type that contains any reference to a local object
    */
   public static final DfReferenceType LOCAL_OBJECT =
-    new DfGenericObjectType(Collections.emptySet(), TypeConstraints.TOP, DfaNullability.NOT_NULL, Mutability.UNKNOWN,
+    new DfGenericObjectType(Set.of(), TypeConstraints.TOP, DfaNullability.NOT_NULL, Mutability.UNKNOWN,
                             null, BOTTOM, true);
 
   /**
@@ -472,7 +473,7 @@ public final class DfTypes {
     if (constraint == TypeConstraints.BOTTOM) {
       return nullability == Nullability.NOT_NULL ? BOTTOM : NULL;
     }
-    return new DfGenericObjectType(Collections.emptySet(), constraint,
+    return new DfGenericObjectType(Set.of(), constraint,
                                    DfaNullability.fromNullability(nullability), Mutability.UNKNOWN, null, BOTTOM, false);
   }
 
@@ -502,6 +503,6 @@ public final class DfTypes {
     if (nullability == DfaNullability.NULL) {
       throw new IllegalArgumentException();
     }
-    return new DfGenericObjectType(Collections.emptySet(), constraint, nullability, mutability, specialField, sfType, false);
+    return new DfGenericObjectType(Set.of(), constraint, nullability, mutability, specialField, sfType, false);
   }
 }

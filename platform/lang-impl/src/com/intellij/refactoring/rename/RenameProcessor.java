@@ -1,13 +1,12 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.rename;
 
-import com.intellij.analysis.AnalysisBundle;
-import com.intellij.core.CoreBundle;
-import com.intellij.internal.statistic.eventLog.EventFields;
-import com.intellij.internal.statistic.eventLog.VarargEventId;
+import com.intellij.internal.statistic.eventLog.events.EventFields;
+import com.intellij.internal.statistic.eventLog.events.VarargEventId;
 import com.intellij.internal.statistic.utils.PluginInfoDetectorKt;
 import com.intellij.lang.LangBundle;
 import com.intellij.lang.findUsages.DescriptiveNameUtil;
+import com.intellij.model.BranchableSyntheticPsiElement;
 import com.intellij.model.ModelBranch;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -19,6 +18,7 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFrame;
@@ -26,9 +26,7 @@ import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.ex.StatusBarEx;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.light.LightElement;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
-import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.*;
 import com.intellij.refactoring.BaseRefactoringProcessor;
 import com.intellij.refactoring.RefactoringBundle;
 import com.intellij.refactoring.copy.CopyFilesOrDirectoriesHandler;
@@ -68,7 +66,7 @@ public class RenameProcessor extends BaseRefactoringProcessor {
   private boolean mySearchTextOccurrences;
   protected boolean myForceShowPreview;
 
-  private String myCommandName;
+  private @NlsContexts.Command String myCommandName;
 
   private NonCodeUsageInfo[] myNonCodeUsages = new NonCodeUsageInfo[0];
   private final List<AutomaticRenamerFactory> myRenamerFactories = new ArrayList<>();
@@ -209,7 +207,8 @@ public class RenameProcessor extends BaseRefactoringProcessor {
         if (entry.getKey() instanceof PsiFile) {
           final PsiFile file = (PsiFile)entry.getKey();
           final PsiDirectory containingDirectory = file.getContainingDirectory();
-          if (CopyFilesOrDirectoriesHandler.checkFileExist(containingDirectory, choice, file, entry.getValue(), "Rename")) {
+          if (CopyFilesOrDirectoriesHandler.checkFileExist(containingDirectory, choice, file, entry.getValue(),
+                                                           RefactoringBundle.message("command.name.rename"))) {
             iterator.remove();
             continue;
           }
@@ -401,10 +400,14 @@ public class RenameProcessor extends BaseRefactoringProcessor {
 
     MultiMap<RefactoringElementListener, SmartPsiElementPointer<PsiElement>> renameEvents = MultiMap.createLinked();
 
-    MultiMap<PsiElement, UsageInfo> classified = classifyUsages(
-      elementsToChange.values(),
+    List<UsageInfo> branchedUsages =
       branch == null ? Arrays.asList(usages)
-                     : ContainerUtil.mapNotNull(usages, info -> shouldSkip(info) ? null : ((MoveRenameUsageInfo)info).branched(branch)));
+                     : ContainerUtil.mapNotNull(usages, info -> shouldSkip(info) ? null : ((MoveRenameUsageInfo)info).obtainBranchCopy(branch));
+    MultiMap<PsiElement, UsageInfo> classified = classifyUsages(elementsToChange.values(), branchedUsages);
+
+    NonCodeUsageInfo[] nonCodeUsages =
+      ContainerUtil.filterIsInstance(branchedUsages, NonCodeUsageInfo.class).toArray(new NonCodeUsageInfo[0]);
+
     for (final PsiElement element : myAllRenames.keySet()) {
       PsiElement toChange = elementsToChange.get(element);
       if (!element.isValid()) {
@@ -448,7 +451,13 @@ public class RenameProcessor extends BaseRefactoringProcessor {
       }
     }
 
-    nowOrAfterMerge(branch, () -> afterRename(postRenameCallbacks, usages, renameEvents, branch));
+    if (branch != null) {
+      RenameUtil.renameNonCodeUsages(myProject, nonCodeUsages);
+    } else {
+      myNonCodeUsages = nonCodeUsages;
+    }
+
+    nowOrAfterMerge(branch, () -> afterRename(postRenameCallbacks, renameEvents, branch));
   }
 
   private static void nowOrAfterMerge(@Nullable ModelBranch branch, Runnable runnable) {
@@ -460,13 +469,15 @@ public class RenameProcessor extends BaseRefactoringProcessor {
   }
 
   private void afterRename(List<Runnable> postRenameCallbacks,
-                           UsageInfo[] usages,
                            MultiMap<RefactoringElementListener, SmartPsiElementPointer<PsiElement>> renameEvents,
                            @Nullable ModelBranch branch) {
     PsiDocumentManager.getInstance(myProject).commitAllDocuments();
     for (Map.Entry<RefactoringElementListener, Collection<SmartPsiElementPointer<PsiElement>>> entry : renameEvents.entrySet()) {
       for (SmartPsiElementPointer<PsiElement> pointer : entry.getValue()) {
         PsiElement element = pointer.getElement();
+        if (element instanceof BranchableSyntheticPsiElement) {
+          continue;
+        }
         if (branch != null && element != null) {
           element = branch.findOriginalPsi(element);
         }
@@ -480,13 +491,6 @@ public class RenameProcessor extends BaseRefactoringProcessor {
       runnable.run();
     }
 
-    List<NonCodeUsageInfo> nonCodeUsages = new ArrayList<>();
-    for (UsageInfo usage : usages) {
-      if (usage instanceof NonCodeUsageInfo) {
-        nonCodeUsages.add((NonCodeUsageInfo)usage);
-      }
-    }
-    myNonCodeUsages = nonCodeUsages.toArray(new NonCodeUsageInfo[0]);
     if (!mySkippedUsages.isEmpty()) {
       if (!ApplicationManager.getApplication().isUnitTestMode() && !ApplicationManager.getApplication().isHeadlessEnvironment()) {
         ApplicationManager.getApplication().invokeLater(() -> {
@@ -572,10 +576,10 @@ public class RenameProcessor extends BaseRefactoringProcessor {
     return mySearchTextOccurrences;
   }
 
-  public void setCommandName(final String commandName) {
+  public void setCommandName(final @NlsContexts.Command String commandName) {
     myCommandName = commandName;
   }
-  
+
   private void logScopeStatistics(VarargEventId eventId) {
     Class<? extends RenamePsiElementProcessor> renameProcessor = RenamePsiElementProcessor.forElement(myPrimaryElement).getClass();
     eventId.log(
@@ -590,15 +594,15 @@ public class RenameProcessor extends BaseRefactoringProcessor {
 
   private RenameScopeType getStatisticsCompatibleScopeName() {
     String displayName = myRefactoringScope.getDisplayName();
-    if (displayName.equals(CoreBundle.message("psi.search.scope.project"))) {
+    if (displayName.equals(ProjectScope.getProjectFilesScopeName())) {
       return RenameScopeType.Project;
     }
 
-    if (displayName.equals(AnalysisBundle.message("psi.search.scope.test.files"))) {
+    if (displayName.equals(GlobalSearchScopesCore.getProjectTestFilesScopeName())) {
       return RenameScopeType.Tests;
     }
 
-    if (displayName.equals(AnalysisBundle.message("psi.search.scope.production.files"))) {
+    if (displayName.equals(GlobalSearchScopesCore.getProjectProductionFilesScopeName())) {
       return RenameScopeType.Production;
     }
 

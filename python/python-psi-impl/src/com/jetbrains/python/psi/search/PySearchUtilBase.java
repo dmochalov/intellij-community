@@ -1,6 +1,7 @@
 package com.jetbrains.python.psi.search;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
@@ -18,6 +19,7 @@ import com.intellij.psi.search.ProjectScope;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.PyNames;
 import com.jetbrains.python.codeInsight.typing.PyTypeShed;
+import com.jetbrains.python.codeInsight.userSkeletons.PyUserSkeletonsUtil;
 import com.jetbrains.python.sdk.PythonSdkUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -30,6 +32,25 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class PySearchUtilBase {
+
+  /**
+   * Creates a scope most suitable for suggesting symbols and files to a user, i.e. in auto-importing or "extended" completion.
+   * <p>
+   * This scope covers the project's own sources and its libraries, but excludes
+   * <ul>
+   *   <li>Standard library tests</li>
+   *   <li>Stubs for third-party packages in Typeshed</li>
+   *   <li>Stubs in python-skeletons</li>
+   * </ul>
+   *
+   * @param anchor element to detect the corresponding module's SDK
+   */
+  @NotNull
+  public static GlobalSearchScope defaultSuggestionScope(@NotNull PsiElement anchor) {
+    return excludeSdkTestsScope(anchor)
+      .intersectWith(GlobalSearchScope.notScope(PyUserSkeletonsUtil.getUserSkeletonsDirectoryScope(anchor.getProject())));
+  }
+
   /**
    * Calculates a search scope which excludes Python standard library tests. Using such scope may be quite a bit slower than using
    * the regular "project and libraries" search scope, so it should be used only for displaying the list of variants to the user
@@ -110,11 +131,11 @@ public class PySearchUtilBase {
 
   @Nullable
   public static VirtualFile findLibDir(Sdk sdk) {
-    return findLibDir(sdk.getRootProvider().getFiles(OrderRootType.CLASSES));
+    return findLibDir(ReadAction.compute(() -> sdk.getRootProvider().getFiles(OrderRootType.CLASSES)));
   }
 
   public static VirtualFile findVirtualEnvLibDir(Sdk sdk) {
-    VirtualFile[] classVFiles = sdk.getRootProvider().getFiles(OrderRootType.CLASSES);
+    VirtualFile[] classVFiles = ReadAction.compute(() -> sdk.getRootProvider().getFiles(OrderRootType.CLASSES));
     String homePath = sdk.getHomePath();
     if (homePath != null) {
       File root = PythonSdkUtil.getVirtualEnvRoot(homePath);

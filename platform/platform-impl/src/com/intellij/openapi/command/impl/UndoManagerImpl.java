@@ -23,9 +23,7 @@ import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ex.ProjectEx;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.EmptyRunnable;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -170,7 +168,7 @@ public class UndoManagerImpl extends UndoManager {
     LOG.assertTrue(myCommandLevel == 0 || !(myCurrentActionProject instanceof DummyProject));
   }
 
-  private void onCommandFinished(final Project project, final String commandName, final Object commandGroupId) {
+  private void onCommandFinished(final Project project, final @NlsContexts.Command String commandName, final Object commandGroupId) {
     commandFinished(commandName, commandGroupId);
     if (myCommandLevel == 0) {
       for (UndoProvider undoProvider : getUndoProviders()) {
@@ -214,7 +212,7 @@ public class UndoManagerImpl extends UndoManager {
     myCommandLevel++;
   }
 
-  private void commandFinished(String commandName, Object groupId) {
+  private void commandFinished(@NlsContexts.Command String commandName, Object groupId) {
     if (myCommandLevel == 0) return; // possible if command listener was added within command
     myCommandLevel--;
     if (myCommandLevel > 0) return;
@@ -291,6 +289,10 @@ public class UndoManagerImpl extends UndoManager {
   }
 
   public void markCurrentCommandAsGlobal() {
+    if (myCurrentMerger == null) {
+      LOG.error("Must be called inside command");
+      return;
+    }
     myCurrentMerger.markAsGlobal();
   }
 
@@ -415,8 +417,8 @@ public class UndoManagerImpl extends UndoManager {
     return getDocumentReferences(editor);
   }
 
-  static @NotNull Set<DocumentReference> getDocumentReferences(@NotNull FileEditor editor) {
-    Set<DocumentReference> result = new HashSet<>();
+  static @NotNull Collection<DocumentReference> getDocumentReferences(@NotNull FileEditor editor) {
+    ArrayList<DocumentReference> result = new ArrayList<>();
 
     if (editor instanceof DocumentReferenceProvider) {
       result.addAll(((DocumentReferenceProvider)editor).getDocumentReferences());
@@ -448,7 +450,7 @@ public class UndoManagerImpl extends UndoManager {
     return getUndoOrRedoActionNameAndDescription(editor, false);
   }
 
-  private @NotNull Pair<String, String> getUndoOrRedoActionNameAndDescription(@Nullable FileEditor editor, boolean undo) {
+  private @NotNull Pair<@NlsActions.ActionText String, @NlsActions.ActionDescription String> getUndoOrRedoActionNameAndDescription(@Nullable FileEditor editor, boolean undo) {
     String desc = isUndoOrRedoAvailable(editor, undo) ? doFormatAvailableUndoRedoAction(editor, undo) : null;
     if (desc == null) desc = "";
     String shortActionName = StringUtil.first(desc, 30, true);

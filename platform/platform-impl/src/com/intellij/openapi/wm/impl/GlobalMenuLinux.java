@@ -4,6 +4,7 @@ package com.intellij.openapi.wm.impl;
 import com.intellij.diagnostic.LoadingState;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.util.ExecUtil;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.UISettings;
@@ -16,14 +17,15 @@ import com.intellij.openapi.actionSystem.impl.ActionConfigurationCustomizer;
 import com.intellij.openapi.actionSystem.impl.ActionMenu;
 import com.intellij.openapi.actionSystem.impl.ActionMenuItem;
 import com.intellij.openapi.actionSystem.impl.StubItem;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Experiments;
+import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.loader.NativeLibraryLoader;
 import com.intellij.util.ui.ImageUtil;
 import com.sun.jna.Callback;
 import com.sun.jna.Library;
@@ -40,9 +42,11 @@ import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.awt.peer.ComponentPeer;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.*;
@@ -115,8 +119,6 @@ interface GlobalMenuLib extends Library {
 }
 
 public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Disposable {
-  private static final String TOGGLE_SWING_MENU_ACTION_NAME = "Toggle Global Menu Integration";
-  private static final String TOGGLE_SWING_MENU_ACTION_DESC = "Enable/disable global menu integration (in all frames)";
   private static final String TOGGLE_SWING_MENU_ACTION_ID = "ToggleGlobalLinuxMenu";
 
   private static final SimpleDateFormat ourDtf = new SimpleDateFormat("hhmmss.SSS"); // for debug only
@@ -241,7 +243,8 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
 
       // register toggle-swing-menu action (to be able to enable swing menu when system applet is died)
       actionManager
-        .registerAction(TOGGLE_SWING_MENU_ACTION_ID, new AnAction(TOGGLE_SWING_MENU_ACTION_NAME, TOGGLE_SWING_MENU_ACTION_DESC, null) {
+        .registerAction(TOGGLE_SWING_MENU_ACTION_ID, new AnAction(IdeBundle.message("action.toggle.global.menu.integration.text"),
+                                                                  IdeBundle.message("action.enable.disable.global.menu.integration.description"), null) {
           boolean enabled = false;
 
           @Override
@@ -794,8 +797,9 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
   }
 
   private static GlobalMenuLib _loadLibrary() {
+    Application app;
     if (!SystemInfo.isLinux ||
-        ApplicationManager.getApplication() == null || ApplicationManager.getApplication().isUnitTestMode() ||
+        (app = ApplicationManager.getApplication()) == null || app.isUnitTestMode() || app.isHeadlessEnvironment() ||
         Registry.is("linux.native.menu.force.disable") ||
         (LoadingState.COMPONENTS_REGISTERED.isOccurred() && !Experiments.getInstance().isFeatureEnabled("linux.native.menu")) ||
         !JnaLoader.isLoaded() ||
@@ -804,9 +808,9 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
     }
 
     try {
-      NativeLibraryLoader.loadPlatformLibrary("dbm");
-
-      return Native.load("dbm", GlobalMenuLib.class, Collections.singletonMap("jna.encoding", "UTF8"));
+      Path lib = PathManager.findBinFile("libdbm64.so");
+      assert lib != null : "DBM lib missing; bin=" + Arrays.toString(new File(PathManager.getBinPath()).list());
+      return Native.load(lib.toString(), GlobalMenuLib.class, Collections.singletonMap("jna.encoding", "UTF8"));
     }
     catch (UnsatisfiedLinkError ule) {
       LOG.info("disable global-menu integration because some of shared libraries isn't installed: " + ule);

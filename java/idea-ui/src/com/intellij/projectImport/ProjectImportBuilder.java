@@ -11,7 +11,9 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ui.configuration.ModulesProvider;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.packaging.artifacts.ModifiableArtifactModel;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,7 +29,7 @@ public abstract class ProjectImportBuilder<T> extends ProjectBuilder {
   private boolean myUpdate;
   private String myFileToImport;
 
-  public abstract @NotNull String getName();
+  public abstract @NotNull @Nls(capitalization = Nls.Capitalization.Sentence) String getName();
 
   public abstract Icon getIcon();
 
@@ -61,6 +63,7 @@ public abstract class ProjectImportBuilder<T> extends ProjectBuilder {
     return CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext());
   }
 
+  @NlsContexts.DialogTitle
   protected String getTitle() {
     return JavaUiBundle.message("project.import.wizard.title", getName());
   }

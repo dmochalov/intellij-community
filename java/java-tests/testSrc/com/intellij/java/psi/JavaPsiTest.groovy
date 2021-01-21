@@ -111,6 +111,16 @@ class JavaPsiTest extends LightJavaCodeInsightFixtureTestCase {
     PsiTestUtil.checkPsiMatchesTextIgnoringNonCode(file)
   }
 
+  void "test yield method is consistent"() {
+    def file = configureFile("class A{ void m() { Thread.yield();}}")
+    runCommand {
+      def statement = file.classes.first().methods.first().getBody().statements.first() as PsiExpressionStatement
+      def reference = statement.expression as PsiMethodCallExpression
+      reference.methodExpression.qualifier.delete()
+    }
+    PsiTestUtil.checkPsiMatchesTextIgnoringNonCode(file)
+  }
+
   void testTextBlockLiteralValue() {
     def file = configureFile("""
         class C {
@@ -194,16 +204,6 @@ class JavaPsiTest extends LightJavaCodeInsightFixtureTestCase {
     // it is forbidden, but it should not fail
     def clazz = configureFile("record A(record r)").classes[0]
     assert 1 == clazz.methods.size() // only constructor
-  }
-
-  void "test record has members in dumb mode"() {
-    DumbServiceImpl.getInstance(getProject()).runInDumbMode {
-      def clazz = configureFile("record A(@Foo A... i)").classes[0]
-      def methods = clazz.findMethodsByName("i")
-      assert 1 == methods.size()
-      def method = methods.first()
-      assert method instanceof LightRecordMethod
-    }
   }
 
   void "test add record component"() {

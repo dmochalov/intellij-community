@@ -16,6 +16,7 @@ import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.TestDialog;
+import com.intellij.openapi.ui.TestDialogManager;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -42,6 +43,8 @@ import org.jetbrains.jps.model.module.JpsModuleSourceRootType;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class MavenImportingTestCase extends MavenTestCase {
@@ -65,7 +68,7 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
   protected void tearDown() throws Exception {
     RunAll.runAll(
       () -> WriteAction.runAndWait(() -> JavaAwareProjectJdkTableImpl.removeInternalJdkInTests()),
-      () -> Messages.setTestDialog(TestDialog.DEFAULT),
+      () -> TestDialogManager.setTestDialog(TestDialog.DEFAULT),
       () -> removeFromLocalRepository("test"),
       () -> ExternalSystemTestCase.deleteBuildSystemDirectory(),
       () -> {
@@ -153,7 +156,7 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
     doAssertContentFolders(root, Arrays.asList(root.getExcludeFolders()), expectedExcudes);
   }
 
-  private void doAssertContentFolders(String moduleName, @NotNull JpsModuleSourceRootType<?> rootType, String... expected) {
+  protected void doAssertContentFolders(String moduleName, @NotNull JpsModuleSourceRootType<?> rootType, String... expected) {
     ContentEntry contentRoot = getContentRoot(moduleName);
     doAssertContentFolders(contentRoot, contentRoot.getSourceFolders(rootType), expected);
   }
@@ -247,7 +250,7 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
   protected void assertExportedDeps(String moduleName, String... expectedDeps) {
     final List<String> actual = new ArrayList<>();
 
-    getRootManager(moduleName).orderEntries().withoutSdk().withoutModuleSourceEntries().exportedOnly().process(new RootPolicy<Object>() {
+    getRootManager(moduleName).orderEntries().withoutSdk().withoutModuleSourceEntries().exportedOnly().process(new RootPolicy<>() {
       @Override
       public Object visitModuleOrderEntry(@NotNull ModuleOrderEntry e, Object value) {
         actual.add(e.getModuleName());
@@ -493,14 +496,18 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
     myProjectsManager.waitForPostImportTasksCompletion();
   }
 
-  protected void executeGoal(String relativePath, String goal) {
+  protected void executeGoal(String relativePath, String goal) throws Exception {
     VirtualFile dir = myProjectRoot.findFileByRelativePath(relativePath);
 
     MavenRunnerParameters rp = new MavenRunnerParameters(true, dir.getPath(), (String)null, Collections.singletonList(goal), Collections.emptyList());
     MavenRunnerSettings rs = new MavenRunnerSettings();
-    MavenExecutor e = new MavenExternalExecutor(myProject, rp, getMavenGeneralSettings(), rs, new SoutMavenConsole());
-
-    e.execute(new EmptyProgressIndicator());
+    Semaphore wait = new Semaphore(1);
+    wait.acquire();
+    MavenRunner.getInstance(myProject).run(rp, rs, () -> {
+      wait.release();
+    });
+    boolean tryAcquire = wait.tryAcquire(10, TimeUnit.SECONDS);
+    assertTrue( "Maven execution failed", tryAcquire);
   }
 
   protected void removeFromLocalRepository(String relativePath) {
@@ -528,7 +535,7 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
 
   protected static AtomicInteger configConfirmationForYesAnswer() {
     final AtomicInteger counter = new AtomicInteger();
-    Messages.setTestDialog(message -> {
+    TestDialogManager.setTestDialog(message -> {
       counter.getAndIncrement();
       return Messages.YES;
     });
@@ -537,7 +544,7 @@ public abstract class MavenImportingTestCase extends MavenTestCase {
 
   protected static AtomicInteger configConfirmationForNoAnswer() {
     final AtomicInteger counter = new AtomicInteger();
-    Messages.setTestDialog(message -> {
+    TestDialogManager.setTestDialog(message -> {
       counter.getAndIncrement();
       return Messages.NO;
     });

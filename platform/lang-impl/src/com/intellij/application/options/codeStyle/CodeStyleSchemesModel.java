@@ -3,6 +3,7 @@ package com.intellij.application.options.codeStyle;
 
 import com.intellij.application.options.schemes.SchemeNameGenerator;
 import com.intellij.application.options.schemes.SchemesModel;
+import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -15,6 +16,7 @@ import com.intellij.psi.impl.source.codeStyle.CodeStyleSchemeImpl;
 import com.intellij.psi.impl.source.codeStyle.CodeStyleSchemesImpl;
 import com.intellij.util.EventDispatcher;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -165,15 +167,6 @@ public final class CodeStyleSchemesModel implements SchemesModel<CodeStyleScheme
     return ContainerUtil.filter(mySchemes, scheme -> !(scheme instanceof ProjectScheme));
   }
 
-  /**
-   * @deprecated Not used anymore.
-   */
-  @SuppressWarnings("unused")
-  @Deprecated
-  public static boolean cannotBeModified(CodeStyleScheme currentScheme) {
-    return false;
-  }
-
   public void fireBeforeCurrentSettingsChanged() {
     if (myUiEventsEnabled) myDispatcher.getMulticaster().beforeCurrentSettingsChanged();
   }
@@ -288,6 +281,11 @@ public final class CodeStyleSchemesModel implements SchemesModel<CodeStyleScheme
       if (perProjectSettings != null) {
         setCodeStyleSettings(perProjectSettings);
       }
+    }
+
+    @Override
+    public @NotNull @Nls String getDisplayName() {
+      return ApplicationBundle.message("code.style.scheme.project");
     }
   }
 

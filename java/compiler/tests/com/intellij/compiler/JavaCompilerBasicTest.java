@@ -8,6 +8,7 @@ import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.Compressor;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.javac.JpsJavacFileManager;
@@ -60,7 +61,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
     }
     final VirtualFile srcFile = createFile("src/A.java", "import ppp.B; public class A { B b; }");
 
-    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<JavaFileObject>() {
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
       @Override
       public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
       }
@@ -94,7 +95,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
     final VirtualFile clsFile = createFile("out/ppp/B.class", "package ppp; public class B {}");
     final File outputRoot = new File(javaFile.getParent().getParent().getPath());
 
-    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<JavaFileObject>() {
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
       @Override
       public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
       }
@@ -129,7 +130,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
       jar.addFile("arch/B.java", new File(srcBFile.getPath()));
     }
 
-    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<JavaFileObject>() {
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
       @Override
       public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
       }
@@ -233,7 +234,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
     }
 
     @Override
-    public void reportMessage(Diagnostic.Kind kind, String message) {
+    public void reportMessage(Diagnostic.Kind kind, @Nls String message) {
     }
   }
 }

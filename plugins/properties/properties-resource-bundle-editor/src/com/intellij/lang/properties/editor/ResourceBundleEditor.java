@@ -66,8 +66,6 @@ import com.intellij.util.containers.Stack;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
-import gnu.trove.THashMap;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -84,7 +82,7 @@ import java.util.List;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ResourceBundleEditor extends UserDataHolderBase implements DocumentsEditor {
+public final class ResourceBundleEditor extends UserDataHolderBase implements DocumentsEditor {
   private static final Logger LOG =
     Logger.getInstance(ResourceBundleEditor.class);
   @NonNls private static final String VALUES               = "values";
@@ -101,7 +99,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
   private final DataProviderPanel myDataProviderPanel;
   // user pressed backslash in the corresponding editor.
   // we cannot store it back to properties file right now, so just append the backslash to the editor and wait for the subsequent chars
-  private final Set<VirtualFile> myBackSlashPressed     = new THashSet<>();
+  private final Set<VirtualFile> myBackSlashPressed     = new HashSet<>();
   private final Alarm               mySelectionChangeAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD);
 
   private final JPanel              myValuesPanel;
@@ -186,7 +184,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
     });
 
     myEditors = new ConcurrentHashMap<>();
-    myTitledPanels = new THashMap<>();
+    myTitledPanels = new HashMap<>();
     recreateEditorsPanel();
 
     TreeElement[] children = myStructureViewComponent.getTreeModel().getRoot().getChildren();
@@ -438,8 +436,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
       gc.weighty = 1;
       gc.anchor = GridBagConstraints.CENTER;
 
-      String title = propertiesFile.getName();
-      title += PropertiesUtil.getPresentableLocale(propertiesFile.getLocale());
+      String title = propertiesFile.getName() + PropertiesUtil.getPresentableLocale(propertiesFile.getLocale());
       JPanel comp = new JPanel(new BorderLayout()) {
         @Override
         public Dimension getPreferredSize() {
@@ -550,7 +547,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
       updateEditorsFromProperties(true);
       final StatusBar statusBar = WindowManager.getInstance().getStatusBar(myProject);
       if (statusBar != null) {
-        statusBar.setInfo("Selected property: " + getSelectedPropertyName());
+        statusBar.setInfo(ResourceBundleEditorBundle.message("status.bar.selection.changed.message", getSelectedPropertyName()));
       }
     });
   }
@@ -610,7 +607,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
       .filterMap(AbstractTreeNode::getValue)
       .toList();
   }
-  
+
   @Nullable
   public Object getSelectedElementIfOnlyOne() {
     final Collection<Object> selectedElements = getSelectedObjects();
@@ -712,7 +709,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
   @Override
   @NotNull
   public String getName() {
-    return "Resource Bundle";
+    return ResourceBundleEditorBundle.message("resource.bundle.editor.title");
   }
 
   @Override
@@ -862,7 +859,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
         group.add(CustomActionsSchema.getInstance().getCorrectedAction(IdeActions.GROUP_CUT_COPY_PASTE));
         group.add(CustomActionsSchema.getInstance().getCorrectedAction(IdeActions.ACTION_EDIT_SOURCE));
         group.addSeparator();
-        group.add(new AnAction(EditorBundle.messagePointer("action.ResourceBundleEditor.Anonymous.text.propagate.value.across.of.resource.bundle")) {
+        group.add(new AnAction(ResourceBundleEditorBundle.messagePointer("action.PropagateValue.text")) {
           @Override
           public void actionPerformed(@NotNull AnActionEvent e) {
             final String valueToPropagate = editor.getDocument().getText();
@@ -870,7 +867,7 @@ public class ResourceBundleEditor extends UserDataHolderBase implements Document
             if (currentSelectedProperty == null) {
               return;
             }
-            ApplicationManager.getApplication().runWriteAction(() -> WriteCommandAction.runWriteCommandAction(myProject, () -> {
+            ApplicationManager.getApplication().runWriteAction(() -> WriteCommandAction.runWriteCommandAction(myProject, ResourceBundleEditorBundle.message("action.PropagateValue.text"), null, () -> {
               try {
                 final PropertiesFile[] propertiesFiles = myResourceBundle.getPropertiesFiles().stream().filter(f -> {
                   final IProperty property = f.findPropertyByKey(currentSelectedProperty);

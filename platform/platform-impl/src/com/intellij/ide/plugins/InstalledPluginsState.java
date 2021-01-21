@@ -2,10 +2,11 @@
 package com.intellij.ide.plugins;
 
 import com.intellij.diagnostic.LoadingState;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.updateSettings.impl.PluginDownloader;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -16,13 +17,16 @@ import java.util.*;
  */
 @Service
 public final class InstalledPluginsState {
+
+  public static final @NonNls String RESTART_REQUIRED_MESSAGE = "Not allowing load/unload without restart because of pending restart operation";
+
   @Nullable
   public static InstalledPluginsState getInstanceIfLoaded() {
     return LoadingState.COMPONENTS_LOADED.isOccurred() ? getInstance() : null;
   }
 
   public static InstalledPluginsState getInstance() {
-    return ServiceManager.getService(InstalledPluginsState.class);
+    return ApplicationManager.getApplication().getService(InstalledPluginsState.class);
   }
 
   private final Object myLock = new Object();

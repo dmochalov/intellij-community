@@ -46,8 +46,7 @@ public abstract class Logger {
         return;
       }
 
-      //noinspection UseOfSystemOutOrSystemErr
-      System.out.println("Changing log factory\n" + ExceptionUtil.getThrowableText(new Throwable()));
+      logFactoryChanged(factory);
     }
 
     try {
@@ -64,11 +63,18 @@ public abstract class Logger {
 
   public static void setFactory(@NotNull Factory factory) {
     if (isInitialized()) {
-      //noinspection UseOfSystemOutOrSystemErr
-      System.out.println("Changing log factory\n" + ExceptionUtil.getThrowableText(new Throwable()));
+      logFactoryChanged(factory.getClass());
     }
 
     ourFactory = factory;
+  }
+
+  private static void logFactoryChanged(@NotNull Class<? extends Factory> factory) {
+    //noinspection UseOfSystemOutOrSystemErr
+    System.out.println("Changing log factory from " +
+                       ourFactory.getClass().getCanonicalName() +
+                       " to " + factory.getCanonicalName() + "\n" +
+                       ExceptionUtil.getThrowableText(new Throwable()));
   }
 
   public static Factory getFactory() {
@@ -79,7 +85,7 @@ public abstract class Logger {
     return !(ourFactory instanceof DefaultFactory);
   }
 
-  public static @NotNull Logger getInstance(@NotNull String category) {
+  public static @NotNull Logger getInstance(@NonNls @NotNull String category) {
     return ourFactory.getLoggerInstance(category);
   }
 
@@ -95,7 +101,7 @@ public abstract class Logger {
 
   public abstract void debug(@NonNls String message, @Nullable Throwable t);
 
-  public void debug(@NonNls @NotNull String message, Object @NotNull ... details) {
+  public void debug(@NonNls @NotNull String message, @NonNls Object @NotNull ... details) {
     if (isDebugEnabled()) {
       StringBuilder sb = new StringBuilder();
       sb.append(message);
@@ -190,7 +196,7 @@ public abstract class Logger {
   @Contract("false,_->fail") // wrong, but avoid quite a few warnings in the code
   public boolean assertTrue(boolean value, @NonNls @Nullable Object message) {
     if (!value) {
-      String resultMessage = "Assertion failed";
+      @NonNls String resultMessage = "Assertion failed";
       if (message != null) resultMessage += ": " + message;
       error(resultMessage, new Throwable(resultMessage));
     }
@@ -204,7 +210,7 @@ public abstract class Logger {
     return value || assertTrue(false, null);
   }
 
-  public abstract void setLevel(Level level);
+  public abstract void setLevel(@NotNull Level level);
 
   protected static Throwable checkException(@Nullable Throwable t) {
     return t instanceof ControlFlowException ? new Throwable(

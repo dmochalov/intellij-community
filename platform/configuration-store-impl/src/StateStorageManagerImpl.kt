@@ -14,6 +14,7 @@ import com.intellij.util.SmartList
 import com.intellij.util.ThreeState
 import com.intellij.util.io.systemIndependentPath
 import org.jdom.Element
+import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.TestOnly
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -23,7 +24,7 @@ import kotlin.concurrent.write
 /**
  * If componentManager not specified, storage will not add file tracker
  */
-open class StateStorageManagerImpl(private val rootTagName: String,
+open class StateStorageManagerImpl(@NonNls private val rootTagName: String,
                                    final override val macroSubstitutor: PathMacroSubstitutor? = null,
                                    override val componentManager: ComponentManager? = null,
                                    private val virtualFileTracker: StorageVirtualFileTracker? = createDefaultVirtualTracker(componentManager)) : StateStorageManager {
@@ -312,14 +313,18 @@ open class StateStorageManagerImpl(private val rootTagName: String,
     storageLock.write {
       try {
         if (virtualFileTracker != null) {
-          for (collapsedPath in storages.keys) {
-            virtualFileTracker.remove(expandMacro(collapsedPath).systemIndependentPath)
-          }
+          clearVirtualFileTracker(virtualFileTracker)
         }
       }
       finally {
         storages.clear()
       }
+    }
+  }
+
+  protected open fun clearVirtualFileTracker(virtualFileTracker: StorageVirtualFileTracker) {
+    for (collapsedPath in storages.keys) {
+      virtualFileTracker.remove(expandMacro(collapsedPath).systemIndependentPath)
     }
   }
 
@@ -359,8 +364,7 @@ open class StateStorageManagerImpl(private val rootTagName: String,
 }
 
 fun removeMacroIfStartsWith(path: String, macro: String): String {
-  val i = macro.length
-  return if (path.getOrNull(i) == '/' && path.startsWith(macro)) path.substring(i + 1) else path
+  return path.removePrefix("$macro/")
 }
 
 @Suppress("DEPRECATION")

@@ -1,7 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.completion;
 
-import com.intellij.pom.java.LanguageLevel;
+import com.intellij.codeInsight.daemon.impl.analysis.HighlightingFeature;
 import com.intellij.psi.*;
 import com.intellij.psi.filters.FilterPositionUtil;
 import com.intellij.psi.impl.source.jsp.jspJava.JspClassLevelDeclarationStatement;
@@ -22,7 +22,7 @@ public final class ModifierChooser {
     {PsiKeyword.FINAL, PsiKeyword.ABSTRACT}
   };
 
-  private static final String[][] CLASS_15_MODIFIERS = {
+  private static final String[][] CLASS_MODIFIERS_WITH_SEALED = {
     {PsiKeyword.PUBLIC},
     {PsiKeyword.FINAL, PsiKeyword.ABSTRACT},
     {PsiKeyword.FINAL, PsiKeyword.SEALED, PsiKeyword.NON_SEALED}
@@ -37,6 +37,25 @@ public final class ModifierChooser {
     {PsiKeyword.STRICTFP},
     {PsiKeyword.VOLATILE},
     {PsiKeyword.TRANSIENT}
+  };
+
+  private static final String[][] CLASS_MEMBER_MODIFIERS_WITH_SEALED = {
+    {PsiKeyword.PUBLIC, PsiKeyword.PROTECTED, PsiKeyword.PRIVATE},
+    {PsiKeyword.STATIC},
+    {PsiKeyword.FINAL, PsiKeyword.ABSTRACT},
+    {PsiKeyword.SEALED, PsiKeyword.NON_SEALED},
+    {PsiKeyword.NATIVE},
+    {PsiKeyword.SYNCHRONIZED},
+    {PsiKeyword.STRICTFP},
+    {PsiKeyword.VOLATILE},
+    {PsiKeyword.TRANSIENT}
+  };
+
+  private static final String[][] INTERFACE_MEMBER_MODIFIERS_WITH_SEALED = {
+    {PsiKeyword.PUBLIC, PsiKeyword.PROTECTED, PsiKeyword.PRIVATE},
+    {PsiKeyword.STATIC, PsiKeyword.DEFAULT},
+    {PsiKeyword.FINAL, PsiKeyword.ABSTRACT},
+    {PsiKeyword.SEALED, PsiKeyword.NON_SEALED}
   };
 
   private static final String[][] INTERFACE_9_MEMBER_MODIFIERS = {
@@ -78,14 +97,17 @@ public final class ModifierChooser {
   }
 
   public static String[] addClassModifiers(PsiModifierList list, @NotNull PsiElement scope) {
-    return addKeywords(list, PsiUtil.getLanguageLevel(scope).isAtLeast(LanguageLevel.JDK_15_PREVIEW) ? CLASS_15_MODIFIERS : CLASS_MODIFIERS);
+    return addKeywords(list, HighlightingFeature.SEALED_CLASSES.isAvailable(scope) ? CLASS_MODIFIERS_WITH_SEALED : CLASS_MODIFIERS);
   }
 
   public static String[] addMemberModifiers(PsiModifierList list, final boolean inInterface, @NotNull PsiElement position) {
-    return addKeywords(list, inInterface ? getInterfaceMemberModifiers(position) : CLASS_MEMBER_MODIFIERS);
+    return addKeywords(list, inInterface ? getInterfaceMemberModifiers(position) : getClassMemberModifiers(position));
   }
 
   private static String[][] getInterfaceMemberModifiers(@NotNull PsiElement list) {
+    if (HighlightingFeature.SEALED_CLASSES.isAvailable(list)) {
+      return INTERFACE_MEMBER_MODIFIERS_WITH_SEALED;
+    }
     if (PsiUtil.isLanguageLevel9OrHigher(list)) {
       return INTERFACE_9_MEMBER_MODIFIERS;
     }
@@ -93,6 +115,13 @@ public final class ModifierChooser {
       return INTERFACE_8_MEMBER_MODIFIERS;
     }
     return INTERFACE_MEMBER_MODIFIERS;
+  }
+
+  private static String[][] getClassMemberModifiers(@NotNull PsiElement list) {
+    if (HighlightingFeature.SEALED_CLASSES.isAvailable(list)) {
+      return CLASS_MEMBER_MODIFIERS_WITH_SEALED;
+    }
+    return CLASS_MEMBER_MODIFIERS;
   }
 
   private static String[] addKeywords(PsiModifierList list, String[][] keywordSets) {

@@ -1,13 +1,17 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.executors
 
 import com.intellij.execution.Executor
 import com.intellij.execution.Executor.shortenNameIfNeeded
 import com.intellij.execution.configurations.RunProfile
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsActions
+import com.intellij.openapi.util.NlsContext
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.util.text.TextWithMnemonic
 import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.annotations.Nullable
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import javax.swing.Icon
@@ -20,6 +24,9 @@ abstract class ExecutorGroup<Settings : RunExecutorSettings> : Executor() {
   private val executorId2customSettings = mutableMapOf<String, Settings>() //guarded by lock
   private val customSettings2Executor = mutableMapOf<Settings, ProxyExecutor>() //guarded by lock
   private val nextCustomExecutorId = AtomicLong()
+
+  abstract fun getStateWidgetActionText(param: String): @NlsActions.ActionText String
+  abstract fun getStateWidgetChooserText(): @NlsActions.ActionText String
 
   protected fun registerSettings(settings: Settings) {
     customSettingsLock.write {
@@ -50,10 +57,15 @@ abstract class ExecutorGroup<Settings : RunExecutorSettings> : Executor() {
     }
   }
 
-  fun childExecutors(): List<Executor> {
+  open fun childExecutors(): List<Executor> {
     return customSettingsLock.read {
       customSettings2Executor.values.toList()
     }
+  }
+
+  companion object {
+    @JvmStatic
+    fun getGroupIfProxy(executor: Executor): ExecutorGroup<*>? = (executor as? ExecutorGroup<*>.ProxyExecutor)?.group()
   }
 
   private inner class ProxyExecutor(private val settings: RunExecutorSettings, private val executorId: String) : Executor() {
@@ -82,6 +94,8 @@ abstract class ExecutorGroup<Settings : RunExecutorSettings> : Executor() {
     override fun getHelpId(): String? = null
 
     override fun isApplicable(project: Project): Boolean = settings.isApplicable(project)
+
+    fun group() = this@ExecutorGroup
   }
 }
 
@@ -94,7 +108,7 @@ interface RunExecutorSettings {
    * @see com.intellij.execution.Executor.getStartActionText
    */
   @JvmDefault
-  fun getStartActionText(configurationName: String): String {
+  fun getStartActionText(@NlsSafe configurationName: String): String {
     val configName = if (StringUtil.isEmpty(configurationName)) "" else " '" + shortenNameIfNeeded(configurationName) + "'"
     return TextWithMnemonic.parse(startActionText).append(configName).toString()
   }

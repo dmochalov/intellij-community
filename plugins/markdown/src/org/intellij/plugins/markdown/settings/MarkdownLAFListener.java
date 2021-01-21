@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.intellij.plugins.markdown.settings;
 
 import com.intellij.ide.ui.LafManager;
@@ -26,16 +26,19 @@ class MarkdownLAFListener implements LafManagerListener {
 
   private static void updateCssSettingsForced() {
     final MarkdownCssSettings currentCssSettings = MarkdownApplicationSettings.getInstance().getMarkdownCssSettings();
-    final String stylesheetUri = StringUtil.isEmpty(currentCssSettings.getStylesheetUri())
-                                 ? MarkdownCssSettings.DEFAULT.getStylesheetUri()
-                                 : currentCssSettings.getStylesheetUri();
+    final String stylesheetUri = StringUtil.isEmpty(currentCssSettings.getCustomStylesheetPath())
+                                 ? MarkdownCssSettings.DEFAULT.getCustomStylesheetPath()
+                                 : currentCssSettings.getCustomStylesheetPath();
 
-    MarkdownApplicationSettings.getInstance().setMarkdownCssSettings(new MarkdownCssSettings(
-      currentCssSettings.isUriEnabled(),
+    final MarkdownCssSettings newSettings = new MarkdownCssSettings(
+      currentCssSettings.isCustomStylesheetEnabled(),
       stylesheetUri,
       currentCssSettings.isTextEnabled(),
-      currentCssSettings.getStylesheetText()
-    ));
+      currentCssSettings.getCustomStylesheetText(),
+      currentCssSettings.getFontSize(),
+      currentCssSettings.getFontFamily());
+
+    MarkdownApplicationSettings.getInstance().setMarkdownCssSettings(newSettings);
 
     ApplicationManager.getApplication().getMessageBus()
       .syncPublisher(MarkdownApplicationSettings.SettingsChangedListener.TOPIC)

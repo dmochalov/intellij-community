@@ -2,6 +2,7 @@
 package com.intellij.pom.core.impl;
 
 import com.intellij.lang.ASTNode;
+import com.intellij.lang.FileASTNode;
 import com.intellij.model.ModelBranch;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
@@ -29,7 +30,6 @@ import com.intellij.psi.impl.smartPointers.SmartPointerManagerImpl;
 import com.intellij.psi.impl.source.DummyHolder;
 import com.intellij.psi.impl.source.PsiFileImpl;
 import com.intellij.psi.impl.source.tree.FileElement;
-import com.intellij.psi.impl.source.tree.TreeElement;
 import com.intellij.psi.impl.source.tree.TreeUtil;
 import com.intellij.psi.text.BlockSupport;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -307,7 +307,7 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
       psiFile = changeScope.getContainingFile();
     }
     else {
-      final FileElement fileElement = TreeUtil.getFileElement((TreeElement)node);
+      final FileASTNode fileElement = TreeUtil.getFileElement(node);
       // assert fileElement != null : "Can't find file element for node: " + node;
       // Hack. the containing tree can be invalidated if updating supplementary trees like HTML in JSP.
       if (fileElement == null) return null;
@@ -335,7 +335,7 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
   }
 
   private void sendBeforeChildrenChangeEvent(@NotNull PsiElement scope) {
-    if (!scope.isPhysical()) {
+    if (!shouldFirePhysicalPsiEvents(scope)) {
       getPsiManager().beforeChange(false);
       return;
     }
@@ -350,8 +350,14 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
     getPsiManager().beforeChildrenChange(event);
   }
 
+  @ApiStatus.Internal
+  public static boolean shouldFirePhysicalPsiEvents(@NotNull PsiElement scope) {
+    return scope.isPhysical() &&
+           ModelBranch.getPsiBranch(scope) == null; // injections are physical even in non-physical PSI :(
+  }
+
   private void sendAfterChildrenChangedEvent(@NotNull PsiFile scope, int oldLength) {
-    if (!scope.isPhysical()) {
+    if (!shouldFirePhysicalPsiEvents(scope)) {
       getPsiManager().afterChange(false);
       return;
     }

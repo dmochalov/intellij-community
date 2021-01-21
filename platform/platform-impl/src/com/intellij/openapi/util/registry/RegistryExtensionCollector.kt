@@ -2,7 +2,6 @@
 package com.intellij.openapi.util.registry
 
 import com.intellij.ide.plugins.DynamicPluginListener
-import com.intellij.ide.plugins.DynamicPlugins
 import com.intellij.ide.plugins.IdeaPluginDescriptor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.extensions.*
@@ -10,21 +9,21 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.Transient
 import org.jetbrains.annotations.Nls
+import org.jetbrains.annotations.NonNls
 
 private val EP_NAME = ExtensionPointName<RegistryKeyBean>("com.intellij.registryKey")
 
 // Since the XML parser removes all the '\n' chars joining indented lines together,
 // we can't really tell whether multiple whitespaces actually refer to indentation spaces or just regular ones.
+@NonNls
 private val CONSECUTIVE_SPACES_REGEX = """\s{2,}""".toRegex()
-
-private fun String.unescapeString() = StringUtil.unescapeStringCharacters(replace(CONSECUTIVE_SPACES_REGEX, " "))
 
 /**
  * Registers custom key for [Registry].
  */
 class RegistryKeyBean : PluginAware {
   companion object {
-    private val pendingRemovalKeys = mutableSetOf<String>()
+    private val pendingRemovalKeys = HashSet<String>()
 
     @JvmStatic
     fun addKeysFromPlugins() {
@@ -54,7 +53,9 @@ class RegistryKeyBean : PluginAware {
 
     private fun createRegistryKeyDescriptor(extension: RegistryKeyBean): RegistryKeyDescriptor {
       val pluginId = extension.descriptor?.pluginId?.idString
-      return RegistryKeyDescriptor(extension.key, extension.description.unescapeString(), extension.defaultValue, extension.restartRequired,
+      return RegistryKeyDescriptor(extension.key,
+                                   StringUtil.unescapeStringCharacters(extension.description.replace(CONSECUTIVE_SPACES_REGEX, " ")),
+                                   extension.defaultValue, extension.restartRequired,
                                    pluginId)
     }
   }
@@ -72,7 +73,7 @@ class RegistryKeyBean : PluginAware {
 
   @JvmField
   @Attribute("defaultValue")
-  @RequiredElement
+  @RequiredElement(allowEmpty = true)
   val defaultValue = ""
 
   @JvmField

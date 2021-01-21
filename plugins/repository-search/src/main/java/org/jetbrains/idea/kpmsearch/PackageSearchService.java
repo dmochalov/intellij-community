@@ -14,22 +14,25 @@ import org.jetbrains.idea.reposearch.DependencySearchProvider;
 import org.jetbrains.idea.reposearch.RepositoryArtifactData;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
 
 public class PackageSearchService implements DependencySearchProvider {
-  private static final MyErrorHandler<Throwable> myErrorHandler = new MyErrorHandler<>();
 
   private final Gson myGson;
-  private final PackageServiceConfig myPackageServiceConfig;
+  private final PackageSearchEndpointConfig myPackageServiceConfig;
 
   public PackageSearchService() {
+    this(new DefaultPackageServiceConfig());
+  }
+
+  public PackageSearchService(PackageSearchEndpointConfig config) {
     myGson = new Gson();
-    myPackageServiceConfig = new PackageServiceConfig();
+    myPackageServiceConfig = config;
   }
 
 
@@ -48,7 +51,7 @@ public class PackageSearchService implements DependencySearchProvider {
     for (char c : string.toCharArray()) {
       if ((c >= 'a' && c <= 'z') ||
           (c >= 'A' && c <= 'Z') ||
-          c == ':' || c == '-') {
+          c == ':' || c == '-' || c == '.') {
         builder.append(c);
       }
       else {
@@ -83,9 +86,9 @@ public class PackageSearchService implements DependencySearchProvider {
     try {
       HttpRequests.request(url)
         .userAgent(myPackageServiceConfig.getUserAgent())
-        .forceHttps(true)
-        .connectTimeout((int)PackageServiceConfig.MAX_TIMEOUT)
-        .readTimeout((int)PackageServiceConfig.MAX_TIMEOUT)
+        .forceHttps(myPackageServiceConfig.forceHttps())
+        .connectTimeout(myPackageServiceConfig.getReadTimeout())
+        .readTimeout(myPackageServiceConfig.getConnectTimeout())
         .connect(request -> process(consumer, request));
     }
     catch (IOException ignore) {
@@ -161,11 +164,6 @@ public class PackageSearchService implements DependencySearchProvider {
 
   @NotNull
   private static String encode(@NotNull String s) {
-    try {
-      return URLEncoder.encode(s.trim(), "UTF-8");
-    }
-    catch (UnsupportedEncodingException e) {
-      throw new RuntimeException(e);
-    }
+    return URLEncoder.encode(s.trim(), StandardCharsets.UTF_8);
   }
 }

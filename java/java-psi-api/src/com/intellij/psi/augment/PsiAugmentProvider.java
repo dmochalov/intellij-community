@@ -3,18 +3,21 @@ package com.intellij.psi.augment;
 
 import com.intellij.diagnostic.PluginException;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.ExtensionPoint;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.Ref;
 import com.intellij.psi.*;
 import com.intellij.psi.util.*;
 import com.intellij.util.Processor;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ConcurrentFactoryMap;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Some code is not what it seems to be!
@@ -31,7 +35,9 @@ import java.util.Set;
  * N.B. during indexing, only {@link DumbAware} providers are run.
  */
 public abstract class PsiAugmentProvider {
+  private static final Logger LOG = Logger.getInstance(PsiAugmentProvider.class);
   public static final ExtensionPointName<PsiAugmentProvider> EP_NAME = ExtensionPointName.create("com.intellij.lang.psiAugmentProvider");
+  private static final @NotNull NotNullLazyValue<ExtensionPoint<PsiAugmentProvider>> EP = NotNullLazyValue.lazy(() -> EP_NAME.getPoint());
   @SuppressWarnings("rawtypes")
   private /* non-static */ final Key<CachedValue<Map<Class, List>>> myCacheKey = Key.create(getClass().getName());
 
@@ -61,6 +67,18 @@ public abstract class PsiAugmentProvider {
   }
 
   /**
+   * An extension which enables one to inject extension methods with name {@code nameHint} in class {@code aClass} in context `{@code context}`
+   * @param aClass    where extension methods would be injected
+   * @param nameHint  name of the method which is requested.
+   *                  Implementations are supposed to use this parameter as no additional name check would be performed
+   * @param context   context where extension methods should be applicable
+   */
+  @ApiStatus.Experimental
+  protected List<PsiExtensionMethod> getExtensionMethods(@NotNull PsiClass aClass, @NotNull String nameHint, @NotNull PsiElement context) {
+    return Collections.emptyList();
+  }
+
+  /**
    * @deprecated invoke and override {@link #getAugments(PsiElement, Class, String)}.
    */
   @SuppressWarnings("unused")
@@ -77,6 +95,14 @@ public abstract class PsiAugmentProvider {
   @Nullable
   protected PsiType inferType(@NotNull PsiTypeElement typeElement) {
     return null;
+  }
+
+  /**
+   * @return whether this extension might infer the type for the given PSI,
+   * preferably checked in a lightweight way without actually inferring the type.
+   */
+  protected boolean canInferType(@NotNull PsiTypeElement typeElement) {
+    return inferType(typeElement) != null;
   }
 
   /**
@@ -109,13 +135,45 @@ public abstract class PsiAugmentProvider {
       List<? extends Psi> augments = provider.getAugments(element, type, nameHint);
       for (Psi augment : augments) {
         if (nameHint == null || !(augment instanceof PsiNamedElement) || nameHint.equals(((PsiNamedElement)augment).getName())) {
-          result.add(augment);
+          try {
+            PsiUtilCore.ensureValid(augment);
+            result.add(augment);
+          }
+          catch (ProcessCanceledException e) {
+            throw e;
+          }
+          catch (Throwable e) {
+            LOG.error(PluginException.createByClass(e, provider.getClass()));
+          }
         }
       }
       return true;
     });
 
     return result;
+  }
+
+  @ApiStatus.Experimental
+  @NotNull
+  public static List<PsiExtensionMethod> collectExtensionMethods(PsiClass aClass, @NotNull String nameHint, PsiElement context) {
+    List<PsiExtensionMethod> extensionMethods = new SmartList<>();
+    forEach(aClass.getProject(), provider -> {
+      List<PsiExtensionMethod> methods = provider.getExtensionMethods(aClass, nameHint, context);
+      for (PsiExtensionMethod method : methods) {
+        try {
+          PsiUtilCore.ensureValid(method);
+          extensionMethods.add(method);
+        }
+        catch (ProcessCanceledException e) {
+          throw e;
+        }
+        catch (Throwable e) {
+          LOG.error(PluginException.createByClass(e, provider.getClass()));
+        }
+      }
+      return true;
+    });
+    return extensionMethods;
   }
 
   @Nullable
@@ -145,6 +203,20 @@ public abstract class PsiAugmentProvider {
     return result.get();
   }
 
+  public static boolean isInferredType(@NotNull PsiTypeElement typeElement) {
+    AtomicBoolean result = new AtomicBoolean();
+
+    forEach(typeElement.getProject(), provider -> {
+      boolean canInfer = provider.canInferType(typeElement);
+      if (canInfer) {
+        result.set(true);
+      }
+      return !canInfer;
+    });
+
+    return result.get();
+  }
+
   @NotNull
   public static Set<String> transformModifierProperties(@NotNull PsiModifierList modifierList,
                                                         @NotNull Project project,
@@ -161,7 +233,7 @@ public abstract class PsiAugmentProvider {
 
   private static void forEach(Project project, Processor<? super PsiAugmentProvider> processor) {
     boolean dumb = DumbService.isDumb(project);
-    for (PsiAugmentProvider provider : EP_NAME.getExtensionList()) {
+    for (PsiAugmentProvider provider : EP.getValue().getExtensionList()) {
       if (!dumb || DumbService.isDumbAware(provider)) {
         try {
           boolean goOn = processor.process(provider);

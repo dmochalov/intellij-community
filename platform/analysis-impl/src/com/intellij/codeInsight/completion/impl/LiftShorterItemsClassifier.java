@@ -9,6 +9,7 @@ import com.intellij.util.ProcessingContext;
 import com.intellij.util.containers.*;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,7 +27,7 @@ public final class LiftShorterItemsClassifier extends Classifier<LookupElement> 
   private final boolean myLiftBefore;
   private int myCount = 0;
 
-  public LiftShorterItemsClassifier(String name, Classifier<LookupElement> next, LiftingCondition condition, boolean liftBefore) {
+  public LiftShorterItemsClassifier(@NonNls String name, Classifier<LookupElement> next, LiftingCondition condition, boolean liftBefore) {
     super(next, name);
     myCondition = condition;
     myLiftBefore = liftBefore;
@@ -156,7 +157,7 @@ public final class LiftShorterItemsClassifier extends Classifier<LookupElement> 
 
       final Iterable<LookupElement> next = myNext.classify(mySource, myContext);
       Iterator<LookupElement> base = FilteringIterator.create(next.iterator(), element -> processed.add(element));
-      return new FlatteningIterator<LookupElement, LookupElement>(base) {
+      return new FlatteningIterator<>(base) {
         @Override
         protected Iterator<LookupElement> createValueIterator(LookupElement element) {
           List<LookupElement> shorter = addShorterElements(myToLift.get(element));
@@ -187,17 +188,15 @@ public final class LiftShorterItemsClassifier extends Classifier<LookupElement> 
                 toLift.add(shorterElement);
               }
             }
-
           }
           return toLift;
         }
-
       };
     }
   }
 
   private static @NotNull <K, V> MultiMap<K, V> createMultiMap(boolean identityKeys) {
-    return new MultiMap<K, V>(identityKeys ? new Reference2ObjectOpenHashMap<>() : CollectionFactory.createSmallMemoryFootprintMap()) {
+    return new MultiMap<>(identityKeys ? new Reference2ObjectOpenHashMap<>() : CollectionFactory.createSmallMemoryFootprintMap()) {
       @Override
       public boolean remove(K key, V value) {
         List<V> elements = (List<V>)get(key);

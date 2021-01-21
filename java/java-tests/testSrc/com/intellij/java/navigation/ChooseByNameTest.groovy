@@ -4,10 +4,7 @@
 package com.intellij.java.navigation
 
 import com.intellij.codeInsight.JavaProjectCodeInsightSettings
-import com.intellij.ide.actions.searcheverywhere.ClassSearchEverywhereContributor
-import com.intellij.ide.actions.searcheverywhere.FileSearchEverywhereContributor
-import com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor
-import com.intellij.ide.actions.searcheverywhere.SymbolSearchEverywhereContributor
+import com.intellij.ide.actions.searcheverywhere.*
 import com.intellij.ide.util.scopeChooser.ScopeDescriptor
 import com.intellij.lang.java.JavaLanguage
 import com.intellij.mock.MockProgressIndicator
@@ -18,7 +15,11 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.psi.*
+import com.intellij.psi.CommonClassNames
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiJavaFile
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.util.ObjectUtils
 import com.intellij.util.indexing.FindSymbolParameters
@@ -26,18 +27,11 @@ import org.jetbrains.annotations.NotNull
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
 
 import static com.intellij.testFramework.EdtTestUtil.runInEdtAndWait
-
 /**
  * @author peter
  */
 class ChooseByNameTest extends LightJavaCodeInsightFixtureTestCase {
-
   static final ELEMENTS_LIMIT = 30
-
-  @Override
-  protected void tearDown() throws Exception {
-    super.tearDown()
-  }
 
   void "test goto class order by matching degree"() {
     def startMatch = myFixture.addClass("class UiUtil {}")
@@ -465,6 +459,24 @@ class Intf {
     assert gotoFile('objc/features/i') == [index, i18n]
   }
 
+  void "test search for full name"() {
+    def file1 = addEmptyFile("Folder/Web/SubFolder/Flow.html")
+    def file2 = addEmptyFile("Folder/Web/SubFolder/Flow/Helper.html")
+
+    def contributor = createFileContributor(project, testRootDisposable)
+    def files = calcWeightedContributorElements(contributor as WeightedSearchEverywhereContributor<?>, "Folder/Web/SubFolder/Flow.html")
+    assert files == [file1, file2]
+  }
+
+  void "test prefer name match over path match"() {
+    def nameMatchFile = addEmptyFile("JBCefBrowser.java")
+    def pathMatchFile = addEmptyFile("com/elements/folder/WebBrowser.java")
+
+    def contributor = createFileContributor(project, testRootDisposable)
+    def files = calcWeightedContributorElements(contributor as WeightedSearchEverywhereContributor<?>, "CefBrowser")
+    assert files == [nameMatchFile, pathMatchFile]
+  }
+
   void "test matching file in a matching directory"() {
     def file = addEmptyFile("foo/index/index")
     assert gotoFile('in') == [file, file.parent]
@@ -558,6 +570,13 @@ class Intf {
     return contributor.search(text, new MockProgressIndicator(), ELEMENTS_LIMIT).items
   }
 
+  static List<Object> calcWeightedContributorElements(WeightedSearchEverywhereContributor<?> contributor, String text) {
+    def items = contributor.searchWeightedElements(text, new MockProgressIndicator(), ELEMENTS_LIMIT).items
+    return new ArrayList<>(items)
+      .sort{-(it as FoundItemDescriptor<?>).weight}
+      .collect{(it as FoundItemDescriptor<?>).item}
+  }
+
   static SearchEverywhereContributor<Object> createClassContributor(Project project,
                                                                     Disposable parentDisposable,
                                                                     PsiElement context = null,
@@ -589,8 +608,12 @@ class Intf {
   }
 
   static AnActionEvent createEvent(Project project, PsiElement context = null) {
-    def dataContext = SimpleDataContext.getSimpleContext(
-      CommonDataKeys.PSI_FILE.name, ObjectUtils.tryCast(context, PsiFile.class), SimpleDataContext.getProjectContext(project))
+    assert project != null
+    def dataContext = SimpleDataContext.getProjectContext(project)
+    PsiFile file = ObjectUtils.tryCast(context, PsiFile.class)
+    if (file != null) {
+      dataContext = SimpleDataContext.getSimpleContext(CommonDataKeys.PSI_FILE, file, dataContext)
+    }
     return AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, dataContext)
   }
 

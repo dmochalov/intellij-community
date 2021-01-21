@@ -19,6 +19,7 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.Key;
 import gnu.trove.TObjectDoubleHashMap;
 import gnu.trove.TObjectDoubleProcedure;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.regex.Matcher;
@@ -75,7 +76,7 @@ public class GitStandardProgressAnalyzer implements GitProgressAnalyzer {
     private final Pattern myPattern;
     private final double myFractionInTotal;
 
-    Operation(String pattern, double fractionInTotal) {
+    Operation(@NonNls String pattern, double fractionInTotal) {
       myPattern = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
       myFractionInTotal = fractionInTotal;
     }
@@ -115,7 +116,7 @@ public class GitStandardProgressAnalyzer implements GitProgressAnalyzer {
     }
     // counting progress
     final double[] totalProgress = new double[1];
-    myOperationsProgress.forEachEntry(new TObjectDoubleProcedure<Operation>() {
+    myOperationsProgress.forEachEntry(new TObjectDoubleProcedure<>() {
       @Override
       public boolean execute(Operation operation, double progress) {
         totalProgress[0] += operation.myFractionInTotal * progress;

@@ -1,12 +1,10 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.roots.impl;
 
 import com.intellij.injected.editor.VirtualFileWindow;
-import com.intellij.model.ModelBranch;
 import com.intellij.notebook.editor.BackedVirtualFile;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
@@ -33,16 +31,6 @@ public class ProjectFileIndexImpl extends FileIndexBase implements ProjectFileIn
 
   public ProjectFileIndexImpl(@NotNull Project project) {
     super(DirectoryIndex.getInstance(project));
-
-    myProject = project;
-  }
-
-  /**
-   * @deprecated Do not pass DirectoryIndex explicitly.
-   */
-  @Deprecated
-  public ProjectFileIndexImpl(@NotNull Project project, @NotNull DirectoryIndex index, @NotNull FileTypeRegistry fileTypeManager) {
-    super(index);
 
     myProject = project;
   }
@@ -129,13 +117,7 @@ public class ProjectFileIndexImpl extends FileIndexBase implements ProjectFileIn
 
   @Nullable
   public static VirtualFile getClassRootForFile(@NotNull VirtualFile file, @NotNull DirectoryInfo info) {
-    return info.isInProject(file) ? fixBranch(file, info.getLibraryClassRoot()) : null;
-  }
-
-  @Nullable
-  private static VirtualFile fixBranch(@NotNull VirtualFile file, VirtualFile root) {
-    ModelBranch branch = ModelBranch.getFileBranch(file);
-    return root == null ? null : branch != null ? branch.findFileCopy(root) : root;
+    return info.isInProject(file) ? info.getLibraryClassRoot() : null;
   }
 
   @Override
@@ -145,7 +127,7 @@ public class ProjectFileIndexImpl extends FileIndexBase implements ProjectFileIn
 
   @Nullable
   public static VirtualFile getSourceRootForFile(@NotNull VirtualFile file, @NotNull DirectoryInfo info) {
-    return info.isInProject(file) ? fixBranch(file, info.getSourceRoot()) : null;
+    return info.isInProject(file) ? info.getSourceRoot() : null;
   }
 
   @Override
@@ -161,7 +143,7 @@ public class ProjectFileIndexImpl extends FileIndexBase implements ProjectFileIn
   @Nullable
   public static VirtualFile getContentRootForFile(@NotNull DirectoryInfo info, @NotNull VirtualFile file, boolean honorExclusion) {
     if (info.isInProject(file) || !honorExclusion && info.isExcluded(file)) {
-      return fixBranch(file, info.getContentRoot());
+      return info.getContentRoot();
     }
     return null;
   }

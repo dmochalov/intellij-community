@@ -5,6 +5,7 @@ import com.intellij.application.options.CodeStyle;
 import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.LowPriorityAction;
+import com.intellij.codeInspection.InspectionsBundle;
 import com.intellij.lang.Language;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -16,13 +17,16 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.OptionAction;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CodeStyleSettingsCodeFragmentFilter;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider;
 import com.intellij.psi.util.PsiUtilBase;
+import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.ObjectUtils;
 import org.jetbrains.annotations.Nls;
@@ -39,25 +43,31 @@ import static com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider.Setti
 
 public class ConfigureCodeStyleOnSelectedFragment implements IntentionAction, LowPriorityAction {
   private static final Logger LOG = Logger.getInstance(ConfigureCodeStyleOnSelectedFragment.class);
-  private static final String ID = "configure.code.style.on.selected.fragment";
 
   @Nls
   @NotNull
   @Override
   public String getText() {
-    return CodeInsightBundle.message("configure.code.style.on.fragment.dialog.title");
+    return getFamilyName();
   }
 
   @Nls
   @NotNull
   @Override
   public String getFamilyName() {
-    return "ConfigureCodeStyleOnSelectedFragment";
+    return CodeInsightBundle.message("configure.code.style.on.fragment.dialog.title");
   }
 
   @Override
   public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile file) {
-    return editor.getSelectionModel().hasSelection() && file.isWritable() && hasSettingsToShow(editor, file);
+    return isFileSuitable(file) && editor.getSelectionModel().hasSelection() && hasSettingsToShow(editor, file);
+  }
+
+  private static boolean isFileSuitable(@NotNull PsiFile file) {
+    VirtualFile virtualFile = file.getVirtualFile();
+    return file.isWritable() &&
+           file.isPhysical() &&
+           virtualFile != null && !(virtualFile instanceof LightVirtualFile);
   }
 
   private static boolean hasSettingsToShow(Editor editor, PsiFile file) {
@@ -129,7 +139,7 @@ public class ConfigureCodeStyleOnSelectedFragment implements IntentionAction, Lo
 
 
       String title = CodeInsightBundle.message("configure.code.style.on.fragment.dialog.title");
-      String languageName = ObjectUtils.coalesce(settingsProvider.getLanguageName(), settingsProvider.getLanguage().getDisplayName());
+      @NlsSafe String languageName = ObjectUtils.coalesce(settingsProvider.getLanguageName(), settingsProvider.getLanguage().getDisplayName());
       setTitle(StringUtil.capitalizeWords(title, true) + ": " + languageName);
 
       setInitialLocationCallback(() -> new DialogPositionProvider().calculateLocation());
@@ -251,7 +261,7 @@ public class ConfigureCodeStyleOnSelectedFragment implements IntentionAction, Lo
             return 0;
           }
         }
-        else if (dialogBottom > myEditorComponentHeight) {
+        else {
           int extraBottomSpace = dialogBottom - myEditorComponentHeight;
           if (dialogTop - extraBottomSpace >= 0) {
             return dialogTop - extraBottomSpace;
@@ -303,7 +313,7 @@ public class ConfigureCodeStyleOnSelectedFragment implements IntentionAction, Lo
       };
 
       private ApplyToSettings() {
-        super("Save");
+        super(InspectionsBundle.message("inspection.adjust.code.style.settings.save.button"));
         putValue(DEFAULT_ACTION, Boolean.TRUE);
       }
 
@@ -328,7 +338,7 @@ public class ConfigureCodeStyleOnSelectedFragment implements IntentionAction, Lo
 
     private class ApplyToSettingsAndReformat extends AbstractAction {
       ApplyToSettingsAndReformat() {
-        super("Save and Reformat File");
+        super(InspectionsBundle.message("inspection.adjust.code.style.settings.save.and.reformat.file"));
       }
 
       @Override

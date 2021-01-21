@@ -1,10 +1,10 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.rebase;
 
 import com.intellij.ide.XmlRpcServer;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.util.Pair;
 import git4idea.commands.GitHandler;
 import git4idea.config.GitExecutable;
@@ -23,7 +23,8 @@ import java.util.UUID;
 /**
  * The service that generates editor script for
  */
-public class GitRebaseEditorService implements Disposable {
+@Service(Service.Level.APP)
+public final class GitRebaseEditorService implements Disposable {
   /**
    * The lock object
    */
@@ -46,7 +47,7 @@ public class GitRebaseEditorService implements Disposable {
    */
   @NotNull
   public static GitRebaseEditorService getInstance() {
-    final GitRebaseEditorService service = ServiceManager.getService(GitRebaseEditorService.class);
+    final GitRebaseEditorService service = ApplicationManager.getApplication().getService(GitRebaseEditorService.class);
     if (service == null) {
       throw new IllegalStateException("The service " + GitRebaseEditorService.class.getName() + " cannot be located");
     }
@@ -132,7 +133,7 @@ public class GitRebaseEditorService implements Disposable {
    */
   public class InternalHandlerRebase implements GitRebaseEditorXmlRpcHandler {
     @Override
-    @SuppressWarnings({"UnusedDeclaration"})
+    @SuppressWarnings("UnusedDeclaration")
     public int editCommits(@NotNull String handlerNo, @NotNull String path, @NotNull String workingDir) {
       Pair<GitRebaseEditorHandler, GitExecutable> pair = getHandler(UUID.fromString(handlerNo));
       GitExecutable executable = pair.second;

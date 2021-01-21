@@ -17,12 +17,15 @@ import com.intellij.openapi.editor.colors.ex.DefaultColorSchemesManager
 import com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl
 import com.intellij.openapi.help.HelpManager
 import com.intellij.openapi.keymap.KeyMapBundle
+import com.intellij.openapi.observable.properties.GraphPropertyImpl.Companion.graphProperty
+import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.options.BoundSearchableConfigurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.wm.ex.WindowManagerEx
+import com.intellij.openapi.wm.impl.IdeFrameDecorator
 import com.intellij.ui.ContextHelpLabel
 import com.intellij.ui.FontComboBox
 import com.intellij.ui.SimpleListCellRenderer
@@ -63,6 +66,7 @@ private val cdDnDWithAlt                              get() = CheckboxDescriptor
 private val cdUseTransparentMode                      get() = CheckboxDescriptor(message("checkbox.use.transparent.mode.for.floating.windows"), PropertyBinding({ settings.state.enableAlphaMode }, { settings.state.enableAlphaMode = it }))
 private val cdOverrideLaFFont                         get() = CheckboxDescriptor(message("checkbox.override.default.laf.fonts"), settings::overrideLafFonts)
 private val cdUseContrastToolbars                     get() = CheckboxDescriptor(message("checkbox.acessibility.contrast.scrollbars"), settings::useContrastScrollbars)
+private val cdMergeMainMenuWithWindowTitle            get() = CheckboxDescriptor(message("checkbox.merge.main.menu.with.window.title"), settings::mergeMainMenuWithWindowTitle, groupName = windowOptionGroupName)
 private val cdFullPathsInTitleBar                     get() = CheckboxDescriptor(message("checkbox.full.paths.in.window.header"), settings::fullPathsInWindowHeader)
 private val cdShowMenuIcons                           get() = CheckboxDescriptor(message("checkbox.show.icons.in.menu.items"), settings::showIconsInMenus, groupName = windowOptionGroupName)
 
@@ -87,33 +91,28 @@ internal val appearanceOptionDescriptors: List<OptionDescription>
 internal class AppearanceConfigurable : BoundSearchableConfigurable(message("title.appearance"), "preferences.lookFeel") {
   private var shouldUpdateLaF = false
 
+  private val propertyGraph = PropertyGraph()
+  private val lafProperty = propertyGraph.graphProperty { lafManager.lookAndFeelReference }
+  private val syncThemeProperty = propertyGraph.graphProperty { lafManager.autodetect }
+
   override fun createPanel(): DialogPanel {
+    lafProperty.afterChange({ QuickChangeLookAndFeel.switchLafAndUpdateUI(lafManager, lafManager.findLaf(it), true) }, disposable!!)
+    syncThemeProperty.afterChange ({ lafManager.autodetect = it }, disposable!!)
+
     return panel {
       blockRow {
-        if (lafManager.isAutoDetect) {
-          titledRow(message("label.preferred.theme")) {
-            fullRow {
-              label(message("combobox.preferred.light.laf"))
-              comboBox(lafManager.getLafComboBoxModel(LafManager.LafType.LIGHT),
-                       { lafManager.getLookAndFeelReference(LafManager.LafType.LIGHT) },
-                       { lafManager.setLookAndFeelReference(LafManager.LafType.LIGHT, it) })
+        fullRow {
+          label(message("combobox.look.and.feel"))
+          val theme = comboBox(lafManager.lafComboBoxModel, lafProperty, lafManager.lookAndFeelCellRenderer)
+          theme.component.accessibleContext.accessibleName = message("combobox.look.and.feel")
 
-              label(message("combobox.preferred.dark.laf")).withLargeLeftGap()
-              comboBox(lafManager.getLafComboBoxModel(LafManager.LafType.DARK),
-                       { lafManager.getLookAndFeelReference(LafManager.LafType.DARK) },
-                       { lafManager.setLookAndFeelReference(LafManager.LafType.DARK, it)})
-            }.largeGapAfter()
-          }
-        }
-        else {
-          fullRow {
-            label(message("combobox.look.and.feel"))
-            comboBox(lafManager.getLafComboBoxModel(LafManager.LafType.ALL),
-                     { lafManager.getLookAndFeelReference(LafManager.LafType.ALL) },
-                     { QuickChangeLookAndFeel.switchLafAndUpdateUI(lafManager, lafManager.findLaf(it), true) })
-              .shouldUpdateLaF()
-          }.largeGapAfter()
-        }
+          val syncCheckBox = checkBox(message("preferred.theme.autodetect.selector"),
+                                      syncThemeProperty).withLargeLeftGap().
+                          apply { component.isVisible = lafManager.autodetectSupported }
+
+          theme.enableIf(syncCheckBox.selected.not())
+          component(lafManager.settingsToolbar).visibleIf(syncCheckBox.selected).withLeftGap()
+        }.largeGapAfter()
         fullRow {
           val overrideLaF = checkBox(cdOverrideLaFFont)
             .shouldUpdateLaF()
@@ -126,6 +125,7 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
             )
             .shouldUpdateLaF()
             .enableIf(overrideLaF.selected)
+            .component.accessibleContext.accessibleName = cdOverrideLaFFont.name
           component(Label(message("label.font.size")))
           .withLargeLeftGap()
             .enableIf(overrideLaF.selected)
@@ -134,6 +134,7 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
                            settings.fontSize)
             .shouldUpdateLaF()
             .enableIf(overrideLaF.selected)
+            .component.accessibleContext.accessibleName = message("label.font.size")
         }
       }
       titledRow(message("title.accessibility")) {
@@ -181,6 +182,7 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
                              { it, value -> it.selectedItem = value ?: supportedValues.first() },
                              modelBinding)
                 .onApply(onApply)
+                .component.accessibleContext.accessibleName = UIBundle.message("color.blindness.checkbox.text")
             }
 
             component(Link(UIBundle.message("color.blindness.link.to.help"))
@@ -189,26 +191,46 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
           }
         }
       }
+      @Suppress("MoveLambdaOutsideParentheses") // this suggestion is wrong, see KT-40969
       titledRow(message("group.ui.options")) {
-        twoColumnRow(
-          { checkBox(cdShowTreeIndents) },
-          {
-            checkBox(cdSmoothScrolling)
-            ContextHelpLabel.create(message("checkbox.smooth.scrolling.description"))()
+        val leftColumnControls = sequence<InnerCell.() -> Unit> {
+          yield({ checkBox(cdShowTreeIndents) })
+          yield({ checkBox(cdUseCompactTreeIndents) })
+          yield({ checkBox(cdEnableMenuMnemonics) })
+          yield({ checkBox(cdEnableControlsMnemonics) })
+        }
+        val rightColumnControls = sequence<InnerCell.() -> Unit> {
+          yield({
+                  checkBox(cdSmoothScrolling)
+                  ContextHelpLabel.create(message("checkbox.smooth.scrolling.description"))()
+                })
+          yield({ checkBox(cdDnDWithAlt) })
+          if (IdeFrameDecorator.isCustomDecorationAvailable()) {
+            yield({
+                    val overridden = UISettings.isMergeMainMenuWithWindowTitleOverridden
+                    checkBox(cdMergeMainMenuWithWindowTitle).enabled(!overridden)
+                    if (overridden) {
+                      ContextHelpLabel.create(
+                        message("option.is.overridden.by.jvm.property", UISettings.MERGE_MAIN_MENU_WITH_WINDOW_TITLE_PROPERTY))()
+                    }
+                    commentNoWrap(message("checkbox.merge.main.menu.with.window.title.comment")).withLargeLeftGap()
+                  })
           }
-        )
-        twoColumnRow(
-          { checkBox(cdUseCompactTreeIndents) },
-          { checkBox(cdDnDWithAlt) }
-        )
-        twoColumnRow(
-          { checkBox(cdEnableMenuMnemonics) },
-          { checkBox(cdFullPathsInTitleBar) }
-        )
-        twoColumnRow(
-          { checkBox(cdEnableControlsMnemonics) },
-          { checkBox(cdShowMenuIcons) }
-        )
+          yield({ checkBox(cdFullPathsInTitleBar) })
+          yield({ checkBox(cdShowMenuIcons) })
+        }
+
+        // Since some of the columns have variable number of items, enumerate them in a loop, while moving orphaned items from the right
+        // column to the left one:
+        val leftIt = leftColumnControls.iterator()
+        val rightIt = rightColumnControls.iterator()
+        while (leftIt.hasNext() || rightIt.hasNext()) {
+          when {
+            leftIt.hasNext() && rightIt.hasNext() -> twoColumnRow(leftIt.next(), rightIt.next())
+            leftIt.hasNext() -> twoColumnRow(leftIt.next()) { placeholder() }
+            rightIt.hasNext() -> twoColumnRow(rightIt.next()) { placeholder() } // move from right to left
+          }
+        }
         val backgroundImageAction = ActionManager.getInstance().getAction("Images.SetBackgroundImage")
         if (backgroundImageAction != null) {
           fullRow {
@@ -256,9 +278,10 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
                 arrayOf(AntialiasingType.GREYSCALE, AntialiasingType.OFF)
               else
                 AntialiasingType.values()
-            comboBox(DefaultComboBoxModel(ideAAOptions), settings::ideAAType, renderer = AAListCellRenderer(false))
-              .shouldUpdateLaF()
-              .onApply {
+            val comboboxIde = comboBox(DefaultComboBoxModel(ideAAOptions), settings::ideAAType, renderer = AAListCellRenderer(false))
+            .shouldUpdateLaF()
+              comboboxIde.component.accessibleContext.accessibleName = message("label.text.antialiasing.scope.ide")
+            comboboxIde.onApply {
                 for (w in Window.getWindows()) {
                   for (c in UIUtil.uiTraverser(w).filter(JComponent::class.java)) {
                     GraphicsUtil.setAntialiasingType(c, AntialiasingType.getAAHintForSwingComponent())
@@ -270,6 +293,7 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
             label(message("label.text.antialiasing.scope.editor"))
             comboBox(DefaultComboBoxModel(AntialiasingType.values()), settings::editorAAType, renderer = AAListCellRenderer(true))
               .shouldUpdateLaF()
+              .component.accessibleContext.accessibleName = message("label.text.antialiasing.scope.editor")
           }
         )
       }
@@ -284,6 +308,7 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
         )
         row {
           checkBox(cdWidescreenToolWindowLayout)
+          ContextHelpLabel.create(message("checkbox.widescreen.tool.window.layout.description"))()
         }
       }
       titledRow(message("group.presentation.mode")) {
@@ -318,8 +343,19 @@ internal class AppearanceConfigurable : BoundSearchableConfigurable(message("tit
 
 fun Cell.fontSizeComboBox(getter: () -> Int, setter: (Int) -> Unit, defaultValue: Int): CellBuilder<ComboBox<String>> {
   val model = DefaultComboBoxModel(UIUtil.getStandardFontSizes())
-  return comboBox(model, { getter().toString() }, { setter(getIntValue(it, defaultValue)) })
-    .applyToComponent { isEditable = true }
+  val modelBinding: PropertyBinding<String?> = PropertyBinding({ getter().toString() }, { setter(getIntValue(it, defaultValue)) })
+  return component(ComboBox(model))
+    .applyToComponent {
+      isEditable = true
+      renderer = SimpleListCellRenderer.create("") { it.toString() }
+      selectedItem = modelBinding.get()
+      accessibleContext.accessibleName = message("presentation.mode.fon.size")
+    }
+    .withBinding(
+      { component -> component.editor.item as String? },
+      { component, value -> component.setSelectedItem(value) },
+      modelBinding
+    )
 }
 
 fun RowBuilder.fullRow(init: InnerCell.() -> Unit): Row = row { cell(isFullWidth = true, init = init) }
@@ -359,6 +395,6 @@ private class AAListCellRenderer(private val myUseEditorFont: Boolean) : SimpleL
       font = Font(scheme.editorFontName, Font.PLAIN, scheme.editorFontSize)
     }
 
-    text = value.toString()
+    text = value.presentableName
   }
 }

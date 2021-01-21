@@ -13,6 +13,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.SmartHashSet;
 import com.intellij.util.ui.tree.AbstractTreeModel;
 import com.intellij.util.ui.tree.TreeModelAdapter;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.AsyncPromise;
@@ -25,17 +26,13 @@ import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.function.Consumer;
-import java.util.function.IntFunction;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.function.ToIntFunction;
+import java.util.function.*;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.jetbrains.concurrency.Promises.rejectedPromise;
 
-public final class AsyncTreeModel extends AbstractTreeModel implements Identifiable, Searchable, Navigatable, TreeVisitor.Acceptor {
+public final class AsyncTreeModel extends AbstractTreeModel implements Searchable, TreeVisitor.Acceptor {
   private static final Logger LOG = Logger.getInstance(AsyncTreeModel.class);
   private final Invoker foreground;
   private final Invoker background;
@@ -87,19 +84,11 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     }
   };
 
-  /**
-   * @deprecated use {@link #AsyncTreeModel(TreeModel, Disposable)} instead
-   */
-  @Deprecated
-  public AsyncTreeModel(@NotNull TreeModel model) {
-    this(model, true);
+  public AsyncTreeModel(@NotNull TreeModel model, @NotNull Disposable parent) {
+    this(model, true, parent);
   }
 
-  /**
-   * @deprecated use {@link #AsyncTreeModel(TreeModel, boolean, Disposable)} instead
-   */
-  @Deprecated
-  public AsyncTreeModel(@NotNull TreeModel model, boolean showLoadingNode) {
+  public AsyncTreeModel(@NotNull TreeModel model, boolean showLoadingNode, @NotNull Disposable parent) {
     if (model instanceof Disposable) {
       Disposer.register(this, (Disposable)model);
     }
@@ -114,14 +103,6 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     this.model = model;
     this.model.addTreeModelListener(listener);
     this.showLoadingNode = showLoadingNode;
-  }
-
-  public AsyncTreeModel(@NotNull TreeModel model, @NotNull Disposable parent) {
-    this(model, true, parent);
-  }
-
-  public AsyncTreeModel(@NotNull TreeModel model, boolean showLoadingNode, @NotNull Disposable parent) {
-    this(model, showLoadingNode);
     Disposer.register(parent, this);
   }
 
@@ -131,30 +112,11 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     model.removeTreeModelListener(listener);
   }
 
-  @Override
-  public Object getUniqueID(@NotNull TreePath path) {
-    return model instanceof Identifiable ? ((Identifiable)model).getUniqueID(path) : null;
-  }
-
   @NotNull
   @Override
   public Promise<TreePath> getTreePath(Object object) {
     if (disposed) return rejectedPromise();
     return resolve(model instanceof Searchable ? ((Searchable)model).getTreePath(object) : null);
-  }
-
-  @NotNull
-  @Override
-  public Promise<TreePath> nextTreePath(@NotNull TreePath path, Object object) {
-    if (disposed) return rejectedPromise();
-    return resolve(model instanceof Navigatable ? ((Navigatable)model).nextTreePath(path, object) : null);
-  }
-
-  @NotNull
-  @Override
-  public Promise<TreePath> prevTreePath(@NotNull TreePath path, Object object) {
-    if (disposed) return rejectedPromise();
-    return resolve(model instanceof Navigatable ? ((Navigatable)model).prevTreePath(path, object) : null);
   }
 
   @NotNull
@@ -269,7 +231,7 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
    */
   @NotNull
   public Promise<TreePath> accept(@NotNull TreeVisitor visitor, boolean allowLoading) {
-    AbstractTreeWalker<Node> walker = new AbstractTreeWalker<Node>(visitor, node -> node.object) {
+    AbstractTreeWalker<Node> walker = new AbstractTreeWalker<>(visitor, node -> node.object) {
       @Override
       protected Collection<Node> getChildren(@NotNull Node node) {
         if (node.leafState == LeafState.ALWAYS || !allowLoading) return node.getChildren();
@@ -447,7 +409,7 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     final Object object;
     volatile boolean started;
 
-    Command(@NotNull String name, Object object) {
+    Command(@NotNull @NonNls String name, Object object) {
       this.name = name;
       this.object = object;
       if (LOG.isTraceEnabled()) LOG.debug("create command: ", this);
@@ -492,7 +454,7 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
   }
 
   private final class CmdGetRoot extends Command {
-    private CmdGetRoot(@NotNull String name, Object object) {
+    private CmdGetRoot(@NotNull @NonNls String name, Object object) {
       super(name, object);
       tree.queue.add(this, old -> old.started || old.object != object);
     }
@@ -558,7 +520,7 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     private final Node node;
     private volatile boolean deep;
 
-    CmdGetChildren(@NotNull String name, @NotNull Node node, boolean deep) {
+    CmdGetChildren(@NotNull @NonNls String name, @NotNull Node node, boolean deep) {
       super(name, node.object);
       this.node = node;
       if (deep) this.deep = true;
@@ -737,7 +699,7 @@ public final class AsyncTreeModel extends AbstractTreeModel implements Identifia
     }
 
     @NotNull
-    Promise<Node> promise(@NotNull Consumer<Command> submitter, @NotNull Supplier<? extends T> supplier) {
+    Promise<Node> promise(@NotNull Consumer<? super Command> submitter, @NotNull Supplier<? extends T> supplier) {
       T command;
       synchronized (deque) {
         command = deque.peekFirst();

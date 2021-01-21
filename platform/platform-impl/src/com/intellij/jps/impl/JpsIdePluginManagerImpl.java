@@ -19,6 +19,7 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
 import com.intellij.util.containers.ContainerUtil;
 import org.jdom.Element;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.JpsElement;
@@ -61,7 +62,7 @@ public final class JpsIdePluginManagerImpl extends JpsPluginManager {
     //todo[nik] get rid of this check: currently this class is used in intellij.platform.jps.build tests instead of JpsPluginManagerImpl because intellij.platform.ide.impl module is added to classpath via testFramework
     if (rootArea.hasExtensionPoint(JpsPluginBean.EP_NAME)) {
       final Ref<Boolean> initial = new Ref<>(Boolean.TRUE);
-      JpsPluginBean.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<JpsPluginBean>() {
+      JpsPluginBean.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<>() {
         @Override
         public void extensionAdded(@NotNull JpsPluginBean extension, @NotNull PluginDescriptor pluginDescriptor) {
           if (initial.get()) {
@@ -266,7 +267,7 @@ public final class JpsIdePluginManagerImpl extends JpsPluginManager {
   }
 
   @NotNull
-  private <T> Collection<T> loadExtensions(@NotNull Class<T> extensionClass, @Nullable Predicate<PluginDescriptor> filter) {
+  private <T> Collection<T> loadExtensions(@NotNull Class<T> extensionClass, @Nullable Predicate<? super PluginDescriptor> filter) {
     Set<ClassLoader> loaders = new LinkedHashSet<>();
     for (PluginDescriptor plugin : myExternalBuildPlugins) {
       if (filter == null || filter.test(plugin)) {
@@ -284,7 +285,7 @@ public final class JpsIdePluginManagerImpl extends JpsPluginManager {
     if (loaders.isEmpty()) {
       return Collections.emptyList();
     }
-    String resourceName = "META-INF/services/" + extensionClass.getName();
+    @NonNls String resourceName = "META-INF/services/" + extensionClass.getName();
     Set<Class<T>> classes = new LinkedHashSet<>();
     Set<String> loadedUrls = new HashSet<>();
     for (ClassLoader loader : loaders) {

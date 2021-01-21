@@ -1,6 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.service.resolve
 
+import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.model.SingleTargetReference
 import com.intellij.model.Symbol
 import com.intellij.model.psi.PsiCompletableReference
@@ -25,8 +27,11 @@ class GradleProjectReference(
   override fun resolveSingleTarget(): Symbol? {
     val gradleProject = GradleExtensionsSettings.getRootProject(myElement) ?: return null
     val rootProjectPath = GradleExtensionsSettings.getRootProjectPath(myElement) ?: return null
-    if (GradleProjectSymbol.qualifiedName(myQualifiedName) in gradleProject.extensions) {
-      return GradleProjectSymbol(myQualifiedName, rootProjectPath)
+    if (myQualifiedName.isEmpty()) {
+      return GradleRootProjectSymbol(rootProjectPath)
+    }
+    else if (GradleSubprojectSymbol.qualifiedNameString(myQualifiedName) in gradleProject.extensions) {
+      return GradleSubprojectSymbol(myQualifiedName, rootProjectPath)
     }
     return null
   }
@@ -34,7 +39,7 @@ class GradleProjectReference(
   /**
    * This could've been much easier if we could query list of sub-projects by project fqn.
    */
-  override fun getCompletionVariants(): Collection<Any> {
+  override fun getCompletionVariants(): Collection<LookupElement> {
     val gradleProject: GradleProject = GradleExtensionsSettings.getRootProject(myElement) ?: return emptyList()
     val parentProjectFqn: List<String> = myQualifiedName.dropLast(1) // ["com", "foo", "IntellijIdeaRulezzz "] -> ["com", "foo"]
     val parentProjectPrefix: String = parentProjectFqn.joinToString(separator = "", postfix = ":") { ":$it" } // ":com:foo:"
@@ -50,6 +55,6 @@ class GradleProjectReference(
       }
       result += childProjectName
     }
-    return result
+    return result.map(LookupElementBuilder::create)
   }
 }

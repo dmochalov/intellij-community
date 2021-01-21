@@ -39,10 +39,14 @@ import com.intellij.psi.impl.*;
 import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistry;
 import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistryImpl;
 import com.intellij.psi.impl.source.tree.ForeignLeafPsiElement;
+import com.intellij.psi.impl.source.tree.injected.EditorWindowTracker;
+import com.intellij.psi.impl.source.tree.injected.EditorWindowTrackerImpl;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageManagerImpl;
+import com.intellij.psi.tree.TokenSet;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.util.CachedValuesManagerImpl;
 import com.intellij.util.KeyedLazyInstance;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.MessageBus;
 import org.jetbrains.annotations.NotNull;
@@ -52,6 +56,8 @@ import org.picocontainer.MutablePicoContainer;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 /** @noinspection JUnitTestCaseWithNonTrivialConstructors*/
@@ -108,7 +114,8 @@ public abstract class ParsingTestCase extends UsefulTestCase {
     appContainer.registerComponentInstance(SchemeManagerFactory.class, new MockSchemeManagerFactory());
     MockEditorFactory editorFactory = new MockEditorFactory();
     appContainer.registerComponentInstance(EditorFactory.class, editorFactory);
-    app.registerService(FileDocumentManager.class, new MockFileDocumentManagerImpl(editorFactory::createDocument, FileDocumentManagerImpl.HARD_REF_TO_DOCUMENT_KEY));
+    app.registerService(FileDocumentManager.class, new MockFileDocumentManagerImpl(FileDocumentManagerImpl.HARD_REF_TO_DOCUMENT_KEY,
+                                                                                   editorFactory::createDocument));
     app.registerService(PluginUtil.class, new PluginUtilImpl());
 
     app.registerService(PsiBuilderFactory.class, new PsiBuilderFactoryImpl());
@@ -138,7 +145,7 @@ public abstract class ParsingTestCase extends UsefulTestCase {
 
   protected final void registerParserDefinition(@NotNull ParserDefinition definition) {
     Language language = definition.getFileNodeType().getLanguage();
-    myLangParserDefinition.registerExtension(new KeyedLazyInstance<ParserDefinition>() {
+    myLangParserDefinition.registerExtension(new KeyedLazyInstance<>() {
       @Override
       public String getKey() {
         return language.getID();
@@ -408,6 +415,33 @@ public abstract class ParsingTestCase extends UsefulTestCase {
 
   protected void checkResult(@NotNull @TestDataFile String targetDataName, @NotNull PsiFile file) throws IOException {
     doCheckResult(myFullDataPath, file, checkAllPsiRoots(), targetDataName, skipSpaces(), includeRanges(), allTreesInSingleFile());
+    if (SystemProperties.getBooleanProperty("dumpAstTypeNames", false)) {
+      printAstTypeNamesTree(targetDataName, file);
+    }
+  }
+
+
+  private void printAstTypeNamesTree(@NotNull @TestDataFile String targetDataName, @NotNull PsiFile file) {
+    StringBuffer buffer = new StringBuffer();
+    Arrays.stream(file.getNode().getChildren(TokenSet.ANY)).forEach(it -> printAstTypeNamesTree(it, buffer, 0));
+    try {
+      Files.writeString(Paths.get(myFullDataPath, targetDataName + ".fleet.txt"), buffer);
+    }
+    catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  private static void printAstTypeNamesTree(ASTNode node, StringBuffer buffer, int indent) {
+    buffer.append(" ".repeat(indent));
+    buffer.append(node.getElementType().toString()).append("\n");
+    indent += 2;
+    ASTNode childNode = node.getFirstChildNode();
+
+    while (childNode != null) {
+      printAstTypeNamesTree(childNode, buffer, indent);
+      childNode = childNode.getTreeNext();
+    }
   }
 
   protected boolean allTreesInSingleFile() {
@@ -513,6 +547,7 @@ public abstract class ParsingTestCase extends UsefulTestCase {
 
     registerExtensionPoint(myApp.getExtensionArea(), LanguageInjector.EXTENSION_POINT_NAME, LanguageInjector.class);
     myProject.registerService(DumbService.class, new MockDumbService(myProject));
+    getApplication().registerService(EditorWindowTracker.class, new EditorWindowTrackerImpl());
     myProject.registerService(InjectedLanguageManager.class, new InjectedLanguageManagerImpl(myProject));
   }
 }

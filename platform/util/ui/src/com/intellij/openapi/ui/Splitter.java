@@ -22,7 +22,7 @@ import java.awt.event.MouseEvent;
 public class Splitter extends JPanel implements Splittable {
   private static final Icon SplitGlueH = EmptyIcon.create(6, 17);
   private static final Icon SplitGlueV = EmptyIcon.create(17, 6);
-  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.ui.Splitter");
+  private static final Logger LOG = Logger.getInstance(Splitter.class);
   @NonNls public static final String PROP_PROPORTION = "proportion";
   @NonNls public static final String PROP_ORIENTATION = "orientation";
 
@@ -190,9 +190,8 @@ public class Splitter extends JPanel implements Splittable {
     final int childCount = getComponentCount();
     LOG.assertTrue(childCount >= 1);
     if (childCount > 3) {
-      throw new IllegalStateException("" + childCount);
+      throw new IllegalStateException(String.valueOf(childCount));
     }
-    LOG.assertTrue(childCount <= 3);
     if (childCount == 1) {
       setFirstComponent((JComponent)comp);
     }
@@ -267,9 +266,9 @@ public class Splitter extends JPanel implements Splittable {
 
   @Override
   public void reshape(int x, int y, int w, int h) {
-    if (myDividerPositionStrategy != DividerPositionStrategy.KEEP_PROPORTION
-        && !isNull(myFirstComponent) && myFirstComponent.isVisible()
-        && !isNull(mySecondComponent) && mySecondComponent.isVisible()
+    if (w > 0 && h > 0 && myDividerPositionStrategy != DividerPositionStrategy.KEEP_PROPORTION
+        && !isNull(myFirstComponent) && myFirstComponent.isVisible() && !myFirstComponent.getBounds().isEmpty()
+        && !isNull(mySecondComponent) && mySecondComponent.isVisible() && !mySecondComponent.getBounds().isEmpty()
         && ((myVerticalSplit && h > 2 * getDividerWidth()) || (!myVerticalSplit && w > 2 * getDividerWidth()))
       && ((myVerticalSplit && h != getHeight()) || (!myVerticalSplit && w != getWidth()))) {
       int total = myVerticalSplit ? h : w;
@@ -341,7 +340,7 @@ public class Splitter extends JPanel implements Splittable {
           double mSize2 = isVertical() ? mySecondComponent.getMinimumSize().getHeight() : mySecondComponent.getMinimumSize().getWidth();
           double pSize1 = isVertical() ? myFirstComponent.getPreferredSize().getHeight() : myFirstComponent.getPreferredSize().getWidth();
           double pSize2 = isVertical() ? mySecondComponent.getPreferredSize().getHeight() : mySecondComponent.getPreferredSize().getWidth();
-          if (myHonorPreferredSize && size1 + size2 > pSize1 + pSize2) {
+          if (myHonorPreferredSize && size1 + size2 > mSize1 + mSize2) {
             mSize1 = pSize1;
             mSize2 = pSize2;
           }
@@ -350,7 +349,7 @@ public class Splitter extends JPanel implements Splittable {
             switch (myLackOfSpaceStrategy) {
               case SIMPLE_RATIO:
                 double proportion = mSize1 / (mSize1 + mSize2);
-                size1 = proportion * total;
+                size1 = proportion * (size1 + size2);
                 break;
               case HONOR_THE_FIRST_MIN_SIZE:
                 size1 = mSize1;
@@ -462,10 +461,9 @@ public class Splitter extends JPanel implements Splittable {
       return;
     }
     if (proportion < .0f || proportion > 1.0f) {
-      throw new IllegalArgumentException("Wrong proportion: " + proportion);
+      LOG.warn("Wrong proportion: " + proportion);
     }
-    if (proportion < myMinProp) proportion = myMinProp;
-    if (proportion > myMaxProp) proportion = myMaxProp;
+    proportion = MathUtil.clamp(proportion, myMinProp, myMaxProp);
     float oldProportion = myProportion;
     myProportion = proportion;
     firePropertyChange(PROP_PROPORTION, new Float(oldProportion), new Float(myProportion));
@@ -639,15 +637,17 @@ public class Splitter extends JPanel implements Splittable {
         float proportion;
         if (isVertical()) {
           if (getHeight() > 0) {
-            proportion = MathUtil.clamp(MathUtil.clamp((float)myPoint.y / (float)Splitter.this.getHeight(), 
-                                                       getMinProportion(true), 1 - getMinProportion(false)), .0f, 1.0f);
+            float min = getMinProportion(true);
+            float max = 1 - getMinProportion(false);
+            proportion = MathUtil.clamp(Math.min(max, Math.max((float)myPoint.y / (float)Splitter.this.getHeight(), min)), .0f, 1.0f);
             setProportion(proportion);
           }
         }
         else {
           if (getWidth() > 0) {
-            proportion = MathUtil.clamp(MathUtil.clamp((float)myPoint.x / (float)Splitter.this.getWidth(), 
-                                                       getMinProportion(true), 1 - getMinProportion(false)), .0f, 1.0f);
+            float min = getMinProportion(true);
+            float max = 1 - getMinProportion(false);
+            proportion = MathUtil.clamp(Math.min(max, Math.max((float)myPoint.x / (float)Splitter.this.getWidth(), min)), .0f, 1.0f);
             setProportion(proportion);
           }
         }

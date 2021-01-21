@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util;
 
 import com.intellij.lang.ASTNode;
@@ -11,6 +11,7 @@ import com.intellij.psi.FileViewProvider;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.*;
 import com.intellij.serviceContainer.NonInjectable;
+import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -24,17 +25,15 @@ import java.util.concurrent.ConcurrentMap;
  */
 public final class CachedValuesManagerImpl extends CachedValuesManager {
   private static final Object NULL = new Object();
-  private ConcurrentMap<UserDataHolder, Object> myCacheHolders = ContainerUtil.createConcurrentWeakMap(ContainerUtil.identityStrategy());
+
+  private ConcurrentMap<UserDataHolder, Object> myCacheHolders = CollectionFactory.createConcurrentWeakIdentityMap();
   private Set<Key<?>> myKeys = ContainerUtil.newConcurrentSet();
 
   private final Project myProject;
   private final CachedValuesFactory myFactory;
 
   public CachedValuesManagerImpl(Project project) {
-    myProject = project;
-
-    CachedValuesFactory factory = project.getService(CachedValuesFactory.class);
-    myFactory = factory == null ? new DefaultCachedValuesFactory(project) : factory;
+    this(project, project.getService(CachedValuesFactory.class));
   }
 
   @NonInjectable
@@ -43,31 +42,28 @@ public final class CachedValuesManagerImpl extends CachedValuesManager {
     myFactory = factory == null ? new DefaultCachedValuesFactory(project) : factory;
   }
 
-  @NotNull
   @Override
-  public <T> CachedValue<T> createCachedValue(@NotNull CachedValueProvider<T> provider, boolean trackValue) {
+  public @NotNull <T> CachedValue<T> createCachedValue(@NotNull CachedValueProvider<T> provider, boolean trackValue) {
     return myFactory.createCachedValue(provider, trackValue);
   }
 
-  @NotNull
   @Override
-  public <T,P> ParameterizedCachedValue<T,P> createParameterizedCachedValue(@NotNull ParameterizedCachedValueProvider<T,P> provider, boolean trackValue) {
+  public @NotNull <T, P> ParameterizedCachedValue<T, P> createParameterizedCachedValue(@NotNull ParameterizedCachedValueProvider<T, P> provider,
+                                                                                       boolean trackValue) {
     return myFactory.createParameterizedCachedValue(provider, trackValue);
   }
 
   @Override
-  @Nullable
-  public <T> T getCachedValue(@NotNull UserDataHolder dataHolder,
-                              @NotNull Key<CachedValue<T>> key,
-                              @NotNull CachedValueProvider<T> provider,
-                              boolean trackValue) {
+  public @Nullable <T> T getCachedValue(@NotNull UserDataHolder dataHolder,
+                                        @NotNull Key<CachedValue<T>> key,
+                                        @NotNull CachedValueProvider<T> provider,
+                                        boolean trackValue) {
     CachedValue<T> value = dataHolder.getUserData(key);
-    if (value instanceof CachedValueBase && ((CachedValueBase)value).isFromMyProject(myProject)) {
+    if (value instanceof CachedValueBase && ((CachedValueBase<?>)value).isFromMyProject(myProject)) {
       Getter<T> data = value.getUpToDateOrNull();
       if (data != null) {
         return data.get();
       }
-
       CachedValueStabilityChecker.checkProvidersEquivalent(provider, value.getValueProvider(), key);
     }
     if (value == null) {
@@ -76,8 +72,7 @@ public final class CachedValuesManagerImpl extends CachedValuesManager {
     return value.getValue();
   }
 
-  private <T> CachedValue<T> saveInUserData(@NotNull UserDataHolder dataHolder,
-                                            @NotNull Key<CachedValue<T>> key, CachedValue<T> value) {
+  private <T> CachedValue<T> saveInUserData(@NotNull UserDataHolder dataHolder, @NotNull Key<CachedValue<T>> key, CachedValue<T> value) {
     trackKeyHolder(dataHolder, key);
 
     if (dataHolder instanceof UserDataHolderEx) {
@@ -96,8 +91,7 @@ public final class CachedValuesManagerImpl extends CachedValuesManager {
   }
 
   @Override
-  protected void trackKeyHolder(@NotNull UserDataHolder dataHolder,
-                                @NotNull Key<?> key) {
+  protected void trackKeyHolder(@NotNull UserDataHolder dataHolder, @NotNull Key<?> key) {
     if (!isClearedOnPluginUnload(dataHolder)) {
       myCacheHolders.put(dataHolder, NULL);
       myKeys.add(key);
@@ -111,7 +105,7 @@ public final class CachedValuesManagerImpl extends CachedValuesManager {
   private <T> CachedValue<T> freshCachedValue(UserDataHolder dh, Key<CachedValue<T>> key, CachedValueProvider<T> provider, boolean trackValue) {
     CachedValueLeakChecker.checkProvider(provider, key, dh);
     CachedValue<T> value = createCachedValue(provider, trackValue);
-    assert ((CachedValueBase)value).isFromMyProject(myProject);
+    assert ((CachedValueBase<?>)value).isFromMyProject(myProject);
     return value;
   }
 
@@ -123,7 +117,7 @@ public final class CachedValuesManagerImpl extends CachedValuesManager {
       }
     }
     CachedValueStabilityChecker.cleanupFieldCache();
-    myCacheHolders = ContainerUtil.createConcurrentWeakMap(ContainerUtil.identityStrategy());
+    myCacheHolders = CollectionFactory.createConcurrentWeakIdentityMap();
     myKeys = ContainerUtil.newConcurrentSet();
   }
 }

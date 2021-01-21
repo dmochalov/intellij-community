@@ -1,8 +1,9 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.source;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.NotNullLazyValue;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.Ref;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.augment.PsiAugmentProvider;
@@ -16,21 +17,17 @@ import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Interner;
 import com.intellij.util.containers.JBIterable;
-import gnu.trove.THashMap;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 import static com.intellij.util.ObjectUtils.notNull;
 
-public class ClassInnerStuffCache {
+public final class ClassInnerStuffCache {
   private final PsiExtensibleClass myClass;
-  private final NotNullLazyValue<Interner<PsiMember>> myInterner = NotNullLazyValue.createValue(() -> Interner.createWeakInterner());
+  private final Ref<Pair<Long, Interner<PsiMember>>> myInterner = Ref.create();
 
   public ClassInnerStuffCache(@NotNull PsiExtensibleClass aClass) {
     myClass = aClass;
@@ -124,9 +121,14 @@ public class ClassInnerStuffCache {
 
   private <T extends PsiMember> T internMember(T m) {
     if (m == null) return null;
+    long modCount = myClass.getManager().getModificationTracker().getModificationCount();
     synchronized (myInterner) {
+      Pair<Long, Interner<PsiMember>> pair = myInterner.get();
+      if (pair == null || pair.first.longValue() != modCount) {
+        myInterner.set(pair = Pair.create(modCount, Interner.createWeakInterner()));
+      }
       //noinspection unchecked
-      return (T)myInterner.getValue().intern(m);
+      return (T)pair.second.intern(m);
     }
   }
 
@@ -154,7 +156,7 @@ public class ClassInnerStuffCache {
 
   @NotNull
   private Map<String, PsiField> getFieldsMap() {
-    Map<String, PsiField> cachedFields = new THashMap<>();
+    Map<String, PsiField> cachedFields = new java.util.HashMap<>();
     for (PsiField field : myClass.getOwnFields()) {
       String name = field.getName();
       if (!cachedFields.containsKey(name)) {
@@ -183,7 +185,7 @@ public class ClassInnerStuffCache {
 
   @NotNull
   private Map<String, PsiClass> getInnerClassesMap() {
-    Map<String, PsiClass> cachedInners = new THashMap<>();
+    Map<String, PsiClass> cachedInners = new HashMap<>();
     for (PsiClass psiClass : myClass.getOwnInnerClasses()) {
       String name = psiClass.getName();
       if (name == null) {

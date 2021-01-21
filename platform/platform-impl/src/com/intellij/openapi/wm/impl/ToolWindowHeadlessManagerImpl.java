@@ -5,7 +5,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.DataProvider;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.popup.Balloon;
@@ -26,8 +26,8 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.InputEvent;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.function.Predicate;
 
 // not final for android
@@ -128,8 +128,9 @@ public class ToolWindowHeadlessManagerImpl extends ToolWindowManager {
   public void setMaximized(@NotNull ToolWindow window, boolean maximized) {
   }
 
+  @Nullable
   @Override
-  public @Nullable ToolWindow getLastActiveToolWindow(@Nullable Predicate<JComponent> condition) {
+  public ToolWindow getLastActiveToolWindow(@Nullable Predicate<? super JComponent> condition) {
     return null;
   }
 
@@ -181,6 +182,14 @@ public class ToolWindowHeadlessManagerImpl extends ToolWindowManager {
     }
 
     @Override
+    public boolean isVisibleOnLargeStripe() {
+      return false;
+    }
+
+    @Override
+    public void setVisibleOnLargeStripe(boolean visible) { }
+
+    @Override
     public void setShowStripeButton(boolean show) {
     }
 
@@ -206,6 +215,14 @@ public class ToolWindowHeadlessManagerImpl extends ToolWindowManager {
     public @NotNull ToolWindowAnchor getAnchor() {
       return ToolWindowAnchor.BOTTOM;
     }
+
+    @Override
+    public @NotNull ToolWindowAnchor getLargeStripeAnchor() {
+      return ToolWindowAnchor.BOTTOM;
+    }
+
+    @Override
+    public void setLargeStripeAnchor(@NotNull ToolWindowAnchor anchor) { }
 
     @Override
     public void setAnchor(@NotNull ToolWindowAnchor anchor, @Nullable Runnable runnable) {
@@ -372,6 +389,7 @@ public class ToolWindowHeadlessManagerImpl extends ToolWindowManager {
     }
   }
 
+  @SuppressWarnings({"HardCodedStringLiteral", "DialogTitleCapitalization"})
   private static class MockContentManager implements ContentManager {
     private final EventDispatcher<ContentManagerListener> myDispatcher = EventDispatcher.create(ContentManagerListener.class);
     private final List<Content> myContents = new ArrayList<>();
@@ -628,6 +646,6 @@ public class ToolWindowHeadlessManagerImpl extends ToolWindowManager {
 
     @Override
     public @NotNull ContentFactory getFactory() {
-      return ServiceManager.getService(ContentFactory.class);
+      return ApplicationManager.getApplication().getService(ContentFactory.class);
     }
   }}

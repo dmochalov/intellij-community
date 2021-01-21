@@ -10,17 +10,6 @@ import org.jetbrains.annotations.ApiStatus
 import org.picocontainer.PicoContainer
 
 @ApiStatus.Internal
-fun <T : Any> processComponentInstancesOfType(container: PicoContainer, baseClass: Class<T>, processor: (T) -> Unit) {
-  // we must use instances only from our adapter (could be service or something else)
-  for (adapter in (container as DefaultPicoContainer).unsafeGetAdapters()) {
-    if (adapter is MyComponentAdapter && baseClass.isAssignableFrom(adapter.componentImplementation)) {
-      @Suppress("UNCHECKED_CAST")
-      processor((adapter.getInitializedInstance() ?: continue) as T)
-    }
-  }
-}
-
-@ApiStatus.Internal
 fun processProjectComponents(container: PicoContainer, @Suppress("DEPRECATION") processor: (com.intellij.openapi.components.ProjectComponent, PluginDescriptor) -> Unit) {
   // we must use instances only from our adapter (could be service or something else)
   // unsafeGetAdapters should be not used here as ProjectManagerImpl uses it to call projectOpened
@@ -39,14 +28,8 @@ fun processAllImplementationClasses(container: PicoContainer, processor: (compon
     var aClass: Class<*>
     if (o is ServiceComponentAdapter) {
       val pluginDescriptor = o.pluginDescriptor
-      // avoid delegation creation & class initialization
       aClass = try {
-        if (o.isImplementationClassResolved()) {
-          o.getImplementationClass()
-        }
-        else {
-          Class.forName(o.descriptor.implementation, false, pluginDescriptor.pluginClassLoader)
-        }
+        o.getImplementationClass()
       }
       catch (e: Throwable) {
         // well, component registered, but required jar is not added to classpath (community edition or junior IDE)

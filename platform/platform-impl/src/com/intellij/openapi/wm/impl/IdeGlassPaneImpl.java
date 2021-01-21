@@ -12,7 +12,7 @@ import com.intellij.openapi.ui.Divider;
 import com.intellij.openapi.ui.Painter;
 import com.intellij.openapi.ui.impl.GlassPaneDialogWrapperPeer;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.Weighted;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -79,7 +79,7 @@ public class IdeGlassPaneImpl extends JPanel implements IdeGlassPaneEx, IdeEvent
       IdeBackgroundUtil.initEditorPainters(this);
     }
 
-    if (SystemInfo.isWindows && Registry.is("ide.window.shadow.painter", false)) {
+    if (SystemInfoRt.isWindows && Registry.is("ide.window.shadow.painter", false)) {
       myWindowShadowPainter = new WindowShadowPainter();
       getPainters().addPainter(myWindowShadowPainter, null);
     }
@@ -474,11 +474,6 @@ public class IdeGlassPaneImpl extends JPanel implements IdeGlassPaneEx, IdeEvent
     activateIfNeeded();
   }
 
-  @Override
-  public void removeMouseMotionPreprocessor(@NotNull MouseMotionListener listener) {
-    removeListener(listener);
-  }
-
   private void removeListener(@NotNull EventListener listener) {
     if (myMouseListeners.remove(listener)) {
       updateSortedList();
@@ -529,13 +524,11 @@ public class IdeGlassPaneImpl extends JPanel implements IdeGlassPaneEx, IdeEvent
     }
   }
 
-  @NotNull
-  PaintersHelper getNamedPainters(@NotNull String name) {
+  final @NotNull PaintersHelper getNamedPainters(@NotNull String name) {
     return myNamedPainters.computeIfAbsent(name, key -> new PaintersHelper(this));
   }
 
-  @NotNull
-  private PaintersHelper getPainters() {
+  private @NotNull PaintersHelper getPainters() {
     return getNamedPainters("glass");
   }
 

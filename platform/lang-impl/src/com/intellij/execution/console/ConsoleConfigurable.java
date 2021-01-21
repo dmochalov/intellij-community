@@ -15,6 +15,7 @@ import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.ui.InputValidatorEx;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.Splitter;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
@@ -264,9 +265,9 @@ public class ConsoleConfigurable implements SearchableConfigurable, Configurable
   }
 
   private static class MyAddDeleteListPanel extends AddEditDeleteListPanel<String> {
-    private final String myQuery;
+    private final @NlsContexts.DialogMessage String myQuery;
 
-    MyAddDeleteListPanel(String title, String query) {
+    MyAddDeleteListPanel(@NlsContexts.BorderTitle String title, @NlsContexts.DialogMessage String query) {
       super(title, new ArrayList<>());
       myQuery = query;
       new ListSpeedSearch(myList);
@@ -278,13 +279,11 @@ public class ConsoleConfigurable implements SearchableConfigurable, Configurable
     }
 
     @Override
-    @Nullable
-    protected String findItemToAdd() {
+    protected @Nullable String findItemToAdd() {
       return showEditDialog("");
     }
 
-    @Nullable
-    private String showEditDialog(final String initialValue) {
+    private @Nullable String showEditDialog(final String initialValue) {
       return Messages.showInputDialog(this, myQuery, ExecutionBundle.message("dialog.title.folding.pattern"), Messages.getQuestionIcon(), initialValue, new InputValidatorEx() {
         @Override
         public boolean checkInput(String inputString) {
@@ -296,11 +295,10 @@ public class ConsoleConfigurable implements SearchableConfigurable, Configurable
           return !StringUtil.isEmpty(inputString);
         }
 
-        @Nullable
         @Override
-        public String getErrorText(String inputString) {
+        public @NlsContexts.DetailedDescription @Nullable String getErrorText(String inputString) {
           if (!checkInput(inputString)) {
-            return "Console folding rule string cannot be empty";
+            return ExecutionBundle.message("message.console.folding.rule.string.cannot.be.empty");
           }
           return null;
         }

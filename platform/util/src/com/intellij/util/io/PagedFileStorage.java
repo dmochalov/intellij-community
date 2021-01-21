@@ -3,6 +3,7 @@ package com.intellij.util.io;
 
 import com.intellij.openapi.Forceable;
 import com.intellij.openapi.diagnostic.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -19,19 +20,25 @@ public class PagedFileStorage implements Forceable {
   public static final int MB = 1024 * 1024;
   public static final int BUFFER_SIZE = StorageLock.BUFFER_SIZE;
 
+  @NotNull
   private static final ByteOrder ourNativeByteOrder = ByteOrder.nativeOrder();
+  @NotNull
   private final static ThreadLocal<byte[]> ourTypedIOBuffer = ThreadLocal.withInitial(() -> new byte[8]);
 
   // It is important to have ourLock after previous static constants as it depends on them
   static final StorageLock ourLock = new StorageLock();
 
+  @NotNull
   public static final ThreadLocal<StorageLockContext> THREAD_LOCAL_STORAGE_LOCK_CONTEXT = new ThreadLocal<>();
 
+  @NotNull
   private final StorageLockContext myStorageLockContext;
   private final boolean myNativeBytesOrder;
   private int myStorageIndex; // -1 when closed
+  @NotNull
   private final PagedFileStorageCache myLastAccessedBufferCache = new PagedFileStorageCache();
 
+  @NotNull
   private final Path myFile;
   private final boolean myReadOnly;
   protected final int myPageSize;
@@ -40,7 +47,7 @@ public class PagedFileStorage implements Forceable {
   private volatile boolean isDirty;
   private volatile long mySize = -1;
 
-  public PagedFileStorage(Path file,
+  public PagedFileStorage(@NotNull Path file,
                           @Nullable StorageLockContext storageLockContext,
                           int pageSize,
                           boolean valuesAreBufferAligned,
@@ -84,11 +91,11 @@ public class PagedFileStorage implements Forceable {
     myStorageLockContext.unlockWrite();
   }
 
-  public StorageLockContext getStorageLockContext() {
+  public @NotNull StorageLockContext getStorageLockContext() {
     return myStorageLockContext;
   }
 
-  public Path getFile() {
+  public @NotNull Path getFile() {
     return myFile;
   }
 
@@ -310,12 +317,13 @@ public class PagedFileStorage implements Forceable {
   private ByteBufferWrapper getBufferWrapper(long page, boolean modify, boolean readOnly) {
     ByteBufferWrapper pageFromCache =
       myLastAccessedBufferCache.getPageFromCache(page, myStorageLockContext.getStorageLock().getMappingChangeCount(), readOnly);
-    if (pageFromCache != null) {
-      if (modify) markDirty(pageFromCache);
-      return pageFromCache;
-    }
 
     try {
+      if (pageFromCache != null) {
+        if (modify) markDirty(pageFromCache);
+        return pageFromCache;
+      }
+
       assert page >= 0 && page <= StorageLock.MAX_PAGES_COUNT:page;
 
       if (myStorageIndex == -1) {
@@ -337,7 +345,7 @@ public class PagedFileStorage implements Forceable {
     }
   }
 
-  private void markDirty(ByteBufferWrapper buffer) {
+  private void markDirty(ByteBufferWrapper buffer) throws IOException {
     if (!isDirty) isDirty = true;
     buffer.markDirty();
   }

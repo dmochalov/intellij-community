@@ -51,6 +51,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.Update;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -127,7 +128,8 @@ public class SMTestRunnerResultsForm extends TestResultsPanel
     myProject = consoleProperties.getProject();
 
     //Create tests common suite root
-    myTestsRootNode = new SMTestProxy.SMRootTestProxy(consoleProperties.isPreservePresentableName());
+    myTestsRootNode = new SMTestProxy.SMRootTestProxy(consoleProperties.isPreservePresentableName(), console);
+    myTestsRootNode.setTestConsoleProperties(consoleProperties);
     //todo myTestsRootNode.setOutputFilePath(runConfiguration.getOutputFilePath());
 
     // Fire selection changed and move focus on SHIFT+ENTER
@@ -334,7 +336,9 @@ public class SMTestRunnerResultsForm extends TestResultsPanel
 
   @Override
   public void onSuiteTreeNodeAdded(SMTestProxy testProxy) {
-    myTotalTestCount++;
+    if (!testProxy.isSuite()) {
+      myTotalTestCount++;
+    }
   }
 
   @Override
@@ -743,6 +747,11 @@ public class SMTestRunnerResultsForm extends TestResultsPanel
     return isCustomMessage != (myCurrentCustomProgressCategory == null);
   }
 
+  @ApiStatus.Internal
+  public void setIncompleteIndexUsed() {
+    myStatusLine.setWarning(SmRunnerBundle.message("suffix.incomplete.index.was.used"));
+  }
+
   private static class MySaveHistoryTask extends Task.Backgroundable {
 
     private final TestConsoleProperties myConsoleProperties;
@@ -792,7 +801,7 @@ public class SMTestRunnerResultsForm extends TestResultsPanel
       List<SMTestProxy> tests = myRoot.getAllTests();
       for (SMTestProxy proxy : tests) {
         String url = proxy.getLocationUrl();
-        if (url != null) {
+        if (url != null && proxy.getLocator() != null) {
           String configurationName = myConfiguration != null ? myConfiguration.getName() : null;
           DumbService.getInstance(getProject()).runWhenSmart(() -> {
             Project project = getProject();

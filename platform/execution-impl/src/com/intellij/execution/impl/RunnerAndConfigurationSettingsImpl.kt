@@ -55,10 +55,6 @@ class RunnerAndConfigurationSettingsImpl @JvmOverloads constructor(
   private var level: RunConfigurationLevel = RunConfigurationLevel.WORKSPACE
 ) : Cloneable, RunnerAndConfigurationSettings, Comparable<Any>, SerializableScheme {
 
-  @Deprecated("isSingleton parameter removed", level = DeprecationLevel.ERROR)
-  @Suppress("UNUSED_PARAMETER")
-  constructor(manager: RunManagerImpl, configuration: RunConfiguration, isTemplate: Boolean, isSingleton: Boolean) : this(manager, configuration, isTemplate)
-
   init {
     (_configuration as? PersistentAwareRunConfiguration)?.setTemplate(isTemplate)
   }
@@ -102,6 +98,7 @@ class RunnerAndConfigurationSettingsImpl @JvmOverloads constructor(
 
   override fun setTemporary(value: Boolean) {
     level = if (value) RunConfigurationLevel.TEMPORARY else RunConfigurationLevel.WORKSPACE
+    pathIfStoredInArbitraryFile = null
   }
 
   override fun storeInLocalWorkspace() {
@@ -359,7 +356,7 @@ class RunnerAndConfigurationSettingsImpl @JvmOverloads constructor(
       }
     }
     if (executor != null && executor != DefaultRunExecutor.getRunExecutorInstance() && !runnerFound) {
-      throw RuntimeConfigurationError("${executor.id}: there are no runners for $configuration")
+      throw RuntimeConfigurationError(ExecutionBundle.message("dialog.message.no.runners.for.configuration", executor.id, configuration))
     }
     if (executor != null) {
       val beforeRunWarning = doCheck { configuration.checkSettingsBeforeRun() }
@@ -394,6 +391,10 @@ class RunnerAndConfigurationSettingsImpl @JvmOverloads constructor(
   public override fun clone(): RunnerAndConfigurationSettingsImpl {
     val copy = RunnerAndConfigurationSettingsImpl(manager, _configuration!!.clone())
     copy.importRunnerAndConfigurationSettings(this)
+
+    copy.level = this.level
+    copy.pathIfStoredInArbitraryFile = this.pathIfStoredInArbitraryFile
+
     return copy
   }
 
@@ -403,8 +404,6 @@ class RunnerAndConfigurationSettingsImpl @JvmOverloads constructor(
 
     isEditBeforeRun = template.isEditBeforeRun
     isActivateToolWindowBeforeRun = template.isActivateToolWindowBeforeRun
-    level = template.level
-    pathIfStoredInArbitraryFile = template.pathIfStoredInArbitraryFile
   }
 
   private fun <T> importFromTemplate(templateItem: RunnerItem<T>, item: RunnerItem<T>) {

@@ -13,6 +13,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugProcess;
 import com.intellij.xdebugger.XDebugSession;
+import com.intellij.xdebugger.XDebuggerBundle;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.frame.XStackFrame;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
@@ -30,18 +31,27 @@ import javax.swing.*;
 import java.util.*;
 
 public class XVariablesView extends XVariablesViewBase implements DataProvider {
-  private final JPanel myComponent;
+  protected BorderLayoutPanel myComponent;
 
   public XVariablesView(@NotNull XDebugSessionImpl session) {
     super(session.getProject(), session.getDebugProcess().getEditorsProvider(), session.getValueMarkers());
     myComponent = new BorderLayoutPanel();
-    myComponent.add(super.getPanel());
+    JComponent panel = super.getPanel();
+    JComponent top = createTopPanel();
+    if (top != null) {
+      panel = new BorderLayoutPanel().addToTop(top).addToCenter(panel);
+    }
+    myComponent.add(panel);
     DataManager.registerDataProvider(myComponent, this);
   }
 
   @Override
   public JPanel getPanel() {
     return myComponent;
+  }
+
+  JComponent createTopPanel() {
+    return null;
   }
 
   @Override
@@ -83,7 +93,7 @@ public class XVariablesView extends XVariablesViewBase implements DataProvider {
     XDebugSession session = getSession(getPanel());
     if (session != null) {
       if (!session.isStopped() && session.isPaused()) {
-        root.setInfoMessage("Frame is not available", null);
+        root.setInfoMessage(XDebuggerBundle.message("message.frame.is.not.available"), null);
       }
       else {
         XDebugProcess debugProcess = session.getDebugProcess();

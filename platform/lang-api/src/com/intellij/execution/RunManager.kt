@@ -5,6 +5,7 @@ import com.intellij.execution.configurations.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.text.nullize
 import org.jetbrains.annotations.ApiStatus
@@ -45,15 +46,9 @@ abstract class RunManager {
       val matcher = UNIQUE_NAME_PATTERN.matcher(uniqueName)
       return if (matcher.matches()) matcher.group(1) else uniqueName
     }
-  }
 
-  /**
-   * Returns the list of all configurations of a specified type.
-   * @param type a run configuration type.
-   * @return all configurations of the type, or an empty array if no configurations of the type are defined.
-   */
-  @Deprecated("", ReplaceWith("getConfigurationsList(type)"))
-  fun getConfigurations(type: ConfigurationType): Array<RunConfiguration> = getConfigurationsList(type).toTypedArray()
+    const val CONFIGURATION_TYPE_FEATURE_ID: String = "com.intellij.configurationType"
+  }
 
   /**
    * Returns the list of all configurations of a specified type.
@@ -123,7 +118,7 @@ abstract class RunManager {
    * @param factory the factory instance.
    * @see RunManager.suggestUniqueName
    */
-  abstract fun createConfiguration(name: String, factory: ConfigurationFactory): RunnerAndConfigurationSettings
+  abstract fun createConfiguration(@NlsSafe name: String, factory: ConfigurationFactory): RunnerAndConfigurationSettings
 
   fun createConfiguration(name: String, typeClass: Class<out ConfigurationType>): RunnerAndConfigurationSettings {
     return createConfiguration(name, ConfigurationTypeUtil.findConfigurationType(typeClass).configurationFactories.first())
@@ -211,12 +206,6 @@ abstract class RunManager {
     configuration.setName(suggestUniqueName(StringUtil.notNullize(oldName, UNNAMED), configuration.type))
     return oldName != configuration.name
   }
-
-  @Deprecated("The method name is grammatically incorrect", replaceWith = ReplaceWith("this.setUniqueNameIfNeeded(configuration)"))
-  fun setUniqueNameIfNeed(configuration: RunConfiguration): Boolean = setUniqueNameIfNeeded(configuration)
-
-  @Deprecated("Use ConfigurationTypeUtil", ReplaceWith("ConfigurationTypeUtil.findConfigurationType(typeName)", "com.intellij.execution.configurations.ConfigurationTypeUtil"))
-  fun getConfigurationType(typeName: String) = ConfigurationTypeUtil.findConfigurationType(typeName)
 
   abstract fun findConfigurationByName(name: String?): RunnerAndConfigurationSettings?
 

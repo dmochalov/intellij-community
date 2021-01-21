@@ -12,6 +12,7 @@ import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleType;
+import com.intellij.openapi.module.impl.ModulePathKt;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.LibraryOrderEntry;
@@ -271,7 +272,7 @@ public class MavenProjectImporter {
 
       List<MavenModuleConfigurer> configurers = MavenModuleConfigurer.getConfigurers();
 
-      MavenUtil.runInBackground(myProject, "Configuring projects", false, indicator -> {
+      MavenUtil.runInBackground(myProject, MavenProjectBundle.message("command.name.configuring.projects"), false, indicator -> {
         float count = 0;
         for (MavenProject mavenProject : myAllProjects) {
           Module module = myMavenProjectToModule.get(mavenProject);
@@ -279,7 +280,7 @@ public class MavenProjectImporter {
             continue;
           }
           indicator.setFraction(count++ / myAllProjects.size());
-          indicator.setText2("Configuring module " + module.getName());
+          indicator.setText2(MavenProjectBundle.message("progress.details.configuring.module", module.getName()));
           for (MavenModuleConfigurer configurer : configurers) {
             configurer.configure(mavenProject, myProject, module);
           }
@@ -517,7 +518,7 @@ public class MavenProjectImporter {
         @Override
         public void perform(Project project, MavenEmbeddersManager embeddersManager, MavenConsole console, MavenProgressIndicator indicator)
           throws MavenProcessCanceledException {
-          indicator.setText("Refreshing files...");
+          indicator.setText(MavenProjectBundle.message("progress.text.refreshing.files"));
           doRefreshFiles(files);
         }
       });
@@ -616,11 +617,20 @@ public class MavenProjectImporter {
     // for some reason newModule opens the existing iml file, so we
     // have to remove it beforehand.
     deleteExistingImlFile(path);
+    String moduleName = ModulePathKt.getModuleNameByFilePath(path);
+    deleteExistingModuleByName(moduleName);
 
     final Module module = myModuleModel.newModule(path, project.getModuleType().getId());
     myMavenProjectToModule.put(project, module);
     myCreatedModules.add(module);
     return true;
+  }
+
+  private void deleteExistingModuleByName(final String name) {
+    Module module = myModuleModel.findModuleByName(name);
+    if (module != null) {
+      myModuleModel.disposeModule(module);
+    }
   }
 
   private void deleteExistingImlFile(final String path) {

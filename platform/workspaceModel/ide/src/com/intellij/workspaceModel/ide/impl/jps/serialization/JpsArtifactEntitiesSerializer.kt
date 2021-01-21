@@ -9,9 +9,10 @@ import com.intellij.workspaceModel.storage.impl.WorkspaceEntityData
 import com.intellij.workspaceModel.storage.impl.ModifiableWorkspaceEntityBase
 import com.intellij.workspaceModel.storage.impl.WorkspaceEntityBase
 import com.intellij.workspaceModel.ide.JpsFileEntitySource
-import com.intellij.workspaceModel.ide.impl.legacyBridge.module.roots.levelToLibraryTableId
 import com.intellij.workspaceModel.storage.*
 import com.intellij.workspaceModel.storage.bridgeEntities.*
+import com.intellij.workspaceModel.storage.url.VirtualFileUrl
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import org.jdom.Element
 import org.jetbrains.jps.model.serialization.JDomSerializationUtil
 import org.jetbrains.jps.model.serialization.artifact.ArtifactPropertiesState
@@ -43,6 +44,10 @@ internal class JpsArtifactsFileSerializer(fileUrl: VirtualFileUrl, entitySource:
     get() = false
   override val additionalEntityTypes: List<Class<out WorkspaceEntity>>
     get() = listOf(ArtifactsOrderEntity::class.java)
+
+  override fun deleteObsoleteFile(fileUrl: String, writer: JpsFileContentWriter) {
+    writer.saveComponent(fileUrl, ARTIFACT_MANAGER_COMPONENT_NAME, null)
+  }
 }
 
 /**
@@ -72,7 +77,10 @@ internal open class JpsArtifactEntitiesSerializer(override val fileUrl: VirtualF
   override val mainEntityClass: Class<ArtifactEntity>
     get() = ArtifactEntity::class.java
 
-  override fun loadEntities(builder: WorkspaceEntityStorageBuilder, reader: JpsFileContentReader, virtualFileManager: VirtualFileUrlManager) {
+  override fun loadEntities(builder: WorkspaceEntityStorageBuilder,
+                            reader: JpsFileContentReader,
+                            errorReporter: ErrorReporter,
+                            virtualFileManager: VirtualFileUrlManager) {
     val artifactListElement = reader.loadComponent(fileUrl.url, ARTIFACT_MANAGER_COMPONENT_NAME)
     if (artifactListElement == null) return
 
@@ -138,6 +146,7 @@ internal open class JpsArtifactEntitiesSerializer(override val fileUrl: VirtualF
 
   override fun saveEntities(mainEntities: Collection<ArtifactEntity>,
                             entities: Map<Class<out WorkspaceEntity>, List<WorkspaceEntity>>,
+                            storage: WorkspaceEntityStorage,
                             writer: JpsFileContentWriter) {
     if (mainEntities.isEmpty()) return
 

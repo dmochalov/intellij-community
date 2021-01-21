@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl.customFrameDecorations.header.titleLabel
 
 import com.intellij.ide.RecentProjectsManager
@@ -12,6 +12,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ProjectManagerListener
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.wm.impl.customFrameDecorations.header.title.CustomHeaderTitle
 import com.intellij.ui.awt.RelativeRectangle
 import com.intellij.util.ui.JBUI.CurrentTheme.CustomFrameDecorations
 import java.awt.Rectangle
@@ -20,7 +21,13 @@ import java.util.*
 import javax.swing.JComponent
 import javax.swing.JFrame
 
-class CustomDecorationPath(val frame: JFrame, onBoundsChanged: () -> Unit) : SelectedEditorFilePath(onBoundsChanged) {
+internal class CustomDecorationPath(val frame: JFrame) : SelectedEditorFilePath(), CustomHeaderTitle {
+  companion object{
+    fun createInstance(frame: JFrame): CustomDecorationPath {
+      return CustomDecorationPath(frame)
+    }
+  }
+
   private val projectManagerListener = object : ProjectManagerListener {
     override fun projectOpened(project: Project) {
       checkOpenedProjects()
@@ -58,13 +65,13 @@ class CustomDecorationPath(val frame: JFrame, onBoundsChanged: () -> Unit) : Sel
     return null
   }
 
-  fun setActive(value: Boolean) {
+  override fun setActive(value: Boolean) {
     val color = if (value) CustomFrameDecorations.titlePaneInfoForeground() else CustomFrameDecorations.titlePaneInactiveInfoForeground()
 
-    getView().foreground = color
+    view.foreground = color
   }
 
-  fun getListenerBounds(): List<RelativeRectangle> {
+  override fun getBoundList(): List<RelativeRectangle> {
     return if (!toolTipNeeded) {
       emptyList()
     }

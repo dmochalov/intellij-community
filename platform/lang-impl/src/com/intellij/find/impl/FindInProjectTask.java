@@ -1,9 +1,10 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.find.impl;
 
 import com.intellij.find.FindBundle;
 import com.intellij.find.FindInProjectSearchEngine;
 import com.intellij.find.FindModel;
+import com.intellij.find.FindModelExtension;
 import com.intellij.find.findInProject.FindInProjectManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
@@ -108,10 +109,8 @@ class FindInProjectTask {
     try {
       myProgress.setIndeterminate(true);
       myProgress.setText(FindBundle.message("progress.text.scanning.indexed.files"));
-      Set<VirtualFile> filesForFastWordSearch = ReadAction
-        .nonBlocking(this::getFilesForFastWordSearch)
-        .withDocumentsCommitted(myProject)
-        .executeSynchronously();
+      Set<VirtualFile> filesForFastWordSearch = getFilesForFastWordSearch();
+
       myProgress.setIndeterminate(false);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Searching for " + myFindModel.getStringToFind() + " in " + filesForFastWordSearch.size() + " indexed files");
@@ -200,7 +199,8 @@ class FindInProjectTask {
       Pair.NonNull<PsiFile, VirtualFile> pair = ReadAction.compute(() -> findFile(virtualFile));
       if (pair == null) return true;
 
-      Set<UsageInfo> processedUsages = usagesBeingProcessed.computeIfAbsent(virtualFile, __ -> ContainerUtil.newConcurrentSet());
+      Set<UsageInfo> processedUsages = usagesBeingProcessed.computeIfAbsent(virtualFile,
+                                                                            __ -> ContainerUtil.newConcurrentSet());
       PsiFile psiFile = pair.first;
       VirtualFile sourceVirtualFile = pair.second;
       AtomicBoolean projectFileUsagesFound = new AtomicBoolean();
@@ -265,41 +265,33 @@ class FindInProjectTask {
     SearchScope customScope = myFindModel.isCustomScope() ? myFindModel.getCustomScope() : null;
     final GlobalSearchScope globalCustomScope = customScope == null ? null : GlobalSearchScopeUtil.toGlobalSearchScope(customScope, myProject);
 
+    final Set<VirtualFile> result = new CompactVirtualFileSet();
 
     class EnumContentIterator implements ContentIterator {
-      private final Set<VirtualFile> myFiles = new CompactVirtualFileSet();
 
       @Override
       public boolean processFile(@NotNull final VirtualFile virtualFile) {
-        ApplicationManager.getApplication().runReadAction(new Runnable() {
-          @Override
-          public void run() {
-            ProgressManager.checkCanceled();
-            if (virtualFile.isDirectory() || !virtualFile.isValid() ||
-                !myFileMask.value(virtualFile) ||
-                globalCustomScope != null && !globalCustomScope.contains(virtualFile)) {
-              return;
-            }
+        ReadAction.run(() -> {
+          ProgressManager.checkCanceled();
+          if (virtualFile.isDirectory() || !virtualFile.isValid() ||
+              !myFileMask.value(virtualFile) ||
+              globalCustomScope != null && !globalCustomScope.contains(virtualFile)) {
+            return;
+          }
 
-            if (skipIndexed && ContainerUtil.find(mySearchers, p -> p.isCovered(virtualFile)) != null) {
-              return;
-            }
+          if (skipIndexed && ContainerUtil.find(mySearchers, p -> p.isCovered(virtualFile)) != null) {
+            return;
+          }
 
-            Pair.NonNull<PsiFile, VirtualFile> pair = findFile(virtualFile);
-            if (pair == null) return;
-            VirtualFile sourceVirtualFile = pair.second;
+          Pair.NonNull<PsiFile, VirtualFile> pair = findFile(virtualFile);
+          if (pair == null) return;
+          VirtualFile sourceVirtualFile = pair.second;
 
-            if (sourceVirtualFile != null && !alreadySearched.contains(sourceVirtualFile)) {
-              myFiles.add(sourceVirtualFile);
-            }
+          if (sourceVirtualFile != null && !alreadySearched.contains(sourceVirtualFile)) {
+            result.add(sourceVirtualFile);
           }
         });
         return true;
-      }
-
-      @NotNull
-      private Collection<VirtualFile> getFiles() {
-        return myFiles;
       }
     }
 
@@ -331,14 +323,31 @@ class FindInProjectTask {
     else {
       boolean success = myFileIndex.iterateContent(iterator);
       if (success && globalCustomScope != null && globalCustomScope.isSearchInLibraries()) {
-        final VirtualFile[] librarySources = ReadAction.compute(() -> {
-          OrderEnumerator enumerator = myModule == null ? OrderEnumerator.orderEntries(myProject) : OrderEnumerator.orderEntries(myModule);
-          return enumerator.withoutModuleSourceEntries().withoutDepModules().getSourceRoots();
+        Pair<VirtualFile[], VirtualFile[]> libraryRoots = ReadAction.compute(() -> {
+          OrderEnumerator enumerator = (myModule == null ? OrderEnumerator.orderEntries(myProject) : OrderEnumerator.orderEntries(myModule))
+            .withoutModuleSourceEntries()
+            .withoutDepModules();
+          return Pair.create(enumerator.getSourceRoots(), enumerator.getClassesRoots());
         });
-        iterateAll(librarySources, globalCustomScope, iterator);
+
+        VirtualFile[] sourceRoots = libraryRoots.getFirst();
+        iterateAll(sourceRoots, globalCustomScope, iterator);
+
+        VirtualFile[] classRoots = libraryRoots.getSecond();
+        iterateAll(classRoots, globalCustomScope, iterator);
       }
     }
-    return iterator.getFiles();
+
+    for (FindModelExtension findModelExtension : FindModelExtension.EP_NAME.getExtensionList()) {
+      findModelExtension.iterateAdditionalFiles(myFindModel, myProject, file -> {
+        if (!alreadySearched.contains(file)) {
+          result.add(file);
+        }
+        return true;
+      });
+    }
+
+    return result;
   }
 
   private static void iterateAll(VirtualFile @NotNull [] files, @NotNull final GlobalSearchScope searchScope, @NotNull final ContentIterator iterator) {

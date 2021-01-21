@@ -1,7 +1,6 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.progress.impl;
 
-import com.google.common.collect.ConcurrentHashMultiset;
 import com.intellij.codeWithMe.ClientId;
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.openapi.Disposable;
@@ -16,7 +15,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.ThrowableComputable;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.ex.ProgressIndicatorEx;
 import com.intellij.util.ExceptionUtil;
 import com.intellij.util.ObjectUtils;
@@ -24,7 +22,6 @@ import com.intellij.util.SystemProperties;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ConcurrentLongObjectMap;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.SmartHashSet;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -69,9 +66,10 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
    *  which are not inherited from {@link StandardProgressIndicator}.
    *  for them an extra processing thread (see {@link #myCheckCancelledFuture}) has to be run
    *  to call their non-standard {@link ProgressIndicator#checkCanceled()} method periodically.
+   *  Poor-man Multiset here (instead of a set) is for simplifying add/remove indicators on process-with-progress start/end with possibly identical indicators.
+   *  ProgressIndicator -> count of this indicator occurrences in this multiset.
    */
-  // multiset here (instead of a set) is for simplifying add/remove indicators on process-with-progress start/end with possibly identical indicators.
-  private static final Collection<ProgressIndicator> nonStandardIndicators = ConcurrentHashMultiset.create();
+  private static final Map<ProgressIndicator, AtomicInteger> nonStandardIndicators = new ConcurrentHashMap<>();
 
   /** true if running in non-cancelable section started with
    * {@link #executeNonCancelableSection(Runnable)} in this thread
@@ -80,18 +78,20 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
 
   // must be under threadsUnderIndicator lock
   private void startBackgroundNonStandardIndicatorsPing() {
-    if (myCheckCancelledFuture == null) {
-      myCheckCancelledFuture = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(() -> {
-        for (ProgressIndicator indicator : nonStandardIndicators) {
-          try {
-            indicator.checkCanceled();
-          }
-          catch (ProcessCanceledException e) {
-            indicatorCanceled(indicator);
-          }
-        }
-      }, 0, CHECK_CANCELED_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+    if (myCheckCancelledFuture != null) {
+      return;
     }
+
+    myCheckCancelledFuture = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(() -> {
+      for (ProgressIndicator indicator : nonStandardIndicators.keySet()) {
+        try {
+          indicator.checkCanceled();
+        }
+        catch (ProcessCanceledException e) {
+          indicatorCanceled(indicator);
+        }
+      }
+    }, 0, CHECK_CANCELED_DELAY_MILLIS, TimeUnit.MILLISECONDS);
   }
 
   // must be under threadsUnderIndicator lock
@@ -110,7 +110,7 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
   }
 
   @NotNull
-  List<ProgressIndicator> getCurrentIndicators() {
+  static List<ProgressIndicator> getCurrentIndicators() {
     synchronized (threadsUnderIndicator) {
       return new ArrayList<>(threadsUnderIndicator.keySet());
     }
@@ -208,17 +208,22 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
   // run in the current thread (?)
   @Override
   public void executeNonCancelableSection(@NotNull Runnable runnable) {
-    if (isInNonCancelableSection()) {
-      runnable.run();
+    try {
+      if (isInNonCancelableSection()) {
+        runnable.run();
+      }
+      else {
+        try {
+          isInNonCancelableSection.set(Boolean.TRUE);
+          executeProcessUnderProgress(runnable, NonCancelableIndicator.INSTANCE);
+        }
+        finally {
+          isInNonCancelableSection.remove();
+        }
+      }
     }
-    else {
-      try {
-        isInNonCancelableSection.set(Boolean.TRUE);
-        executeProcessUnderProgress(runnable, NonCancelableIndicator.INSTANCE);
-      }
-      finally {
-        isInNonCancelableSection.remove();
-      }
+    catch (ProcessCanceledException e) {
+      LOG.error("PCE is not expected in non-cancellable section execution", new Exception(e));
     }
   }
 
@@ -633,13 +638,19 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
       boolean oneOfTheIndicatorsIsCanceled = false;
 
       for (ProgressIndicator thisIndicator = indicator; thisIndicator != null; thisIndicator = thisIndicator instanceof WrappedProgressIndicator ? ((WrappedProgressIndicator)thisIndicator).getOriginalProgressIndicator() : null) {
-        Set<Thread> underIndicator = threadsUnderIndicator.computeIfAbsent(thisIndicator, __ -> new SmartHashSet<>());
+        Set<Thread> underIndicator = threadsUnderIndicator.computeIfAbsent(thisIndicator, __ -> new HashSet<>());
         boolean alreadyUnder = !underIndicator.add(currentThread);
         threadsUnderThisIndicator.add(alreadyUnder ? null : underIndicator);
 
         boolean isStandard = thisIndicator instanceof StandardProgressIndicator;
         if (!isStandard) {
-          nonStandardIndicators.add(thisIndicator);
+          nonStandardIndicators.compute(thisIndicator, (__, count) -> {
+            if (count == null) {
+              return new AtomicInteger(1);
+            }
+            count.incrementAndGet();
+            return count;
+          });
           startBackgroundNonStandardIndicatorsPing();
         }
 
@@ -665,8 +676,13 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
           }
           boolean isStandard = thisIndicator instanceof StandardProgressIndicator;
           if (!isStandard) {
-            nonStandardIndicators.remove(thisIndicator);
-            if (nonStandardIndicators.isEmpty()) {
+            AtomicInteger newCount = nonStandardIndicators.compute(thisIndicator, (__, count) -> {
+              if (count.decrementAndGet() == 0) {
+                return null;
+              }
+              return count;
+            });
+            if (newCount == null) {
               stopBackgroundNonStandardIndicatorsPing();
             }
           }
@@ -753,7 +769,7 @@ public class CoreProgressManager extends ProgressManager implements Disposable {
   public <T, E extends Throwable> T computePrioritized(@NotNull ThrowableComputable<T, E> computable) throws E {
     Thread thread = Thread.currentThread();
 
-    if (!Registry.is("ide.prioritize.threads") || isPrioritizedThread(thread)) {
+    if (!SystemProperties.getBooleanProperty("ide.prioritize.threads", true) || isPrioritizedThread(thread)) {
       return computable.compute();
     }
 

@@ -20,7 +20,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.AtomicNotNullLazyValue;
+import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
@@ -28,7 +28,8 @@ import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.pom.Navigatable;
-import com.intellij.profile.codeInspection.ui.SingleInspectionProfilePanel;
+import com.intellij.profile.codeInspection.ui.DescriptionEditorPane;
+import com.intellij.profile.codeInspection.ui.DescriptionEditorPaneKt;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PropertyUtilBase;
 import com.intellij.refactoring.safeDelete.SafeDeleteHandler;
@@ -37,17 +38,13 @@ import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.VisibilityUtil;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.TObjectIntHashMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import org.jdom.Element;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
@@ -64,40 +61,37 @@ import java.net.URL;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class UnusedDeclarationPresentation extends DefaultInspectionToolPresentation {
   private final Map<RefEntity, UnusedDeclarationHint> myFixedElements =
-    ConcurrentCollectionFactory.createMap(ContainerUtil.identityStrategy());
-  private final Set<RefEntity> myExcludedElements = ConcurrentCollectionFactory.createConcurrentSet(ContainerUtil.identityStrategy());
+    ConcurrentCollectionFactory.createConcurrentIdentityMap();
+  private final Set<RefEntity> myExcludedElements = ConcurrentCollectionFactory.createConcurrentIdentitySet();
 
   private final WeakUnreferencedFilter myFilter;
   private DeadHTMLComposer myComposer;
-  private final AtomicNotNullLazyValue<InspectionToolWrapper> myDummyWrapper = new AtomicNotNullLazyValue<InspectionToolWrapper>() {
-    @NotNull
-    @Override
-    protected InspectionToolWrapper compute() {
-      InspectionToolWrapper toolWrapper = new GlobalInspectionToolWrapper(new DummyEntryPointsEP());
-      toolWrapper.initialize(myContext);
-      return toolWrapper;
-    }
-  };
+  private final NotNullLazyValue<InspectionToolWrapper> myDummyWrapper = NotNullLazyValue.atomicLazy(() -> {
+    InspectionToolWrapper toolWrapper = new GlobalInspectionToolWrapper(new DummyEntryPointsEP());
+    toolWrapper.initialize(myContext);
+    return toolWrapper;
+  });
 
   @NonNls private static final String DELETE = "delete";
   @NonNls private static final String COMMENT = "comment";
 
   private enum UnusedDeclarationHint {
-    COMMENT("Commented out"),
-    DELETE("Deleted");
+    COMMENT("inspection.dead.code.commented.hint"),
+    DELETE("inspection.dead.code.deleted.hint");
 
-    private final String myDescription;
+    private final Supplier<@Nls String> myDescription;
 
-    UnusedDeclarationHint(String description) {
-      myDescription = description;
+    UnusedDeclarationHint(String descriptionKey) {
+      myDescription = AnalysisBundle.messagePointer(descriptionKey);
     }
 
-    public String getDescription() {
-      return myDescription;
+    public @Nls String getDescription() {
+      return myDescription.get();
     }
   }
 
@@ -587,7 +581,7 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
   @Override
   public JComponent getCustomPreviewPanel(@NotNull RefEntity entity) {
     final Project project = entity.getRefManager().getProject();
-    JEditorPane htmlView = new JEditorPane() {
+    DescriptionEditorPane htmlView = new DescriptionEditorPane() {
       @Override
       public String getToolTipText(MouseEvent evt) {
         int pos = viewToModel(evt.getPoint());
@@ -607,10 +601,6 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
         return null;
       }
     };
-    htmlView.setContentType(UIUtil.HTML_MIME);
-    htmlView.setEditable(false);
-    htmlView.setOpaque(false);
-    htmlView.setBackground(UIUtil.getLabelBackground());
     htmlView.addHyperlinkListener(new HyperlinkAdapter() {
       @Override
       protected void hyperlinkActivated(HyperlinkEvent e) {
@@ -638,10 +628,11 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
     css.addRule("div.problem-description {margin-left: " + JBUIScale.scale(9) + "px;}");
     css.addRule("ul {margin-left:" + JBUIScale.scale(10) + "px;text-indent: 0}");
     css.addRule("code {font-family:" + StartupUiUtil.getLabelFont().getFamily() + "}");
+    @Nls
     final StringBuilder buf = new StringBuilder();
     getComposer().compose(buf, entity, false);
     final String text = buf.toString();
-    SingleInspectionProfilePanel.readHTML(htmlView, SingleInspectionProfilePanel.toHTML(htmlView, text, false));
+    DescriptionEditorPaneKt.readHTML(htmlView, DescriptionEditorPaneKt.toHTML(htmlView, text, false));
     return ScrollPaneFactory.createScrollPane(htmlView, true);
   }
 
@@ -674,14 +665,12 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
     }
 
     @Override
-    protected void visitProblemSeverities(@NotNull TObjectIntHashMap<HighlightDisplayLevel> counter) {
+    protected void visitProblemSeverities(@NotNull Object2IntOpenHashMap<HighlightDisplayLevel> counter) {
       if (!isExcluded() && isLeaf() && !getPresentation().isProblemResolved(getElement()) && !getPresentation()
         .isSuppressed(getElement())) {
         HighlightSeverity severity = InspectionToolResultExporter.getSeverity(getElement(), null, getPresentation());
         HighlightDisplayLevel level = HighlightDisplayLevel.find(severity);
-        if (!counter.adjustValue(level, 1)) {
-          counter.put(level, 1);
-        }
+        counter.addTo(level, 1);
         return;
       }
       super.visitProblemSeverities(counter);

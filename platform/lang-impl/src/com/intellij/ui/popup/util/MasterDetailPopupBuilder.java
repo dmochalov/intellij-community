@@ -3,9 +3,11 @@ package com.intellij.ui.popup.util;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.IdeBundle;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -245,7 +247,7 @@ public final class MasterDetailPopupBuilder implements MasterController {
       };
 
       if (SystemInfoRt.isMac && !StartupUiUtil.isUnderDarcula()) {
-        JButton done = new JButton("Done");
+        JButton done = new JButton(LangBundle.message("button.done"));
         done.setOpaque(false);
         done.setMnemonic('o');
         done.addActionListener(actionListener);
@@ -258,7 +260,8 @@ public final class MasterDetailPopupBuilder implements MasterController {
         });
       }
       else {
-        IconButton close = new IconButton("Close", AllIcons.Actions.Close, AllIcons.Actions.CloseHovered);
+        IconButton close = new IconButton(LangBundle.message("button.close"),
+                                          AllIcons.Actions.Close, AllIcons.Actions.CloseHovered);
         builder.setCommandButton(new InplaceButton(close, actionListener));
       }
     }
@@ -326,7 +329,7 @@ public final class MasterDetailPopupBuilder implements MasterController {
 
 
   public interface Delegate {
-    @Nullable
+    @Nullable @NlsContexts.PopupTitle
     String getTitle();
 
     void handleMnemonic(KeyEvent e, Project project, JBPopup popup);

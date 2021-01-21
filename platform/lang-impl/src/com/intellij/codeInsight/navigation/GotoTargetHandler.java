@@ -23,6 +23,8 @@ import com.intellij.openapi.ui.popup.IPopupChooserBuilder;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.PopupChooserBuilder;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
@@ -132,7 +134,7 @@ public abstract class GotoTargetHandler implements CodeInsightActionHandler {
     builder.setRenderer(new DefaultListCellRenderer() {
       @Override
       public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-        if (value == null) return super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+        if (value == null) return super.getListCellRendererComponent(list, null, index, isSelected, cellHasFocus);
         if (value instanceof AdditionalAction) {
           return myActionElementRenderer.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
         }
@@ -207,7 +209,7 @@ public abstract class GotoTargetHandler implements CodeInsightActionHandler {
 
   @NotNull
   protected Comparator<PsiElement> createComparator(@NotNull GotoData gotoData) {
-    return new Comparator<PsiElement>() {
+    return new Comparator<>() {
       @Override
       public int compare(PsiElement o1, PsiElement o2) {
         return getComparingObject(o1).compareTo(getComparingObject(o2));
@@ -250,32 +252,31 @@ public abstract class GotoTargetHandler implements CodeInsightActionHandler {
    */
   @Deprecated
   @NotNull
-  protected String getChooserTitle(PsiElement sourceElement, String name, int length) {
+  protected @NlsContexts.PopupTitle String getChooserTitle(PsiElement sourceElement, String name, int length) {
     LOG.warn("Please override getChooserTitle(PsiElement, String, int, boolean) instead");
     return "";
   }
 
   @NotNull
-  protected String getChooserTitle(@NotNull PsiElement sourceElement, @Nullable String name, int length, boolean finished) {
+  protected @NlsContexts.PopupTitle String getChooserTitle(@NotNull PsiElement sourceElement, @Nullable String name, int length, boolean finished) {
     return getChooserTitle(sourceElement, name, length);
   }
 
   @NotNull
-  protected String getFindUsagesTitle(@NotNull PsiElement sourceElement, String name, int length) {
+  protected @NlsContexts.TabTitle String getFindUsagesTitle(@NotNull PsiElement sourceElement, String name, int length) {
     return getChooserTitle(sourceElement, name, length, true);
   }
 
   @NotNull
-  protected abstract String getNotFoundMessage(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file);
+  protected abstract @NlsContexts.HintText String getNotFoundMessage(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file);
 
   @Nullable
-  protected String getAdText(PsiElement source, int length) {
+  protected @NlsContexts.PopupAdvertisement String getAdText(PsiElement source, int length) {
     return null;
   }
 
   public interface AdditionalAction {
-    @NotNull
-    String getText();
+    @NlsActions.ActionText @NotNull String getText();
 
     Icon getIcon();
 

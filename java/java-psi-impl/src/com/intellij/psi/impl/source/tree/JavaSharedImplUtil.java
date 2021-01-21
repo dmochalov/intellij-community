@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.GeneratedMarkerVisitor;
 import com.intellij.psi.impl.PsiImplUtil;
+import com.intellij.psi.impl.cache.TypeInfo;
 import com.intellij.psi.impl.source.codeStyle.CodeEditUtil;
 import com.intellij.psi.impl.source.tree.java.AnnotationElement;
 import com.intellij.psi.tree.TokenSet;
@@ -17,11 +18,13 @@ import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
+import com.intellij.util.containers.MultiMap;
 import com.intellij.util.containers.Stack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class JavaSharedImplUtil {
   private static final Logger LOG = Logger.getInstance(JavaSharedImplUtil.class);
@@ -65,7 +68,7 @@ public final class JavaSharedImplUtil {
       }
 
       if (PsiUtil.isJavaToken(child, JavaTokenType.LBRACKET)) {
-        annotations.add(current == null ? PsiAnnotation.EMPTY_ARRAY : ContainerUtil.toArray(current, PsiAnnotation.ARRAY_FACTORY));
+        annotations.add(0, current == null ? PsiAnnotation.EMPTY_ARRAY : ContainerUtil.toArray(current, PsiAnnotation.ARRAY_FACTORY));
         current = null;
         if (stop) return annotations;
       }
@@ -76,6 +79,15 @@ public final class JavaSharedImplUtil {
 
     // annotation is misplaced (either located before the anchor or has no following brackets)
     return !found || stop ? null : annotations;
+  }
+
+  @NotNull
+  public static PsiType createTypeFromStub(@NotNull PsiModifierListOwner owner, @NotNull TypeInfo typeInfo) {
+    String typeText = TypeInfo.createTypeText(typeInfo);
+    assert typeText != null : owner;
+    PsiType type = JavaPsiFacade.getInstance(owner.getProject()).getParserFacade().createTypeFromText(typeText, owner);
+    type = applyAnnotations(type, owner.getModifierList());
+    return typeInfo.getTypeAnnotations().applyTo(type, owner);
   }
 
   @NotNull
@@ -133,12 +145,11 @@ public final class JavaSharedImplUtil {
     ASTNode lastBracket = null;
     int arrayCount = 0;
     ASTNode element = name;
-    Map<Integer, List<AnnotationElement>> annotationElementsToMove = new HashMap<>();
+    MultiMap<Integer, AnnotationElement> annotationElementsToMove = new MultiMap<>();
     while (element != null) {
       element = PsiImplUtil.skipWhitespaceAndComments(element.getTreeNext());
       if (element instanceof AnnotationElement) {
-        List<AnnotationElement> dimensionAnnotationElements = annotationElementsToMove.computeIfAbsent(arrayCount, k -> new SmartList<>());
-        dimensionAnnotationElements.add((AnnotationElement)element);
+        annotationElementsToMove.putValue(arrayCount, (AnnotationElement)element);
         continue;
       }
       if (element == null || element.getElementType() != JavaTokenType.LBRACKET) break;
@@ -161,17 +172,18 @@ public final class JavaSharedImplUtil {
       }
 
       CompositeElement newType = (CompositeElement)type.clone();
-      for (int i = 0; i < arrayCount; i++) {
+      if (!(typeElement.getType() instanceof PsiArrayType)) {
         CompositeElement newType1 = ASTFactory.composite(JavaElementType.TYPE);
         newType1.rawAddChildren(newType);
-
-        annotationElementsToMove.getOrDefault(i, Collections.emptyList()).forEach(newType1::rawAddChildren);
-
-        newType1.rawAddChildren(ASTFactory.leaf(JavaTokenType.LBRACKET, "["));
-        newType1.rawAddChildren(ASTFactory.leaf(JavaTokenType.RBRACKET, "]"));
         newType = newType1;
-        newType.acceptTree(new GeneratedMarkerVisitor());
       }
+      for (int i = 0; i < arrayCount; i++) {
+        annotationElementsToMove.get(i).forEach(newType::rawAddChildren);
+
+        newType.rawAddChildren(ASTFactory.leaf(JavaTokenType.LBRACKET, "["));
+        newType.rawAddChildren(ASTFactory.leaf(JavaTokenType.RBRACKET, "]"));
+      }
+      newType.acceptTree(new GeneratedMarkerVisitor());
       newType.putUserData(CharTable.CHAR_TABLE_KEY, SharedImplUtil.findCharTableByTree(type));
       CodeEditUtil.replaceChild(variableElement, type, newType);
     }
@@ -215,7 +227,9 @@ public final class JavaSharedImplUtil {
       PsiAnnotation[] result = myCache;
       if (result == null) {
         List<PsiAnnotation> filtered = JBIterable.of(myCandidates)
-          .filter(annotation -> AnnotationTargetUtil.isTypeAnnotation(annotation))
+          .filter(annotation ->
+                    !annotation.isValid() || // avoid exceptions in the next line, enable isValid checks at more specific call sites
+                    AnnotationTargetUtil.isTypeAnnotation(annotation))
           .append(myOriginalProvider.getAnnotations())
           .toList();
         myCache = result = filtered.isEmpty() ? PsiAnnotation.EMPTY_ARRAY : filtered.toArray(PsiAnnotation.EMPTY_ARRAY);

@@ -262,11 +262,11 @@ public final class ProjectTaskManagerImpl extends ProjectTaskManager {
     myListeners.add(listener);
   }
 
-  private static void sendSuccessEmptyResult(@NotNull ProjectTaskContext context, @NotNull Consumer<Result> resultConsumer) {
+  private static void sendSuccessEmptyResult(@NotNull ProjectTaskContext context, @NotNull Consumer<? super Result> resultConsumer) {
     resultConsumer.accept(new MyResult(context, Collections.emptyMap(), false, false));
   }
 
-  private static void sendAbortedEmptyResult(@NotNull ProjectTaskContext context, @NotNull Consumer<Result> resultConsumer) {
+  private static void sendAbortedEmptyResult(@NotNull ProjectTaskContext context, @NotNull Consumer<? super Result> resultConsumer) {
     resultConsumer.accept(new MyResult(context, Collections.emptyMap(), true, false));
   }
 
@@ -508,17 +508,6 @@ public final class ProjectTaskManagerImpl extends ProjectTaskManager {
   }
 
   /**
-   * @deprecated use {@link #rebuildAllModules()}
-   */
-  @Override
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  @Deprecated
-  public void rebuildAllModules(@Nullable ProjectTaskNotification callback) {
-    assertUnsupportedOperation(callback);
-    notifyIfNeeded(rebuildAllModules(), callback);
-  }
-
-  /**
    * @deprecated use {@link #build(Module[])}
    */
   @Override
@@ -560,17 +549,6 @@ public final class ProjectTaskManagerImpl extends ProjectTaskManager {
   public void build(ProjectModelBuildableElement @NotNull [] buildableElements, @Nullable ProjectTaskNotification callback) {
     assertUnsupportedOperation(callback);
     notifyIfNeeded(build(buildableElements), callback);
-  }
-
-  /**
-   * @deprecated use {@link #rebuild(ProjectModelBuildableElement[])}
-   */
-  @Override
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  @Deprecated
-  public void rebuild(ProjectModelBuildableElement @NotNull [] buildableElements, @Nullable ProjectTaskNotification callback) {
-    assertUnsupportedOperation(callback);
-    notifyIfNeeded(rebuild(buildableElements), callback);
   }
 
   private static void notifyIfNeeded(@NotNull Promise<Result> promise, @Nullable ProjectTaskNotification callback) {

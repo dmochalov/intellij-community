@@ -125,6 +125,8 @@
     <membersContributor implementation="org.jetbrains.plugins.groovy.builder.StreamingJsonBuilderDelegateContributor"/>
     <membersContributor implementation="org.jetbrains.plugins.groovy.dsl.GdslMemberContributor" order="last"/>
 
+    <membersContributor implementation="org.jetbrains.plugins.groovy.lang.resolve.ast.contributor.SyntheticKeywordConstructorContributor"/>
+
     <closureMissingMethodContributor implementation="org.jetbrains.plugins.groovy.lang.resolve.PluginXmlClosureMemberContributor"/>
 
     <astTransformationSupport id="groovyObjectTransformation" order="first"
@@ -144,6 +146,8 @@
     <astTransformationSupport implementation="org.jetbrains.plugins.groovy.lang.resolve.ast.LoggingContributor"/>
     <astTransformationSupport implementation="org.jetbrains.plugins.groovy.transformations.impl.CategoryTransformationSupport"/>
     <astTransformationSupport implementation="org.jetbrains.plugins.groovy.transformations.impl.BaseScriptTransformationSupport"/>
+    <astTransformationSupport id="autoFinalSupport" order="before defaultSupport"
+                              implementation="org.jetbrains.plugins.groovy.transformations.impl.AutoFinalTransformationSupport"/>
     <astTransformationSupport id="defaultSupport"
                               implementation="org.jetbrains.plugins.groovy.transformations.impl.DefaultTransformationSupport"/>
     <renameHelper implementation="org.jetbrains.plugins.groovy.transformations.impl.DefaultRenameHelper"/>
@@ -291,6 +295,7 @@
     <customAnnotationChecker implementation="org.jetbrains.plugins.groovy.annotator.checkers.BuilderAnnotationChecker"/>
     <customAnnotationChecker implementation="org.jetbrains.plugins.groovy.annotator.checkers.BaseScriptAnnotationChecker"/>
     <customAnnotationChecker implementation="org.jetbrains.plugins.groovy.annotator.checkers.NamedParamAnnotationChecker"/>
+    <customAnnotationChecker implementation="org.jetbrains.plugins.groovy.annotator.checkers.GeneratedConstructorAnnotationChecker"/>
     <customAnnotationChecker implementation="org.jetbrains.plugins.groovy.annotator.checkers.ImmutableOptionsAnnotationChecker"/>
 
     <convertToJava.customMethodInvocator
@@ -387,6 +392,7 @@
                                             implementationClass="org.jetbrains.plugins.groovy.annotator.intentions.GroovyCreateFieldFromUsageHelper"/>
     <codeInsight.typeInfo language="Groovy" implementationClass="org.jetbrains.plugins.groovy.codeInsight.hint.GroovyExpressionTypeProvider"/>
     <codeInsight.inlayProvider language="Groovy" implementationClass="org.jetbrains.plugins.groovy.codeInsight.hint.GroovyParameterTypeHintsInlayProvider"/>
+    <codeInsight.inlayProvider language="Groovy" implementationClass="org.jetbrains.plugins.groovy.codeInsight.hint.GroovyImplicitNullArgumentHintProvider"/>
     <codeInsight.parameterNameHints
         language="Groovy" implementationClass="org.jetbrains.plugins.groovy.codeInsight.hint.GroovyInlayParameterHintsProvider"
     />
@@ -609,7 +615,7 @@
 
     <quoteHandler fileType="Groovy" className="org.jetbrains.plugins.groovy.editor.GroovyQuoteHandler"/>
 
-    <compileServer.plugin classpath="groovy-jps-plugin.jar;groovy-rt-constants.jar"/>
+    <compileServer.plugin classpath="groovy-jps.jar;groovy-constants-rt.jar"/>
     <compiler.buildTargetScopeProvider implementation="org.jetbrains.plugins.groovy.compiler.GroovyTargetScopeProvider"/>
 
     <indexPatternBuilder implementation="org.jetbrains.plugins.groovy.util.GroovyIndexPatternBuilder"/>
@@ -792,7 +798,7 @@
                      implementationClass="org.jetbrains.plugins.groovy.codeInspection.exception.GroovyContinueOrBreakFromFinallyBlockInspection"/>
     <localInspection language="Groovy" groupPath="Groovy"
                      key="inspection.display.name.method.may.be.static"
-                     groupName="Declaration" enabledByDefault="true"
+                     groupKey="inspection.other" enabledByDefault="true"
                      implementationClass="org.jetbrains.plugins.groovy.codeInspection.declaration.GrMethodMayBeStaticInspection"/>
     <localInspection language="Groovy" groupPath="Groovy"
                      key="inspection.display.name.return.from.finally.block" groupKey="inspection.error.handling"
@@ -1050,7 +1056,14 @@
                      key="inspection.display.name.clashing.trait.methods"
                      groupKey="inspection.confusing" enabledByDefault="true"
                      implementationClass="org.jetbrains.plugins.groovy.codeInspection.confusing.ClashingTraitMethodsInspection"/>
-
+    <localInspection language="Groovy" groupPath="Groovy"
+                     key="inspection.display.name.annotation.references.unknown.identifier"
+                     groupKey="inspection.bugs" enabledByDefault="true"
+                     implementationClass="org.jetbrains.plugins.groovy.codeInspection.bugs.GrAnnotationReferencingUnknownIdentifiers"/>
+    <localInspection language="Groovy" groupPath="Groovy"
+                     key="inspection.display.name.unresolved.labels.in.named.variant"
+                     groupKey="inspection.bugs" enabledByDefault="true"
+                     implementationClass="org.jetbrains.plugins.groovy.codeInspection.bugs.GrNamedVariantLabelsInspection"/>
     <localInspection language="Groovy" groupPath="Groovy"
                      key="inspection.display.name.overly.complex.boolean.expression"
                      groupKey="inspection.confusing"
@@ -1062,6 +1075,16 @@
                      groupKey="inspection.confusing"
                      enabledByDefault="true"
                      implementationClass="org.jetbrains.plugins.groovy.codeInspection.confusing.GroovyGStringKeyInspection"/>
+    <localInspection language="Groovy" groupPath="Groovy" key="inspection.display.name.implicit.null.argument"
+                     level="WEAK WARNING"
+                     groupKey="inspection.confusing"
+                     enabledByDefault="true"
+                     implementationClass="org.jetbrains.plugins.groovy.codeInspection.confusing.GroovyImplicitNullArgumentCallInspection"/>
+    <localInspection language="Groovy" groupPath="Groovy" key="inspection.display.name.string.style.violation"
+                     level="WEAK WARNING"
+                     groupKey="inspection.style"
+                     enabledByDefault="false"
+                     implementationClass="org.jetbrains.plugins.groovy.codeInspection.style.string.GrStringStyleViolationInspection"/>
     <localInspection language="Groovy" groupPath="Groovy" key="inspection.display.name.duplicate.switch.branch"
                      groupKey="inspection.validity"
                      enabledByDefault="true"
@@ -1222,7 +1245,9 @@
     <compilableFileTypesProvider implementation="org.jetbrains.plugins.groovy.compiler.GroovyCompilableFileTypesProvider"/>
 
     <pathMacroContributor implementation="org.jetbrains.plugins.groovy.mvc.MvcPathMacros"/>
-    <notificationAllowlist groupIds="Groovy DSL errors;Grape;Mvc notifications;"/>
+    <notificationGroup id="Mvc notifications" displayType="TOOL_WINDOW" toolWindowId="Console"/>
+    <notificationGroup id="Groovy DSL errors" displayType="BALLOON"/>
+    <notificationGroup id="Grape" displayType="BALLOON"/>
   </extensions>
 
   <extensions defaultExtensionNs="com.intellij.debugger">

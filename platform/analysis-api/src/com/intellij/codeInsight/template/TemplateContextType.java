@@ -1,5 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
 package com.intellij.codeInsight.template;
 
 import com.intellij.openapi.editor.Document;
@@ -20,12 +19,12 @@ import static com.intellij.openapi.util.NlsContexts.Label;
  * @author yole
  */
 public abstract class TemplateContextType {
-  public static final ExtensionPointName<TemplateContextType> EP_NAME = ExtensionPointName.create("com.intellij.liveTemplateContext");
+  public static final ExtensionPointName<TemplateContextType> EP_NAME = new ExtensionPointName<>("com.intellij.liveTemplateContext");
 
   @NotNull
   private final String myContextId;
   @NotNull
-  private final String myPresentableName;
+  private final @Label String myPresentableName;
   private final VolatileNullableLazyValue<TemplateContextType> myBaseContextType;
 
   protected TemplateContextType(@NotNull @NonNls String id, @Label @NotNull String presentableName) {
@@ -45,7 +44,7 @@ public abstract class TemplateContextType {
    * @return context presentable name for templates editor
    */
   @NotNull
-  public String getPresentableName() {
+  public @Label String getPresentableName() {
     return myPresentableName;
   }
 
@@ -53,7 +52,7 @@ public abstract class TemplateContextType {
    * @return unique ID to be used on configuration files to flag if this context is enabled for particular template
    */
   @NotNull
-  public String getContextId() {
+  public @NonNls String getContextId() {
     return myContextId;
   }
 

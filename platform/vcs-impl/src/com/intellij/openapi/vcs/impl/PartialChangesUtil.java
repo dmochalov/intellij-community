@@ -53,7 +53,10 @@ public final class PartialChangesUtil {
                                                    @NotNull Collection<? extends Change> changes,
                                                    boolean executeOnEDT,
                                                    @NotNull PairFunction<? super List<ChangeListChange>, ? super PartialLocalLineStatusTracker, Boolean> partialProcessor) {
-    if (!ContainerUtil.exists(changes, it -> it instanceof ChangeListChange)) return new ArrayList<>(changes);
+    if (!LineStatusTrackerManager.getInstance(project).arePartialChangelistsEnabled() ||
+        !ContainerUtil.exists(changes, it -> it instanceof ChangeListChange)) {
+      return new ArrayList<>(changes);
+    }
 
     List<Change> otherChanges = new ArrayList<>();
 
@@ -118,15 +121,17 @@ public final class PartialChangesUtil {
   public static <T> T computeUnderChangeList(@NotNull Project project,
                                              @Nullable LocalChangeList targetChangeList,
                                              @NotNull Computable<T> task) {
-    ChangeListManagerImpl changeListManager = ChangeListManagerImpl.getInstanceImpl(project);
+    ChangeListManagerEx changeListManager = ChangeListManagerEx.getInstanceEx(project);
     LocalChangeList oldDefaultList = changeListManager.getDefaultChangeList();
 
-    if (targetChangeList == null || targetChangeList.equals(oldDefaultList)) {
+    if (targetChangeList == null ||
+        targetChangeList.equals(oldDefaultList) ||
+        !changeListManager.areChangeListsEnabled()) {
       return task.compute();
     }
 
     switchChangeList(changeListManager, targetChangeList, oldDefaultList);
-    ChangelistConflictTracker clmConflictTracker = changeListManager.getConflictTracker();
+    ChangelistConflictTracker clmConflictTracker = ChangelistConflictTracker.getInstance(project);
     try {
       clmConflictTracker.setIgnoreModifications(true);
       return task.compute();
@@ -140,15 +145,16 @@ public final class PartialChangesUtil {
   public static <T> T computeUnderChangeListSync(@NotNull Project project,
                                                  @Nullable LocalChangeList targetChangeList,
                                                  @NotNull Computable<T> task) {
-    ChangeListManagerImpl changeListManager = ChangeListManagerImpl.getInstanceImpl(project);
+    ChangeListManagerEx changeListManager = ChangeListManagerEx.getInstanceEx(project);
     LocalChangeList oldDefaultList = changeListManager.getDefaultChangeList();
 
-    if (targetChangeList == null) {
+    if (targetChangeList == null ||
+        !changeListManager.areChangeListsEnabled()) {
       return task.compute();
     }
 
     switchChangeList(changeListManager, targetChangeList, oldDefaultList);
-    ChangelistConflictTracker clmConflictTracker = changeListManager.getConflictTracker();
+    ChangelistConflictTracker clmConflictTracker = ChangelistConflictTracker.getInstance(project);
     try {
       clmConflictTracker.setIgnoreModifications(true);
       return task.compute();
@@ -160,7 +166,7 @@ public final class PartialChangesUtil {
         LOG.warn("Can't wait till changes are applied while holding read lock", new Throwable());
       }
       else {
-        ((ChangeListManagerEx)ChangeListManager.getInstance(project)).waitForUpdate(null);
+        ChangeListManagerEx.getInstanceEx(project).waitForUpdate();
       }
       restoreChangeList(changeListManager, targetChangeList, oldDefaultList);
     }

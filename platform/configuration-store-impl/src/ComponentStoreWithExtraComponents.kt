@@ -1,6 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.configurationStore
 
+import com.intellij.openapi.application.AppUIExecutor
+import com.intellij.openapi.application.impl.coroutineDispatchingContext
 import com.intellij.openapi.components.RoamingType
 import com.intellij.openapi.components.ServiceDescriptor
 import com.intellij.openapi.diagnostic.runAndLogException
@@ -11,9 +13,9 @@ import com.intellij.serviceContainer.ComponentManagerImpl
 import com.intellij.util.SmartList
 import com.intellij.util.concurrency.SynchronizedClearableLazy
 import com.intellij.util.containers.ContainerUtil
+import com.intellij.util.lang.CompoundRuntimeException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function.Consumer
 
 // A way to remove obsolete component data.
@@ -35,30 +37,13 @@ abstract class ComponentStoreWithExtraComponents : ComponentStoreImpl() {
     result
   }
 
-  // todo do we really need this?
-  private val isSaveSettingsInProgress = AtomicBoolean()
-
-  final override suspend fun save(forceSavingAllSettings: Boolean) {
-    if (!isSaveSettingsInProgress.compareAndSet(false, true)) {
-      LOG.warn("save call is ignored because another save in progress", Throwable())
-      return
-    }
-
-    try {
-      super.save(forceSavingAllSettings)
-    }
-    finally {
-      isSaveSettingsInProgress.set(false)
-    }
-  }
-
   final override fun initComponent(component: Any, serviceDescriptor: ServiceDescriptor?, pluginId: PluginId?) {
-    @Suppress("DEPRECATION")
-    if (component is com.intellij.openapi.components.SettingsSavingComponent) {
+    if (component is @Suppress("DEPRECATION") com.intellij.openapi.components.SettingsSavingComponent) {
       settingsSavingComponents.add(component)
     }
     else if (component is SettingsSavingComponent) {
-      asyncSettingsSavingComponents.drop()
+      @Suppress("UNUSED_VARIABLE") //this is needed to work around bug in Kotlin compiler (KT-42826)
+      val result = asyncSettingsSavingComponents.drop()
     }
 
     super.initComponent(component, serviceDescriptor, pluginId)
@@ -75,7 +60,7 @@ abstract class ComponentStoreWithExtraComponents : ComponentStoreImpl() {
                                                                        saveSessionProducerManager: SaveSessionProducerManager) {
     coroutineScope {
       // expects EDT
-      launch(storeEdtCoroutineDispatcher) {
+      launch(AppUIExecutor.onUiThread().expireWith(serviceContainer).coroutineDispatchingContext()) {
         @Suppress("Duplicates")
         val errors = SmartList<Throwable>()
         for (settingsSavingComponent in settingsSavingComponents) {
@@ -97,8 +82,8 @@ abstract class ComponentStoreWithExtraComponents : ComponentStoreImpl() {
       }
     }
 
-    // SchemeManager (old settingsSavingComponent) must be saved before saving components (component state uses scheme manager in an ipr project, so, we must save it before)
-    // so, call sequentially it, not inside coroutineScope
+    // SchemeManager (asyncSettingsSavingComponent) must be saved before saving components (component state uses scheme manager in an ipr project, so, we must save it before)
+    // so, call it sequentially, not inside coroutineScope
     commitComponentsOnEdt(result, forceSavingAllSettings, saveSessionProducerManager)
   }
 
@@ -131,6 +116,10 @@ private inline fun <T> runAndCollectException(errors: MutableList<Throwable>, ru
   }
   catch (e: ProcessCanceledException) {
     throw e
+  }
+  catch (e: CompoundRuntimeException) {
+    errors.addAll(e.exceptions)
+    return null
   }
   catch (e: Throwable) {
     errors.add(e)

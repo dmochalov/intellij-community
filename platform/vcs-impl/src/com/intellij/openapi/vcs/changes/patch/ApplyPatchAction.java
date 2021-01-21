@@ -34,8 +34,8 @@ import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.vcsUtil.VcsUtil;
-import org.jetbrains.annotations.CalledInAwt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -45,6 +45,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import static com.intellij.openapi.vcs.VcsNotificationIdsHolder.PATCH_APPLY_NOT_PATCH_FILE;
+import static com.intellij.openapi.vcs.VcsNotificationIdsHolder.PATCH_APPLY_CANNOT_FIND_PATCH_FILE;
 import static com.intellij.openapi.vcs.changes.patch.PatchFileType.isPatchFile;
 
 public final class ApplyPatchAction extends DumbAwareAction {
@@ -101,16 +103,18 @@ public final class ApplyPatchAction extends DumbAwareAction {
     dialog.show();
   }
 
-  @CalledInAwt
+  @RequiresEdt
   public static Boolean showAndGetApplyPatch(@NotNull Project project, @NotNull File file) {
     VirtualFile vFile = VfsUtil.findFileByIoFile(file, true);
     String patchPath = file.getPath();
     if (vFile == null) {
-      VcsNotifier.getInstance(project).notifyWeakError(VcsBundle.message("patch.apply.can.t.find.patch.file.warning", patchPath));
+      VcsNotifier.getInstance(project).notifyWeakError(PATCH_APPLY_CANNOT_FIND_PATCH_FILE,
+                                                       VcsBundle.message("patch.apply.can.t.find.patch.file.warning", patchPath));
       return false;
     }
     if (!isPatchFile(vFile)) {
-      VcsNotifier.getInstance(project).notifyWeakError(VcsBundle.message("patch.apply.not.patch.type.file.error", patchPath));
+      VcsNotifier.getInstance(project).notifyWeakError(PATCH_APPLY_NOT_PATCH_FILE,
+                                                       VcsBundle.message("patch.apply.not.patch.type.file.error", patchPath));
       return false;
     }
     final ApplyPatchDifferentiatedDialog dialog = new ApplyPatchDifferentiatedDialog(project, new ApplyPatchDefaultExecutor(project),

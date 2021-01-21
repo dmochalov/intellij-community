@@ -5,6 +5,7 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.CommonShortcuts;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.table.BaseTableView;
 import com.intellij.ui.table.JBTable;
@@ -170,7 +171,7 @@ public final class DualView extends JPanel {
     myCurrentView = view;
     if (myCurrentView != null) {
       myCurrentView.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
-      myCurrentView.setStriped(true);
+      myCurrentView.setShowGrid(false);
       final int row = myCurrentView.getSelectedRow();
       myCurrentView.scrollRectToVisible(myCurrentView.getCellRect(row, 0, true));
     }
@@ -468,7 +469,7 @@ public final class DualView extends JPanel {
     myZipByHeight = zipByHeight;
   }
 
-  public void setEmptyText(@NotNull String text) {
+  public void setEmptyText(@NotNull @NlsContexts.StatusText String text) {
     myTreeView.getEmptyText().setText(text);
     myFlatView.getEmptyText().setText(text);
   }

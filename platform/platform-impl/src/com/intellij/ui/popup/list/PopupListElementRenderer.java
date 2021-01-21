@@ -12,20 +12,23 @@ import com.intellij.openapi.ui.popup.ListPopupStepEx;
 import com.intellij.openapi.ui.popup.MnemonicNavigationFilter;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nullable;
 
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
 
 public class PopupListElementRenderer<E> extends GroupedItemsListRenderer<E> {
   protected final ListPopupImpl myPopup;
   private JLabel myShortcutLabel;
+  private @Nullable JLabel myValueLabel;
 
   public PopupListElementRenderer(final ListPopupImpl aPopup) {
-    super(new ListItemDescriptorAdapter<E>() {
+    super(new ListItemDescriptorAdapter<>() {
       @Override
       public String getTextFor(E value) {
         return aPopup.getListStep().getTextFor(value);
@@ -64,9 +67,24 @@ public class PopupListElementRenderer<E> extends GroupedItemsListRenderer<E> {
 
   @Override
   protected JComponent createItemComponent() {
-    JPanel panel = new JPanel(new BorderLayout());
     createLabel();
-    panel.add(myTextLabel, BorderLayout.CENTER);
+    JPanel panel = new JPanel(new BorderLayout()) {
+      private final AccessibleContext myAccessibleContext = myTextLabel.getAccessibleContext();
+
+      @Override
+      public AccessibleContext getAccessibleContext() {
+        if (myAccessibleContext == null) {
+          return super.getAccessibleContext();
+        }
+        return myAccessibleContext;
+      }
+    };
+    panel.add(myTextLabel, BorderLayout.WEST);
+    myValueLabel = new JLabel();
+    myValueLabel.setEnabled(false);
+    myValueLabel.setBorder(JBUI.Borders.empty(0, JBUIScale.scale(8), 1, 0));
+    myValueLabel.setForeground(UIManager.getColor("MenuItem.acceleratorForeground"));
+    panel.add(myValueLabel, BorderLayout.CENTER);
     myShortcutLabel = new JLabel();
     myShortcutLabel.setBorder(JBUI.Borders.emptyRight(3));
     myShortcutLabel.setForeground(UIManager.getColor("MenuItem.acceleratorForeground"));
@@ -134,6 +152,11 @@ public class PopupListElementRenderer<E> extends GroupedItemsListRenderer<E> {
       }
       setSelected(myShortcutLabel, isSelected && isSelectable);
       myShortcutLabel.setForeground(isSelected && isSelectable ? UIManager.getColor("MenuItem.acceleratorSelectionForeground") : UIManager.getColor("MenuItem.acceleratorForeground"));
+    }
+
+    if (myValueLabel != null) {
+      myValueLabel.setText(step instanceof ListPopupStepEx<?> ? ((ListPopupStepEx<E>)step).getValueFor(value) : null);
+      setSelected(myValueLabel, isSelected && isSelectable);
     }
   }
 }

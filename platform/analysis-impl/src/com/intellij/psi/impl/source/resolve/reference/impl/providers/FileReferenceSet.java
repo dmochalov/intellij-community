@@ -4,6 +4,7 @@ package com.intellij.psi.impl.source.resolve.reference.impl.providers;
 
 import com.intellij.analysis.AnalysisBundle;
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.model.ModelBranch;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.module.Module;
@@ -11,6 +12,7 @@ import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Conditions;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -22,6 +24,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.intellij.psi.impl.source.resolve.reference.impl.providers.FileTargetContext.toTargetContexts;
 import static java.util.Collections.*;
@@ -297,7 +300,14 @@ public class FileReferenceSet {
   public Collection<PsiFileSystemItem> getDefaultContexts() {
     Collection<PsiFileSystemItem> result = myDefaultContexts;
     if (result == null) {
-      myDefaultContexts = result = computeDefaultContexts();
+      result = computeDefaultContexts();
+      ModelBranch branch = ModelBranch.getPsiBranch(getElement());
+      if (branch != null) {
+        result = result.stream()
+          .map(item -> ModelBranch.getPsiBranch(item) == branch ? item : branch.obtainPsiCopy(item))
+          .collect(Collectors.toCollection(LinkedHashSet::new));
+      }
+      myDefaultContexts = result;
     }
     return result;
   }
@@ -516,7 +526,7 @@ public class FileReferenceSet {
     return toTargetContexts(getParentDirectoryContext());
   }
 
-  public String getPathString() {
+  public @NlsSafe String getPathString() {
     return myPathString;
   }
 

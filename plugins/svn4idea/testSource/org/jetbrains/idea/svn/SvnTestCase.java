@@ -5,11 +5,12 @@ import com.intellij.execution.process.ProcessOutput;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.TestDialog;
+import com.intellij.openapi.ui.TestDialogManager;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.changes.*;
@@ -46,7 +47,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
-import static com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext;
 import static com.intellij.openapi.application.PluginPathManager.getPluginHomePath;
 import static com.intellij.openapi.util.io.FileUtil.*;
 import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
@@ -235,12 +235,12 @@ public abstract class SvnTestCase extends AbstractJunitVcsTestCase {
 
   protected void undo() {
     runInEdtAndWait(() -> {
-      final TestDialog oldTestDialog = Messages.setTestDialog(TestDialog.OK);
+      final TestDialog oldTestDialog = TestDialogManager.setTestDialog(TestDialog.OK);
       try {
         UndoManager.getInstance(myProject).undo(null);
       }
       finally {
-        Messages.setTestDialog(oldTestDialog);
+        TestDialogManager.setTestDialog(oldTestDialog);
       }
     });
   }
@@ -408,7 +408,7 @@ public abstract class SvnTestCase extends AbstractJunitVcsTestCase {
     final CommonUpdateProjectAction action = new CommonUpdateProjectAction();
     action.getTemplatePresentation().setText("1");
     action
-      .actionPerformed(new AnActionEvent(null, getProjectContext(myProject), "test", new Presentation(), ActionManager.getInstance(), 0));
+      .actionPerformed(new AnActionEvent(null, SimpleDataContext.getProjectContext(myProject), "test", new Presentation(), ActionManager.getInstance(), 0));
 
     waitChangesAndAnnotations();
   }

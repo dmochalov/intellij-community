@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.io;
 
 import com.intellij.openapi.diagnostic.Logger;
@@ -20,11 +20,11 @@ import java.util.Set;
 import static com.intellij.util.io.FileChannelUtil.unInterruptible;
 
 @ApiStatus.Internal
-public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
+public final class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
   private static final Logger LOG = Logger.getInstance(ReadWriteDirectBufferWrapper.class);
   private final boolean myReadOnly;
 
-  protected ReadWriteDirectBufferWrapper(Path file, long offset, long length, boolean readOnly) {
+  ReadWriteDirectBufferWrapper(Path file, long offset, long length, boolean readOnly) {
     super(file, offset, length);
     assert length <= Integer.MAX_VALUE : length;
     myReadOnly = readOnly;
@@ -41,11 +41,20 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
     }
   }
 
+  @Override
+  public void markDirty() throws IOException {
+    if (isReadOnly()) {
+      throw new IOException("Read-only byte buffer can't be modified. File: " + myFile);
+    }
+    super.markDirty();
+  }
+
   static class FileContext implements AutoCloseable {
     private final FileChannel myFile;
     private final boolean myReadOnly;
 
     FileContext(Path path, boolean readOnly) throws IOException {
+      myReadOnly = readOnly;
       myFile = FileUtilRt.doIOOperation(new FileUtilRt.RepeatableIOOperation<FileChannel, IOException>() {
         boolean parentWasCreated;
 
@@ -61,6 +70,9 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
           catch (NoSuchFileException ex) {
             Path parentFile = path.getParent();
             if (!Files.exists(parentFile)) {
+              if (!Files.isWritable(path)) {
+                throw ex;
+              }
               if (!parentWasCreated) {
                 FileUtil.createDirectory(parentFile.toFile());
                 parentWasCreated = true;
@@ -74,7 +86,6 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
           }
         }
       });
-      myReadOnly = readOnly;
     }
 
     @Override

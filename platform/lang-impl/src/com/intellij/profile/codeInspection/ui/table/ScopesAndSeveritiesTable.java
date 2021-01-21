@@ -8,6 +8,7 @@ import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.ScopeToolState;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
+import com.intellij.lang.LangBundle;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.diagnostic.Logger;
@@ -18,7 +19,9 @@ import com.intellij.profile.codeInspection.ui.ScopeOrderComparator;
 import com.intellij.profile.codeInspection.ui.ScopesChooser;
 import com.intellij.profile.codeInspection.ui.inspectionsTree.InspectionConfigTreeNode;
 import com.intellij.psi.search.scope.packageSet.NamedScope;
+import com.intellij.psi.search.scope.packageSet.NamedScopesHolder;
 import com.intellij.ui.awt.RelativePoint;
+import com.intellij.ui.render.RenderingUtil;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
@@ -30,6 +33,7 @@ import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import java.awt.*;
@@ -61,6 +65,30 @@ public class ScopesAndSeveritiesTable extends JBTable {
     scopeEnabledColumn.setMaxWidth(30);
     scopeEnabledColumn.setCellRenderer(new ThreeStateCheckBoxRenderer());
     scopeEnabledColumn.setCellEditor(new ThreeStateCheckBoxRenderer());
+    
+    columnModel.getColumn(SCOPE_NAME_COLUMN).setCellRenderer(new DefaultTableCellRenderer() {
+      @Override
+      public Component getTableCellRendererComponent(JTable table,
+                                                     Object value,
+                                                     boolean isSelected,
+                                                     boolean hasFocus,
+                                                     int row,
+                                                     int column) {
+        Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+        component.setForeground(RenderingUtil.getForeground(table, isSelected));
+        component.setBackground(RenderingUtil.getBackground(table, isSelected));
+        if (value instanceof String) {
+          NamedScope namedScope = NamedScopesHolder.getScope(tableSettings.myProject, (String)value);
+          if (namedScope != null) {
+            setText(namedScope.getPresentableName());
+          }
+          else {
+            setText((String)value);
+          }
+        }
+        return component;
+      }
+    });
 
     final TableColumn severityColumn = columnModel.getColumn(SEVERITY_COLUMN);
     SeverityRenderer renderer = new SeverityRenderer(tableSettings.getInspectionProfile(), tableSettings.getProject(), () -> tableSettings.onSettingsChanged(), this);
@@ -86,7 +114,6 @@ public class ScopesAndSeveritiesTable extends JBTable {
     });
     setRowSelectionInterval(0, 0);
 
-    setStriped(true);
     setShowGrid(false);
 
     ((MyTableModel)getModel()).setTable(this);
@@ -261,7 +288,7 @@ public class ScopesAndSeveritiesTable extends JBTable {
         case SCOPE_ENABLED_COLUMN:
           return isEnabled(rowIndex);
         case SCOPE_NAME_COLUMN:
-          return rowIndex == lastRowIndex() ? "Everywhere else" : getScopeName(rowIndex);
+          return rowIndex == lastRowIndex() ? LangBundle.message("scopes.table.everywhere.else") : getScopeName(rowIndex);
         case SEVERITY_COLUMN:
           return getSeverityState(rowIndex);
         default:
@@ -341,7 +368,8 @@ public class ScopesAndSeveritiesTable extends JBTable {
           .flatMap(Collection::stream)
           .map(state -> state.getScope(myProject))
           .filter(Objects::nonNull)
-          .map(NamedScope::getName)
+          .map(NamedScope::getScopeId)
+          .distinct()
           .sorted(myScopeComparator)
           .toArray(String[]::new);
     }
@@ -419,6 +447,7 @@ public class ScopesAndSeveritiesTable extends JBTable {
           refreshAggregatedScopes();
           for (int i = 0; i < getRowCount(); i++) {
             if (getScopeName(i).equals(scopeName)) {
+              fireTableRowsInserted(i, i);
               myTable.clearSelection();
               myTable.setRowSelectionInterval(i, i);
             }
@@ -432,7 +461,8 @@ public class ScopesAndSeveritiesTable extends JBTable {
       };
       DataContext dataContext = DataManager.getInstance().getDataContext(myTable);
       final ListPopup popup = JBPopupFactory.getInstance()
-        .createActionGroupPopup(ScopesChooser.TITLE, scopesChooser.createPopupActionGroup(myTable), dataContext,
+        .createActionGroupPopup(LangBundle.message("scopes.chooser.popup.title.select.scope.to.change.its.settings"),
+                                scopesChooser.createPopupActionGroup(myTable), dataContext,
                                 JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false);
       final RelativePoint point = new RelativePoint(myTable, new Point(myTable.getWidth() - popup.getContent().getPreferredSize().width, 0));
       popup.show(point);

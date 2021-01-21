@@ -2,6 +2,7 @@
 package com.intellij.notification;
 
 import com.intellij.ide.DataManager;
+import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.diagnostic.Logger;
@@ -13,6 +14,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.reference.SoftReference;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,6 +24,7 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.intellij.openapi.util.NlsContexts.*;
 
@@ -63,11 +66,11 @@ public class Notification {
   private Icon myIcon;
   private final NotificationType myType;
 
-  private String myTitle;
-  private String mySubtitle;
-  private String myContent;
+  private @NotificationTitle String myTitle;
+  private @NotificationSubtitle String mySubtitle;
+  private @NotificationContent String myContent;
   private NotificationListener myListener;
-  private String myDropDownText;
+  private @LinkLabel String myDropDownText;
   private List<AnAction> myActions;
   private CollapseActionsDirection myCollapseActionsDirection = CollapseActionsDirection.KEEP_RIGHTMOST;
   private AnAction myContextHelpAction;
@@ -75,7 +78,7 @@ public class Notification {
   private final AtomicBoolean myExpired = new AtomicBoolean(false);
   private Runnable myWhenExpired;
   private Boolean myImportant;
-  private WeakReference<Balloon> myBalloonRef;
+  private final AtomicReference<WeakReference<Balloon>> myBalloonRef = new AtomicReference<>();
   private final long myTimestamp;
 
   public Notification(@NotNull String groupId, @Nullable Icon icon, @NotNull NotificationType type) {
@@ -98,18 +101,7 @@ public class Notification {
                       @Nullable @NotificationContent String content,
                       @NotNull NotificationType type,
                       @Nullable NotificationListener listener) {
-    myGroupId = groupId;
-    myTitle = StringUtil.notNullize(title);
-    myContent = StringUtil.notNullize(content);
-    myType = type;
-    myListener = listener;
-    myTimestamp = System.currentTimeMillis();
-
-    myIcon = icon;
-    mySubtitle = subtitle;
-
-    this.displayId = null;
-    id = calculateId(this);
+    this(groupId, icon, title, subtitle, content, type, listener, null, null, null, null, null, null);
   }
 
   public Notification(@NotNull @NonNls String groupId,
@@ -140,14 +132,37 @@ public class Notification {
                       @NotNull @NotificationContent String content,
                       @NotNull NotificationType type,
                       @Nullable NotificationListener listener) {
+    this(groupId, null, title, null, content, type, listener, displayId, null, null, null, null, null);
+  }
+
+  Notification(@NotNull @NonNls String groupId,
+               @Nullable Icon icon,
+               @Nullable @NotificationTitle String title,
+               @Nullable @NotificationSubtitle String subtitle,
+               @Nullable @NotificationContent String content,
+               @NotNull NotificationType type,
+               @Nullable NotificationListener listener,
+               @Nullable @NonNls String notificationId,
+               @Nullable @LinkLabel String dropDownText,
+               @Nullable List<AnAction> actions,
+               @Nullable AnAction contextHelpAction,
+               @Nullable Runnable whenExpired,
+               @Nullable Boolean important) {
     myGroupId = groupId;
-    myTitle = title;
-    myContent = content;
+    myIcon = icon;
+    myTitle = StringUtil.notNullize(title);
+    mySubtitle = subtitle;
+    myContent = StringUtil.notNullize(content);
     myType = type;
     myListener = listener;
-    myTimestamp = System.currentTimeMillis();
+    displayId = notificationId;
+    myDropDownText = dropDownText;
+    myActions = actions;
+    myContextHelpAction = contextHelpAction;
+    myWhenExpired = whenExpired;
+    myImportant = important;
 
-    this.displayId = displayId;
+    myTimestamp = System.currentTimeMillis();
     id = calculateId(this);
   }
 
@@ -175,11 +190,11 @@ public class Notification {
   }
 
   public boolean hasTitle() {
-    return !StringUtil.isEmptyOrSpaces(myTitle) || !StringUtil.isEmptyOrSpaces(mySubtitle);
+    return !isEmpty(myTitle) || !isEmpty(mySubtitle);
   }
 
   @NotNull
-  public String getTitle() {
+  public @NotificationTitle String getTitle() {
     return myTitle;
   }
 
@@ -196,27 +211,33 @@ public class Notification {
   }
 
   @Nullable
+  @NotificationTitle
   public String getSubtitle() {
     return mySubtitle;
   }
 
   @NotNull
-  public Notification setSubtitle(@Nullable String subtitle) {
+  public Notification setSubtitle(@Nullable @NotificationTitle String subtitle) {
     mySubtitle = subtitle;
     return this;
   }
 
   public boolean hasContent() {
-    return !StringUtil.isEmptyOrSpaces(myContent);
+    return !isEmpty(myContent);
+  }
+
+  @Contract(value = "null -> true", pure = true)
+  public static boolean isEmpty(@Nullable String text) {
+    return StringUtil.isEmptyOrSpaces(text) || StringUtil.isEmptyOrSpaces(StringUtil.stripHtml(text, false));
   }
 
   @NotNull
-  public String getContent() {
+  public @NotificationContent String getContent() {
     return myContent;
   }
 
   @NotNull
-  public Notification setContent(@Nullable String content) {
+  public Notification setContent(@NotificationContent @Nullable String content) {
     myContent = StringUtil.notNullize(content);
     return this;
   }
@@ -260,13 +281,13 @@ public class Notification {
   }
 
   public static void setDataProvider(@NotNull Notification notification, @NotNull JComponent component) {
-    DataManager.registerDataProvider(component, dataId -> KEY.getName().equals(dataId) ? notification : null);
+    DataManager.registerDataProvider(component, dataId -> KEY.is(dataId) ? notification : null);
   }
 
   @NotNull
-  public String getDropDownText() {
+  public @LinkLabel String getDropDownText() {
     if (myDropDownText == null) {
-      myDropDownText = "Actions";
+      myDropDownText = IdeBundle.message("link.label.actions");
     }
     return myDropDownText;
   }
@@ -340,31 +361,37 @@ public class Notification {
   }
 
   public void hideBalloon() {
-    if (myBalloonRef != null) {
-      final Balloon balloon = myBalloonRef.get();
-      if (balloon != null) {
-        balloon.hide();
-      }
-      myBalloonRef = null;
-    }
+    hideBalloon(myBalloonRef.getAndSet(null));
+  }
+
+  private static void hideBalloon(@Nullable WeakReference<Balloon> balloonRef) {
+    if (balloonRef == null) return;
+    var balloon = balloonRef.get();
+    if (balloon == null) return;
+    UIUtil.invokeLaterIfNeeded(balloon::hide);
   }
 
   public void setBalloon(@NotNull final Balloon balloon) {
-    hideBalloon();
-    myBalloonRef = new WeakReference<>(balloon);
+    var oldBalloon = myBalloonRef.getAndSet(new WeakReference<>(balloon));
+    hideBalloon(oldBalloon);
     balloon.addListener(new JBPopupListener() {
       @Override
       public void onClosed(@NotNull LightweightWindowEvent event) {
-        if (SoftReference.dereference(myBalloonRef) == balloon) {
-          myBalloonRef = null;
-        }
+        myBalloonRef.updateAndGet(prev -> {
+          if (prev != null && SoftReference.dereference(prev) == balloon) {
+            return null;
+          }
+          else {
+            return prev;
+          }
+        });
       }
     });
   }
 
   @Nullable
   public Balloon getBalloon() {
-    return SoftReference.dereference(myBalloonRef);
+    return SoftReference.dereference(myBalloonRef.get());
   }
 
   public void notify(@Nullable Project project) {

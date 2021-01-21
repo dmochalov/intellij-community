@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.testframework.export;
 
 import com.intellij.CommonBundle;
@@ -21,6 +21,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -29,7 +30,6 @@ import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.util.PathUtil;
-import com.intellij.util.io.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.xml.sax.SAXException;
@@ -46,10 +46,10 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringWriter;
-import java.net.URL;
 
-public class ExportTestResultsAction extends DumbAwareAction {
+public final class ExportTestResultsAction extends DumbAwareAction {
   private static final String ID = "ExportTestResults";
 
   private static final Logger LOG = Logger.getInstance(ExportTestResultsAction.class.getName());
@@ -107,7 +107,7 @@ public class ExportTestResultsAction extends DumbAwareAction {
                    && Messages.showOkCancelDialog(project,
                                                   ExecutionBundle.message("export.test.results.file.exists.message", filename),
                                                   ExecutionBundle.message("export.test.results.file.exists.title"),
-                                                  TestRunnerBundle.message("inspections.settings.overwrite.action.text"),
+                                                  TestRunnerBundle.message("export.test.results.overwrite.button.text"),
                                                   CommonBundle.getCancelButtonText(),
                                                   Messages.getQuestionIcon()
       ) != Messages.OK;
@@ -161,7 +161,7 @@ public class ExportTestResultsAction extends DumbAwareAction {
           ApplicationManager.getApplication().invokeAndWait(new Runnable() {
             @Override
             public void run() {
-              result.set(ApplicationManager.getApplication().runWriteAction(new Computable<VirtualFile>() {
+              result.set(ApplicationManager.getApplication().runWriteAction(new Computable<>() {
                 @Override
                 public VirtualFile compute() {
                   outputFile.getParentFile().mkdirs();
@@ -256,13 +256,14 @@ public class ExportTestResultsAction extends DumbAwareAction {
     if (exportFormat == ExportTestResultsConfiguration.ExportFormat.Xml) {
       handler = transformerFactory.newTransformerHandler();
       handler.getTransformer().setOutputProperty(OutputKeys.INDENT, "yes");
-      handler.getTransformer().setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+      handler.getTransformer().setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");  // NON-NLS
     }
     else {
       Source xslSource;
       if (config.getExportFormat() == ExportTestResultsConfiguration.ExportFormat.BundledTemplate) {
-        URL bundledXsltUrl = getClass().getResource("intellij-export.xsl");
-        xslSource = new StreamSource(URLUtil.openStream(bundledXsltUrl));
+        try (InputStream bundledXsltUrl = getClass().getResourceAsStream("intellij-export.xsl")) {
+          xslSource = new StreamSource(bundledXsltUrl);
+        }
       }
       else {
         File xslFile = new File(config.getUserTemplatePath());
@@ -289,7 +290,10 @@ public class ExportTestResultsAction extends DumbAwareAction {
     return w.toString();
   }
 
-  private void showBalloon(final Project project, final MessageType type, final String text, @Nullable final HyperlinkListener listener) {
+  private void showBalloon(final Project project,
+                           final MessageType type,
+                           final @NlsContexts.PopupContent String text,
+                           final @Nullable HyperlinkListener listener) {
     ApplicationManager.getApplication().invokeLater(() -> {
       if (project.isDisposed()) return;
       if (ToolWindowManager.getInstance(project).getToolWindow(myToolWindowId) != null) {

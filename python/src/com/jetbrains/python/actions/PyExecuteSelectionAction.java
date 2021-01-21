@@ -191,7 +191,7 @@ public class PyExecuteSelectionAction extends DumbAwareAction {
     Collection<RunContentDescriptor> consoles = getConsoles(project);
 
     ExecutionHelper
-      .selectContentDescriptor(dataContext, project, consoles, "Select console to execute in", descriptor -> {
+      .selectContentDescriptor(dataContext, project, consoles, PyBundle.message("python.execute.selection.action.select.console.to.execute.in"), descriptor -> {
         if (descriptor != null && descriptor.getExecutionConsole() instanceof PyCodeExecutor) {
           ExecutionConsole console = descriptor.getExecutionConsole();
           consumer.consume((PyCodeExecutor)console);
@@ -201,7 +201,9 @@ public class PyExecuteSelectionAction extends DumbAwareAction {
               // Select "Console" tab in case of Debug console
               ContentManager contentManager = currentSession.getUI().getContentManager();
               Content content = contentManager.findContent("Console");
-              contentManager.setSelectedContent(content);
+              if (content != null) {
+                contentManager.setSelectedContent(content);
+              }
               // It's necessary to request focus again after tab selection
               if (requestFocusToConsole) {
                 ((PythonDebugLanguageConsoleView)console).getPydevConsoleView().requestFocus();

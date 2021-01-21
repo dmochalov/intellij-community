@@ -2,11 +2,13 @@
 package org.jetbrains.plugins.terminal
 
 import com.intellij.execution.configuration.EnvironmentVariablesData
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.xmlb.annotations.Property
+import org.jetbrains.annotations.Nls
 
 @State(name = "TerminalOptionsProvider", storages = [(Storage("terminal.xml"))])
 class TerminalOptionsProvider : PersistentStateComponent<TerminalOptionsProvider.State> {
@@ -33,8 +35,9 @@ class TerminalOptionsProvider : PersistentStateComponent<TerminalOptionsProvider
   }
 
   var tabName: String
-    get() = myState.myTabName
-    set(tabName) {
+    @Nls
+    get() : String = myState.myTabName ?: TerminalBundle.message("local.terminal.default.name")
+    set(@Nls tabName) {
       myState.myTabName = tabName
     }
 
@@ -55,11 +58,13 @@ class TerminalOptionsProvider : PersistentStateComponent<TerminalOptionsProvider
   }
 
   class State {
-    var myTabName: String = "Local"
+    var myShellPath: String? = null
+    @Nls
+    var myTabName: String? = null
     var myCloseSessionOnLogout: Boolean = true
     var myReportMouse: Boolean = true
     var mySoundBell: Boolean = true
-    var myCopyOnSelection: Boolean = true
+    var myCopyOnSelection: Boolean = SystemInfo.isLinux
     var myPasteOnMiddleMouseButton: Boolean = true
     var myOverrideIdeShortcuts: Boolean = true
     var myShellIntegration: Boolean = true
@@ -112,10 +117,16 @@ class TerminalOptionsProvider : PersistentStateComponent<TerminalOptionsProvider
     myState.envDataOptions.set(envData)
   }
 
+  // replace with property delegate when Kotlin 1.4 arrives (KT-8658)
+  var shellPath: String?
+    get() = myState.myShellPath
+    set(value) {
+      myState.myShellPath = value
+    }
 
   companion object {
     val instance: TerminalOptionsProvider
       @JvmStatic
-      get() = ServiceManager.getService(TerminalOptionsProvider::class.java)
+      get() = ApplicationManager.getApplication().getService(TerminalOptionsProvider::class.java)
   }
 }

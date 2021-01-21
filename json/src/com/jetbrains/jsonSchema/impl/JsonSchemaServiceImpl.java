@@ -44,7 +44,7 @@ public class JsonSchemaServiceImpl implements JsonSchemaService, ModificationTra
   @NotNull private final Project myProject;
   @NotNull private final MyState myState;
   @NotNull private final ClearableLazyValue<Set<String>> myBuiltInSchemaIds;
-  @NotNull private final Set<String> myRefs = Collections.newSetFromMap(new ConcurrentHashMap<>());
+  @NotNull private final Set<String> myRefs = ContainerUtil.newConcurrentSet();
   private final AtomicLong myAnyChangeCount = new AtomicLong(0);
 
   @NotNull private final JsonSchemaCatalogManager myCatalogManager;
@@ -52,7 +52,7 @@ public class JsonSchemaServiceImpl implements JsonSchemaService, ModificationTra
   public JsonSchemaServiceImpl(@NotNull Project project) {
     myProject = project;
     myState = new MyState(() -> getProvidersFromFactories(), myProject);
-    myBuiltInSchemaIds = new ClearableLazyValue<Set<String>>() {
+    myBuiltInSchemaIds = new ClearableLazyValue<>() {
       @NotNull
       @Override
       protected Set<String> compute() {
@@ -210,7 +210,7 @@ public class JsonSchemaServiceImpl implements JsonSchemaService, ModificationTra
       if (providers.size() > 1) {
         final Optional<JsonSchemaFileProvider> userSchema =
           providers.stream().filter(provider -> SchemaType.userSchema.equals(provider.getSchemaType())).findFirst();
-        if (!userSchema.isPresent()) return ContainerUtil.emptyList();
+        if (userSchema.isEmpty()) return ContainerUtil.emptyList();
         selected = userSchema.get();
       } else selected = providers.get(0);
       VirtualFile schemaFile = getSchemaForProvider(myProject, selected);
@@ -500,7 +500,7 @@ public class JsonSchemaServiceImpl implements JsonSchemaService, ModificationTra
     private MyState(@NotNull final Factory<List<JsonSchemaFileProvider>> factory, @NotNull Project project) {
       myFactory = factory;
       myProject = project;
-      myData = new ClearableLazyValue<Map<VirtualFile, List<JsonSchemaFileProvider>>>() {
+      myData = new ClearableLazyValue<>() {
         @NotNull
         @Override
         public Map<VirtualFile, List<JsonSchemaFileProvider>> compute() {

@@ -16,10 +16,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.application.TransactionGuardImpl;
 import com.intellij.openapi.keymap.KeymapUtil;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.IconLoader;
-import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.components.JBCheckBoxMenuItem;
@@ -145,7 +142,7 @@ public class ActionMenuItem extends JBCheckBoxMenuItem {
     setVisible(myPresentation.isVisible());
     setEnabled(myPresentation.isEnabled());
     setMnemonic(myEnableMnemonics ? myPresentation.getMnemonic() : 0);
-    setText(myPresentation.getText());
+    setText(myPresentation.getText(true));
     final int mnemonicIndex = myEnableMnemonics ? myPresentation.getDisplayedMnemonicIndex() : -1;
 
     if (getText() != null && mnemonicIndex >= 0 && mnemonicIndex < getText().length()) {
@@ -189,6 +186,7 @@ public class ActionMenuItem extends JBCheckBoxMenuItem {
     ActionMenu.showDescriptionInStatusBar(isIncluded, this, myPresentation.getDescription());
   }
 
+  @NlsSafe
   public String getFirstShortcutText() {
     return KeymapUtil.getFirstKeyboardShortcutText(myAction.getAction());
   }
@@ -230,11 +228,12 @@ public class ActionMenuItem extends JBCheckBoxMenuItem {
           disabled = icon == null ? null : IconLoader.getDisabledIcon(icon);
         }
         Icon selected = myPresentation.getSelectedIcon();
-        if (selected == null)
+        if (selected == null) {
           selected = icon;
+        }
 
         setIcon(wrapNullIcon(myPresentation.isEnabled() ? icon : disabled));
-        setSelectedIcon(wrapNullIcon(selected != null ? selected : icon));
+        setSelectedIcon(wrapNullIcon(selected));
         setDisabledIcon(wrapNullIcon(disabled));
       }
     }
@@ -362,7 +361,7 @@ public class ActionMenuItem extends JBCheckBoxMenuItem {
           setDisplayedMnemonicIndex(myPresentation.getDisplayedMnemonicIndex());
         }
         else if (Presentation.PROP_TEXT.equals(name)) {
-          setText(myPresentation.getText());
+          setText(myPresentation.getText(true));
           Window window = ComponentUtil.getWindow(ActionMenuItem.this);
           if (window != null) window.pack();
         }

@@ -3,6 +3,7 @@ package org.jetbrains.plugins.groovy.lang.psi.util;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
@@ -25,6 +26,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrRegex;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrString;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrStringInjection;
+import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyNamesUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.literals.GrLiteralImpl;
 
 /**
@@ -44,9 +46,9 @@ public final class GrStringUtil {
   private GrStringUtil() {
   }
 
-  public static String unescapeString(String s) {
+  public static @NlsSafe String unescapeString(String s) {
     final int length = s.length();
-    StringBuilder buffer = new StringBuilder(length);
+    @NlsSafe StringBuilder buffer = new StringBuilder(length);
     boolean escaped = false;
     for (int idx = 0; idx < length; idx++) {
       char ch = s.charAt(idx);
@@ -131,9 +133,9 @@ public final class GrStringUtil {
     return unescapeRegex(s, false);
   }
 
-  private static String unescapeRegex(String s, boolean unescapeSlash) {
+  private static @NlsSafe String unescapeRegex(String s, boolean unescapeSlash) {
     final int length = s.length();
-    StringBuilder buffer = new StringBuilder(length);
+    @NlsSafe StringBuilder buffer = new StringBuilder(length);
 
     boolean escaped = false;
     for (int idx = 0; idx < length; idx++) {
@@ -221,8 +223,8 @@ public final class GrStringUtil {
           char nextCh = str.charAt(idx + 1);
           if (nextCh == '$') {
             // /$ -> $/$
-            buffer.append("$/$");
-            idx += 2;
+            buffer.append("$/");
+            idx++;
             continue;
           }
         }
@@ -230,11 +232,11 @@ public final class GrStringUtil {
       else if (ch == '$') {
         if (idx + 1 < length) {
           final char nextCh = str.charAt(idx + 1);
-          if (nextCh == '$' || nextCh == '/') {
+          if (nextCh == '$' || nextCh == '/' || GroovyNamesUtil.isIdentifier(Character.toString(nextCh))) {
             // $$ -> $$$
             // $/ -> $$/
-            buffer.append("$$").append(nextCh);
-            idx += 2;
+            buffer.append("$$");
+            idx += 1;
             continue;
           }
         }
@@ -254,7 +256,7 @@ public final class GrStringUtil {
     }
   }
 
-  private static void appendUnicode(StringBuilder buffer, char ch) {
+  private static void appendUnicode(@NlsSafe StringBuilder buffer, char ch) {
     String hexCode = StringUtil.toUpperCase(Integer.toHexString(ch));
     buffer.append("\\u");
     int paddingCount = 4 - hexCode.length();

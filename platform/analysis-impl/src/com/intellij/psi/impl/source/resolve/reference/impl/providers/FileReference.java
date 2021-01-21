@@ -8,11 +8,13 @@ import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.LocalQuickFixProvider;
 import com.intellij.diagnostic.PluginException;
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.model.ModelBranchUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.fileTypes.UnknownFileType;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.RecursionManager;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.TextRange;
@@ -20,7 +22,6 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileSystem;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.resolve.ResolveCache;
 import com.intellij.psi.impl.source.resolve.reference.impl.CachingReference;
@@ -31,6 +32,8 @@ import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.indexing.IndexingBundle;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -145,6 +148,7 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
                                        @NotNull PsiFileSystemItem context,
                                        final Collection<ResolveResult> result,
                                        final boolean caseSensitive) {
+    context = ModelBranchUtil.obtainCopyFromTheSameBranch(getElement(), context);
     if (isAllowedEmptyPath(text) || ".".equals(text) || "/".equals(text)) {
       if (context instanceof FileReferenceResolver) {
         ContainerUtil.addIfNotNull(result, resolveFileReferenceResolver((FileReferenceResolver)context, text));
@@ -211,7 +215,7 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
         else {
           processVariants(context, new PsiFileSystemItemProcessor() {
             @Override
-            public boolean acceptItem(String name, boolean isDirectory) {
+            public boolean acceptItem(@NotNull String name, boolean isDirectory) {
               return caseSensitive ? decoded.equals(name) : decoded.compareToIgnoreCase(name) == 0;
             }
 
@@ -227,12 +231,12 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
   }
 
   @NotNull
-  public String getFileNameToCreate() {
+  public @NlsSafe String getFileNameToCreate() {
     return decode(getCanonicalText());
   }
 
   @Nullable
-  public String getNewFileTemplateName() {
+  public @NlsSafe String getNewFileTemplateName() {
     FileType fileType = FileTypeRegistry.getInstance().getFileTypeByFileName(myText);
     if (fileType != UnknownFileType.INSTANCE) {
       return fileType.getName() + " File." + fileType.getDefaultExtension();
@@ -247,8 +251,7 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
   }
 
   private static boolean caseSensitivityApplies(PsiDirectory context, boolean caseSensitive) {
-    VirtualFileSystem fs = context.getVirtualFile().getFileSystem();
-    return fs.isCaseSensitive() == caseSensitive;
+    return context.getVirtualFile().isCaseSensitive() == caseSensitive;
   }
 
   private boolean isAllowedEmptyPath(String text) {
@@ -258,6 +261,7 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
   }
 
   @NotNull
+  @Contract(pure = true)
   public String decode(@NotNull String text) {
     if (SystemInfo.isMac) {
       text = Normalizer.normalize(text, Normalizer.Form.NFC);
@@ -372,7 +376,7 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
 
   @Override
   @NotNull
-  public String getCanonicalText() {
+  public @NlsSafe String getCanonicalText() {
     return myText;
   }
 
@@ -542,10 +546,10 @@ public class FileReference implements PsiFileReference, FileReferenceOwner, PsiP
 
   @NotNull
   @Override
-  public String getUnresolvedMessagePattern() {
-    return AnalysisBundle.message("error.cannot.resolve")
-           + " " + IndexingBundle.message(isLast() ? "terms.file" : "terms.directory")
-           + " '" + StringUtil.escapePattern(decode(getCanonicalText())) + "'";
+  public @Nls(capitalization = Nls.Capitalization.Sentence) String getUnresolvedMessagePattern() {
+    return AnalysisBundle.message("error.cannot.resolve.file.or.dir",
+                                  IndexingBundle.message(isLast() ? "terms.file" : "terms.directory"),
+                                  StringUtil.escapePattern(decode(getCanonicalText())));
   }
 
   public final boolean isLast() {

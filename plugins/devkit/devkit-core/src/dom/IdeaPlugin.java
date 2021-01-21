@@ -1,9 +1,12 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.devkit.dom;
 
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.presentation.Presentation;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.xml.*;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,9 +16,9 @@ import java.util.List;
 @Presentation(icon = "AllIcons.Nodes.Plugin", typeName = DevkitDomPresentationConstants.PLUGIN)
 @Stubbed
 public interface IdeaPlugin extends DomElement {
-  String TAG_NAME = "idea-plugin";
+  @NonNls String TAG_NAME = "idea-plugin";
 
-  @Nullable
+  @Nullable @NlsSafe
   String getPluginId();
 
   default boolean hasRealPluginId() {
@@ -26,6 +29,16 @@ public interface IdeaPlugin extends DomElement {
   @SubTag("product-descriptor")
   @Nullable
   ProductDescriptor getProductDescriptor();
+
+  @SubTag("content")
+  @Nullable
+  @ApiStatus.Experimental
+  ContentDescriptor getContent();
+
+  @SubTag("dependencies")
+  @Nullable
+  @ApiStatus.Experimental
+  DependencyDescriptor getDependencies();
 
   @NotNull
   @NameValue
@@ -62,6 +75,9 @@ public interface IdeaPlugin extends DomElement {
   GenericAttributeValue<Boolean> getRequireRestart();
 
   @NotNull
+  GenericAttributeValue<String> getPackage();
+
+  @NotNull
   @Stubbed
   @Required(false)
   GenericDomValue<String> getName();
@@ -94,13 +110,14 @@ public interface IdeaPlugin extends DomElement {
 
 
   @NotNull
+  @Stubbed
   GenericDomValue<String> getResourceBundle();
 
 
   @NotNull
   @Stubbed
   @SubTagList("depends")
-  List<Dependency> getDependencies();
+  List<Dependency> getDepends();
 
   @SubTagList("depends")
   Dependency addDependency();
@@ -176,9 +193,70 @@ public interface IdeaPlugin extends DomElement {
   @NotNull
   List<Helpset> getHelpsets();
 
-  /**
-   * @deprecated not used anymore
-   */
-  @Deprecated
-  Helpset addHelpset();
+  interface ContentDescriptor extends DomElement {
+    @NotNull
+    @Stubbed
+    @SubTagList("module")
+    List<DependencyDescriptor.ModuleDescriptor> getModuleEntry();
+
+    @SubTagList("module")
+    DependencyDescriptor.ModuleDescriptor addModuleEntry();
+
+    @Presentation(icon = "AllIcons.Nodes.Module")
+    interface ModuleDescriptor extends DomElement {
+      @NotNull
+      @Required
+      @Stubbed
+      @NameValue
+      GenericAttributeValue<String> getName();
+
+      @NotNull
+      @Required
+      @Stubbed
+      @NameValue
+      GenericAttributeValue<String> getPackage();
+    }
+  }
+
+  interface DependencyDescriptor extends DomElement {
+    @NotNull
+    @Stubbed
+    @SubTagList("module")
+    List<ModuleDescriptor> getModuleEntry();
+
+    @SubTagList("module")
+    ModuleDescriptor addModuleEntry();
+
+    @NotNull
+    @Stubbed
+    @SubTagList("plugin")
+    List<PluginDescriptor> getPlugin();
+
+    @SubTagList("module")
+    PluginDescriptor addPlugin();
+
+    @Presentation(icon = "AllIcons.Nodes.Module")
+    interface ModuleDescriptor extends DomElement {
+      @NotNull
+      @Required
+      @Stubbed
+      @NameValue
+      GenericAttributeValue<String> getName();
+
+      @NotNull
+      @Required
+      @Stubbed
+      @NameValue
+      GenericAttributeValue<String> getPackage();
+    }
+
+    @Presentation(icon = "AllIcons.Nodes.Plugin")
+    interface PluginDescriptor extends DomElement {
+      @NotNull
+      @Required
+      @Stubbed
+      @NameValue
+      GenericAttributeValue<String> getId();
+    }
+  }
 }

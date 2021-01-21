@@ -2,6 +2,7 @@
 package com.intellij.openapi.actionSystem.impl;
 
 import com.intellij.CommonBundle;
+import com.intellij.ide.impl.DataManagerImpl;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.SystemInfo;
@@ -9,7 +10,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
-import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.CancellablePromise;
@@ -21,7 +22,7 @@ import java.util.List;
 
 public final class Utils {
   private static final Logger LOG = Logger.getInstance(Utils.class);
-  @NonNls public static final String NOTHING_HERE = CommonBundle.message("empty.menu.filler");
+  @Nls public static final String NOTHING_HERE = CommonBundle.message("empty.menu.filler");
   public static final AnAction EMPTY_MENU_FILLER = new AnAction(CommonBundle.messagePointer("empty.menu.filler")) {
 
     {
@@ -37,6 +38,15 @@ public final class Utils {
       e.getPresentation().setEnabled(false);
     }
   };
+
+  @NotNull
+  public static DataContext wrapDataContext(@NotNull DataContext dataContext) {
+    if (dataContext instanceof DataManagerImpl.MyDataContext &&
+        Registry.is("actionSystem.update.actions.asynchronously")) {
+      return new PreCachedDataContext(dataContext);
+    }
+    return dataContext;
+  }
 
   /**
    * @return actions from the given and nested non-popup groups that are visible after updating
@@ -54,7 +64,16 @@ public final class Utils {
                                                  PresentationFactory presentationFactory,
                                                  @NotNull DataContext context,
                                                  String place, ActionGroupVisitor visitor) {
-    return new ActionUpdater(isInModalContext, presentationFactory, context, place, false, false, false, visitor)
+    return expandActionGroup(isInModalContext, group, presentationFactory, context, place, visitor, false);
+  }
+
+  public static List<AnAction> expandActionGroup(boolean isInModalContext,
+                                                 @NotNull ActionGroup group,
+                                                 PresentationFactory presentationFactory,
+                                                 @NotNull DataContext context,
+                                                 String place, ActionGroupVisitor visitor,
+                                                 boolean isContextMenuAction) {
+    return new ActionUpdater(isInModalContext, presentationFactory, context, place, isContextMenuAction, false, false, visitor)
       .expandActionGroup(group, group instanceof CompactActionGroup);
   }
 
@@ -63,8 +82,9 @@ public final class Utils {
                                                                           PresentationFactory presentationFactory,
                                                                           @NotNull DataContext context,
                                                                           String place, @Nullable Utils.ActionGroupVisitor visitor) {
-    if (!(context instanceof AsyncDataContext))
-      context = new AsyncDataContext(context);
+    if (!(context instanceof PreCachedDataContext)) {
+      context = new PreCachedDataContext(context);
+    }
     return new ActionUpdater(isInModalContext, presentationFactory, context, place, false, false, false, visitor)
       .expandActionGroupAsync(group, group instanceof CompactActionGroup);
   }

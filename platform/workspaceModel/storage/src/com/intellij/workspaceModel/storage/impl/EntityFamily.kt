@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.workspaceModel.storage.impl
 
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.workspaceModel.storage.WorkspaceEntity
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import it.unimi.dsi.fastutil.ints.IntSet
@@ -40,7 +41,11 @@ internal class MutableEntityFamily<E : WorkspaceEntity>(
   private val copiedToModify: IntSet = IntOpenHashSet()
 
   fun remove(id: Int) {
-    if (availableSlots.contains(id)) error("id $id is already removed")
+    if (availableSlots.contains(id)) {
+      thisLogger().error("id $id is already removed")
+      return
+    }
+
     startWrite()
 
     copiedToModify.remove(id)
@@ -67,9 +72,41 @@ internal class MutableEntityFamily<E : WorkspaceEntity>(
     copiedToModify.add(other.id)
   }
 
+  fun book(): Int {
+    startWrite()
+
+    val bookedId = if (availableSlots.isEmpty()) {
+      entities.add(null)
+      amountOfGapsInEntities++
+      entities.lastIndex
+    }
+    else {
+      val emptySlot = availableSlots.pop()
+      entities[emptySlot] = null
+      emptySlot
+    }
+    copiedToModify.add(bookedId)
+    return bookedId
+  }
+
+  fun insertAtId(data: WorkspaceEntityData<E>) {
+    startWrite()
+
+    val prevValue = entities[data.id]
+    entities[data.id] = data
+    availableSlots.remove(data.id)
+    if (prevValue == null) amountOfGapsInEntities--
+
+    copiedToModify.add(data.id)
+  }
+
   fun replaceById(entity: WorkspaceEntityData<E>) {
     val id = entity.id
-    if (availableSlots.contains(id)) error("Nothing to replace")
+    if (entities[id] == null) {
+      thisLogger().error("Nothing to replace. EntityData: $entity")
+      return
+    }
+
     startWrite()
 
     entities[id] = entity
@@ -80,7 +117,7 @@ internal class MutableEntityFamily<E : WorkspaceEntity>(
    * Get entity data that can be modified in a save manne
    */
   fun getEntityDataForModification(arrayId: Int): WorkspaceEntityData<E> {
-    val entity = entities[arrayId] ?: error("Nothing to modify")
+    val entity = entities.getOrNull(arrayId) ?: error("Nothing to modify")
     if (arrayId in copiedToModify) return entity
     startWrite()
 
@@ -105,6 +142,8 @@ internal class MutableEntityFamily<E : WorkspaceEntity>(
 
   override fun familyCheck() {}
 
+  internal fun isEmpty() = entities.size == amountOfGapsInEntities
+
   /** This method should always be called before any modification */
   private fun startWrite() {
     if (!freezed) return
@@ -124,7 +163,7 @@ internal class MutableEntityFamily<E : WorkspaceEntity>(
   companion object {
     // Do not remove parameter. Kotlin fails with compilation without it
     @Suppress("RemoveExplicitTypeArguments")
-    fun createEmptyMutable() = MutableEntityFamily<WorkspaceEntity>(ArrayList(), false)
+    fun <T: WorkspaceEntity> createEmptyMutable() = MutableEntityFamily<T>(ArrayList(), false)
   }
 }
 
@@ -134,7 +173,6 @@ internal sealed class EntityFamily<E : WorkspaceEntity> {
   operator fun get(idx: Int) = entities.getOrNull(idx)
   fun exists(id: Int) = get(id) != null
   fun all() = entities.asSequence().filterNotNull()
-  fun isEmpty(): Boolean = entities.isEmpty()
   abstract fun size(): Int
 
   override fun equals(other: Any?): Boolean {

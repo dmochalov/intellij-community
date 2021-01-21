@@ -33,6 +33,7 @@ import org.jetbrains.plugins.gradle.issue.quickfix.GradleWrapperSettingsOpenQuic
 import org.jetbrains.plugins.gradle.service.task.GradleTaskManager
 import org.jetbrains.plugins.gradle.settings.DistributionType
 import org.jetbrains.plugins.gradle.settings.GradleSettings
+import org.jetbrains.plugins.gradle.util.GradleBundle
 import org.jetbrains.plugins.gradle.util.GradleConstants
 import org.jetbrains.plugins.gradle.util.GradleUtil
 import java.io.File
@@ -55,9 +56,9 @@ class GradleVersionQuickFix(private val projectPath: String,
     return updateOrCreateWrapper()
       .exceptionally {
         LOG.warn(it)
-        val msg = "Unable to update wrapper files"
-        val notification = NotificationData(msg, "See IDE log for the details.\n" +
-                                                 "<a href=\"#open_log\">" + ShowLogAction.getActionName() + "</a>", WARNING, PROJECT_SYNC)
+        val title = GradleBundle.message("gradle.version.quick.fix.error")
+        val message = GradleBundle.message("gradle.version.quick.fix.error.description", ShowLogAction.getActionName())
+        val notification = NotificationData(title, message, WARNING, PROJECT_SYNC)
           .apply {
             isBalloonNotification = true
             balloonGroup = "Gradle Import"
@@ -119,7 +120,7 @@ class GradleVersionQuickFix(private val projectPath: String,
 
     val gradleVmOptions = GradleSettings.getInstance(project).gradleVmOptions
     val settings = ExternalSystemTaskExecutionSettings()
-    settings.executionName = "Upgrade Gradle wrapper"
+    settings.executionName = GradleBundle.message("grable.execution.name.upgrade.wrapper")
     settings.externalProjectPath = projectPath
     settings.taskNames = listOf("wrapper")
     settings.vmOptions = gradleVmOptions

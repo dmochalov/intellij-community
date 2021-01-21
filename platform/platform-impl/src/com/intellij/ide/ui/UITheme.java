@@ -5,11 +5,12 @@ import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.gson.Gson;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.plugins.cl.PluginClassLoader;
+import com.intellij.ide.plugins.cl.PluginAwareClassLoader;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.IconPathPatcher;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColorHexUtil;
 import com.intellij.ui.ColorUtil;
@@ -21,9 +22,6 @@ import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 
 import javax.swing.*;
 import javax.swing.plaf.BorderUIResource;
@@ -34,6 +32,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Constructor;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -102,7 +101,8 @@ public final class UITheme {
     URL url = getResource(path);
     try {
       return url != null ? url.openStream() : null;
-    } catch (IOException e) {
+    }
+    catch (IOException e) {
       return null;
     }
   }
@@ -111,16 +111,10 @@ public final class UITheme {
     return "Temp theme".equals(id);
   }
 
-  @NotNull
-  public static UITheme loadFromJson(@NotNull InputStream stream, @NotNull String themeId, @Nullable ClassLoader provider) throws IllegalStateException {
-    return loadFromJson(stream, themeId, provider, s -> s);
-  }
-
-  @NotNull
-  public static UITheme loadFromJson(@NotNull InputStream stream,
-                                     @NotNull String themeId,
-                                     @Nullable ClassLoader provider,
-                                     @NotNull Function<? super String, String> iconsMapper) throws IllegalStateException {
+  public static @NotNull UITheme loadFromJson(@NotNull InputStream stream,
+                                              @NotNull @NonNls String themeId,
+                                              @Nullable ClassLoader provider,
+                                              @NotNull Function<? super String, String> iconsMapper) throws IllegalStateException {
     UITheme theme = new Gson().fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), UITheme.class);
     theme.id = themeId;
 
@@ -128,137 +122,92 @@ public final class UITheme {
       theme.providerClassLoader = provider;
     }
 
-    if (theme.icons != null && !theme.icons.isEmpty()) {
-      theme.patcher = new IconPathPatcher() {
-        @Nullable
-        @Override
-        public String patchPath(@NotNull String path, ClassLoader classLoader) {
-          if (classLoader instanceof PluginClassLoader) {
-            String pluginId = ((PluginClassLoader)classLoader).getPluginId().getIdString();
-            Object icons = theme.icons.get(pluginId);
-            if (icons instanceof Map) {
-              Object pluginIconPath = ((Map)icons).get(path);
-              if (pluginIconPath instanceof String) {
-                return iconsMapper.apply((String)pluginIconPath);
-              }
-            }
-          }
+    if (theme.icons == null || theme.icons.isEmpty()) {
+      return theme;
+    }
 
-          Object value = theme.icons.get(path);
-          return value instanceof String ? iconsMapper.apply((String)value) : null;
-        }
-
-        @Nullable
-        @Override
-        public ClassLoader getContextClassLoader(@NotNull String path, ClassLoader originalClassLoader) {
-          return theme.providerClassLoader;
-        }
-      };
-
-      Object palette = theme.icons.get("ColorPalette");
-      if (palette instanceof Map) {
-        Map colors = (Map)palette;
-        PaletteScopeManager paletteScopeManager = new PaletteScopeManager();
-        for (Object o : colors.keySet()) {
-          String colorKey = o.toString();
-          PaletteScope scope = paletteScopeManager.getScope(colorKey);
-          if (scope == null) continue;
-          String key = toColorString(colorKey, theme.isDark());
-          Object v = colors.get(colorKey);
-          if (v instanceof String) {
-            String value = (String)v;
-            String alpha = null;
-            if (value.length() == 9) {
-              alpha = value.substring(7);
-              value = value.substring(0, 7);
-            }
-            if (ColorUtil.fromHex(key, null) != null && ColorUtil.fromHex(value, null) != null) {
-              scope.newPalette.put(key, value);
-              int fillTransparency = -1;
-              if (alpha != null) {
-                try {
-                  fillTransparency = Integer.parseInt(alpha, 16);
-                }
-                catch (Exception ignore) { }
-              }
-              if (fillTransparency != -1) {
-                scope.alphas.put(value, fillTransparency);
-              }
+    theme.patcher = new IconPathPatcher() {
+      @Nullable
+      @Override
+      public String patchPath(@NotNull String path, @Nullable ClassLoader classLoader) {
+        if (classLoader instanceof PluginAwareClassLoader) {
+          String pluginId = ((PluginAwareClassLoader)classLoader).getPluginId().getIdString();
+          Object icons = theme.icons.get(pluginId);
+          if (icons instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Object pluginIconPath = ((Map<String, Object>)icons).get(path);
+            if (pluginIconPath instanceof String) {
+              return iconsMapper.apply((String)pluginIconPath);
             }
           }
         }
 
-        theme.colorPatcher = new SVGLoader.SvgElementColorPatcherProvider() {
-          @Nullable
-          @Override
-          public SVGLoader.SvgElementColorPatcher forURL(@Nullable URL url) {
-            PaletteScope scope = paletteScopeManager.getScopeByURL(url);
-            if (scope == null) {
-              return null;
+        Object value = theme.icons.get(path);
+        if (value == null && path.charAt(0) != '/') {
+          value = theme.icons.get('/' + path);
+        }
+        return value instanceof String ? iconsMapper.apply((String)value) : null;
+      }
+
+      @Nullable
+      @Override
+      public ClassLoader getContextClassLoader(@NotNull String path, @Nullable ClassLoader originalClassLoader) {
+        return theme.providerClassLoader;
+      }
+    };
+
+    Object palette = theme.icons.get("ColorPalette");
+    if (!(palette instanceof Map)) {
+      return theme;
+    }
+
+    Map colors = (Map)palette;
+    PaletteScopeManager paletteScopeManager = new PaletteScopeManager();
+    for (Object o : colors.keySet()) {
+      String colorKey = o.toString();
+      PaletteScope scope = paletteScopeManager.getScope(colorKey);
+      if (scope == null) continue;
+      String key = toColorString(colorKey, theme.isDark());
+      Object v = colors.get(colorKey);
+      if (v instanceof String) {
+        String value = (String)v;
+        String alpha = null;
+        if (value.length() == 9) {
+          alpha = value.substring(7);
+          value = value.substring(0, 7);
+        }
+        if (ColorUtil.fromHex(key, null) != null && ColorUtil.fromHex(value, null) != null) {
+          scope.newPalette.put(key, value);
+          int fillTransparency = -1;
+          if (alpha != null) {
+            try {
+              fillTransparency = Integer.parseInt(alpha, 16);
             }
-
-            byte[] digest = scope.digest();
-            Map<String, String> newPalette = scope.newPalette;
-            Map<String, Integer> alphas = scope.alphas;
-            return newPatcher(digest, newPalette, alphas);
+            catch (Exception ignore) { }
           }
-
-          @Nullable
-          private SVGLoader.SvgElementColorPatcher newPatcher(byte @Nullable [] digest,
-                                                              @NotNull Map<String, String> newPalette,
-                                                              @NotNull Map<String, Integer> alphas) {
-            if (newPalette.isEmpty()) {
-              return null;
-            }
-
-            return new SVGLoader.SvgElementColorPatcher() {
-              @Override
-              public byte[] digest() {
-                return digest;
-              }
-
-              @Override
-              public void patchColors(@NotNull Element svg) {
-                patchColorAttribute(svg, "fill");
-                patchColorAttribute(svg, "stroke");
-                NodeList nodes = svg.getChildNodes();
-                int length = nodes.getLength();
-                for (int i = 0; i < length; i++) {
-                  Node item = nodes.item(i);
-                  if (item instanceof Element) {
-                    patchColors((Element)item);
-                  }
-                }
-              }
-
-              private void patchColorAttribute(@NotNull Element svg, String attrName) {
-                String color = svg.getAttribute(attrName);
-                if (!StringUtil.isEmpty(color)) {
-                  String newColor = newPalette.get(toCanonicalColor(color));
-                  if (newColor != null) {
-                    svg.setAttribute(attrName, newColor);
-                    if (alphas.get(newColor) != null) {
-                      svg.setAttribute(attrName + "-opacity", String.valueOf((Float.valueOf(alphas.get(newColor)) / 255f)));
-                    }
-                  }
-                }
-              }
-            };
+          if (fillTransparency != -1) {
+            scope.alphas.put(value, fillTransparency);
           }
-        };
+        }
       }
     }
 
-    return theme;
-  }
+    theme.colorPatcher = new SVGLoader.SvgElementColorPatcherProvider() {
+      @Override
+      public @Nullable SVGLoader.SvgElementColorPatcher forPath(@Nullable String path) {
+        PaletteScope scope = paletteScopeManager.getScopeByPath(path);
+        if (scope == null) {
+          return null;
+        }
 
-  private static String toCanonicalColor(String color) {
-    String s = StringUtil.toLowerCase(color);
-    //todo[kb]: add support for red, white, black, and other named colors
-    if (s.startsWith("#") && s.length() < 7) {
-      s = "#" + ColorUtil.toHex(ColorUtil.fromHex(s));
-    }
-    return s;
+        byte[] digest = scope.digest();
+        Map<String, String> newPalette = scope.newPalette;
+        Map<String, Integer> alphas = scope.alphas;
+        return SVGLoader.newPatcher(digest, newPalette, alphas);
+      }
+    };
+
+    return theme;
   }
 
   private static String toColorString(String key, boolean darkTheme) {
@@ -320,7 +269,7 @@ public final class UITheme {
     colorPalette.put("Tree.iconColor.Dark", "#AFB1B3");
   }
 
-  public String getId() {
+  public @NonNls String getId() {
     return id;
   }
 
@@ -337,8 +286,10 @@ public final class UITheme {
     return emptyFrameBackground;
   }
 
-  public void applyProperties(UIDefaults defaults) {
-    if (ui == null) return;
+  public void applyProperties(@NotNull UIDefaults defaults) {
+    if (ui == null) {
+      return;
+    }
 
     loadColorPalette(defaults);
 
@@ -347,7 +298,7 @@ public final class UITheme {
     }
   }
 
-  private void loadColorPalette(UIDefaults defaults) {
+  private void loadColorPalette(@NotNull UIDefaults defaults) {
     if (colors != null) {
       for (Map.Entry<String, Object> entry : colors.entrySet()) {
         Object value = entry.getValue();
@@ -369,12 +320,11 @@ public final class UITheme {
     return colorPatcher;
   }
 
-  @NotNull
-  public ClassLoader getProviderClassLoader() {
+  public @NotNull ClassLoader getProviderClassLoader() {
     return providerClassLoader;
   }
 
-  private static void apply(UITheme theme, String key, Object value, UIDefaults defaults) {
+  private static void apply(@NotNull UITheme theme, String key, Object value, UIDefaults defaults) {
     if (value instanceof Map) {
       @SuppressWarnings("unchecked") Map<String, Object> map = (Map<String, Object>)value;
       for (Map.Entry<String, Object> o : map.entrySet()) {
@@ -447,7 +397,10 @@ public final class UITheme {
           return asUIResource(customLine(color, 1));
         }
         else {
-          return Class.forName(value, true, cl).newInstance();
+          Class<?> aClass = Class.forName(value, true, cl);
+          Constructor<?> constructor = aClass.getDeclaredConstructor();
+          constructor.setAccessible(true);
+          return constructor.newInstance();
         }
       }
       catch (Exception e) {
@@ -464,7 +417,8 @@ public final class UITheme {
       return parseGrayFilter(value);
     }
     else {
-      Icon icon = value.startsWith("AllIcons.") ? IconLoader.getReflectiveIcon(value, AllIcons.class.getClassLoader()) : null;      if (icon != null) {
+      Icon icon = value.startsWith("AllIcons.") ? IconLoader.getReflectiveIcon(value, AllIcons.class.getClassLoader()) : null;
+      if (icon != null) {
         return new IconUIResource(icon);
       }
       Color color = parseColor(value);
@@ -481,12 +435,12 @@ public final class UITheme {
   }
 
   public static Object parseValue(String key, @NotNull String value) {
-    ClassLoader cl = UIManager.getLookAndFeel().getClass().getClassLoader();
-    return parseValue(key, value, cl);
+    ClassLoader classLoader = UIManager.getLookAndFeel().getClass().getClassLoader();
+    return parseValue(key, value, classLoader);
   }
 
   private static Insets parseInsets(String value) {
-    final java.util.List<String> numbers = StringUtil.split(value, ",");
+    List<String> numbers = StringUtil.split(value, ",");
     return new JBInsets(Integer.parseInt(numbers.get(0)),
                         Integer.parseInt(numbers.get(1)),
                         Integer.parseInt(numbers.get(2)),
@@ -494,7 +448,7 @@ public final class UITheme {
   }
 
   private static UIUtil.GrayFilter parseGrayFilter(String value) {
-    java.util.List<String> numbers = StringUtil.split(value, ",");
+    List<String> numbers = StringUtil.split(value, ",");
     return new UIUtil.GrayFilter(Integer.parseInt(numbers.get(0)),
                                  Integer.parseInt(numbers.get(1)),
                                  Integer.parseInt(numbers.get(2))).asUIResource();
@@ -530,8 +484,8 @@ public final class UITheme {
     }
   }
 
-  private static Dimension parseSize(String value) {
-    final List<String> numbers = StringUtil.split(value, ",");
+  private static Dimension parseSize(@NotNull String value) {
+    List<String> numbers = StringUtil.split(value, ",");
     return new JBDimension(Integer.parseInt(numbers.get(0)), Integer.parseInt(numbers.get(1))).asUIResource();
   }
 
@@ -545,10 +499,10 @@ public final class UITheme {
 
   @Contract("null -> false")
   public static boolean isThemeFile(@Nullable VirtualFile file) {
-    return file != null && StringUtil.endsWithIgnoreCase(file.getName(), FILE_EXT_ENDING);
+    return file != null && Strings.endsWithIgnoreCase(file.getName(), FILE_EXT_ENDING);
   }
 
-  static class PaletteScope {
+  static final class PaletteScope {
     final Map<String, String> newPalette = new HashMap<>();
     final Map<String, Integer> alphas = new HashMap<>();
 
@@ -576,14 +530,11 @@ public final class UITheme {
     }
   }
 
-  static class PaletteScopeManager {
+  static final class PaletteScopeManager {
     final PaletteScope ui = new PaletteScope();
     final PaletteScope checkBoxes = new PaletteScope();
     final PaletteScope radioButtons = new PaletteScope();
     final PaletteScope trees = new PaletteScope();
-
-    PaletteScopeManager() {
-    }
 
     PaletteScope getScope(String colorKey) {
       if (colorKey.startsWith("Checkbox.")) return checkBoxes;
@@ -597,18 +548,13 @@ public final class UITheme {
       return null;
     }
 
-    @Nullable
-    PaletteScope getScopeByURL(@Nullable URL url) {
-      if (url != null) {
-        String path = url.toString();
+    @Nullable PaletteScope getScopeByPath(@Nullable String path) {
+      if (path != null && path.contains("/com/intellij/ide/ui/laf/icons/")) {
         String file = path.substring(path.lastIndexOf('/') + 1);
-
-        if (path.contains("/com/intellij/ide/ui/laf/icons/")) {
-          if (file.equals("treeCollapsed.svg") || file.equals("treeExpanded.svg")) return trees;
-          if (file.startsWith("check")) return checkBoxes;
-          if (file.startsWith("radio")) return checkBoxes; //same set of colors as for checkboxes
-          return null;
-        }
+        if (file.equals("treeCollapsed.svg") || file.equals("treeExpanded.svg")) return trees;
+        if (file.startsWith("check")) return checkBoxes;
+        if (file.startsWith("radio")) return checkBoxes; //same set of colors as for checkboxes
+        return null;
       }
       return ui;
     }

@@ -21,7 +21,6 @@ import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MostlySingularMultiMap;
-import gnu.trove.THashMap;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,7 +31,7 @@ import java.util.*;
  * @author Dmitry Avdeev
  */
 public final class XmlPropertiesFileImpl extends XmlPropertiesFile {
-  public static final String ENTRY_TAG_NAME = "entry";
+  public static final @NonNls String ENTRY_TAG_NAME = "entry";
 
   private static final Key<CachedValue<PropertiesFile>> KEY = Key.create("xml properties file");
   private final XmlFile myFile;
@@ -201,7 +200,7 @@ public final class XmlPropertiesFileImpl extends XmlPropertiesFile {
   @NotNull
   @Override
   public Map<String, String> getNamesMap() {
-    Map<String, String> result = new THashMap<>();
+    Map<String, String> result = new HashMap<>();
     for (IProperty property : getProperties()) {
       result.put(property.getUnescapedKey(), property.getValue());
     }

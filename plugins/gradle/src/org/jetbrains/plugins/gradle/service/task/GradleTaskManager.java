@@ -25,7 +25,6 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.Consumer;
 import com.intellij.util.Function;
-import com.intellij.util.SystemProperties;
 import com.intellij.util.execution.ParametersListUtil;
 import org.gradle.api.Task;
 import org.gradle.tooling.BuildLauncher;
@@ -33,6 +32,7 @@ import org.gradle.tooling.CancellationTokenSource;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.model.build.BuildEnvironment;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.gradle.service.execution.GradleExecutionHelper;
@@ -121,7 +121,7 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
       }
       catch (RuntimeException e) {
         LOG.debug("Gradle build launcher error", e);
-        BuildEnvironment buildEnvironment = GradleExecutionHelper.getBuildEnvironment(connection, id, listener, cancellationTokenSource);
+        BuildEnvironment buildEnvironment = GradleExecutionHelper.getBuildEnvironment(connection, id, listener, cancellationTokenSource, settings);
         final GradleProjectResolverExtension projectResolverChain = GradleProjectResolver.createProjectResolverChain();
         throw projectResolverChain.getUserFriendlyError(buildEnvironment, e, projectPath, null);
       }
@@ -135,6 +135,12 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
   protected static boolean isGradleScriptDebug(@Nullable GradleExecutionSettings settings) {
     return Optional.ofNullable(settings)
       .map(s -> s.getUserData(GradleRunConfiguration.DEBUG_FLAG_KEY))
+      .orElse(false);
+  }
+
+  protected static boolean isDebugAllTasks(@Nullable GradleExecutionSettings settings) {
+    return Optional.ofNullable(settings)
+      .map(s -> s.getUserData(GradleRunConfiguration.DEBUG_ALL_KEY))
       .orElse(false);
   }
 
@@ -193,7 +199,7 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
     if (!initScripts.isEmpty()) {
       try {
         File tempFile = GradleExecutionHelper.writeToFileGradleInitScript(
-          StringUtil.join(initScripts, SystemProperties.getLineSeparator()), "ijresolvers");
+          StringUtil.join(initScripts, System.lineSeparator()), "ijresolvers");
         effectiveSettings.withArguments(GradleConstants.INIT_SCRIPT_CMD_OPTION, tempFile.getAbsolutePath());
       }
       catch (IOException e) {
@@ -231,6 +237,9 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
       String jvmOpt = ForkedDebuggerHelper.JVM_DEBUG_SETUP_PREFIX + (isJdk9orLater ? "127.0.0.1:" : "") + gradleScriptDebugPort;
       effectiveSettings.withVmOption(jvmOpt);
     }
+    if (isDebugAllTasks(effectiveSettings)) {
+      effectiveSettings.withVmOption("-Didea.gradle.debug.all=true");
+    }
   }
 
   public static void setupDebuggerDispatchPort(@NotNull GradleExecutionSettings effectiveSettings) {
@@ -241,7 +250,7 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
   }
 
   public static void runCustomTask(@NotNull Project project,
-                                   @NotNull String executionName,
+                                   @NotNull @Nls String executionName,
                                    @NotNull Class<? extends Task> taskClass,
                                    @NotNull String projectPath,
                                    @NotNull String gradlePath,
@@ -252,7 +261,7 @@ public class GradleTaskManager implements ExternalSystemTaskManager<GradleExecut
   }
 
   public static void runCustomTask(@NotNull Project project,
-                                   @NotNull String executionName,
+                                   @NotNull @Nls String executionName,
                                    @NotNull Class<? extends Task> taskClass,
                                    @NotNull String projectPath,
                                    @NotNull String gradlePath,

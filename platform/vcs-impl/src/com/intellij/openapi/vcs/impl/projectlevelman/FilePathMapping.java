@@ -5,12 +5,14 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.util.containers.CollectionFactory;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 
 public final class FilePathMapping<T> {
@@ -21,7 +23,7 @@ public final class FilePathMapping<T> {
 
   public FilePathMapping(boolean caseSensitive) {
     myCaseSensitive = caseSensitive;
-    myPathMap = CollectionFactory.createFilePathMap();
+    myPathMap = caseSensitive ? new HashMap<>() : CollectionFactory.createCaseInsensitiveStringMap();
   }
 
   public void add(@NotNull String filePath, @NotNull T value) {
@@ -47,7 +49,7 @@ public final class FilePathMapping<T> {
 
     int index = 0;
     int prefixHash = 0;
-    IntArrayList matches = new IntArrayList();
+    IntList matches = new IntArrayList();
 
     // check empty string for FS root
     if (myPathHashSet.contains(prefixHash)) {

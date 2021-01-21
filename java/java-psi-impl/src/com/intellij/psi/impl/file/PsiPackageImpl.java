@@ -11,6 +11,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
+import com.intellij.openapi.roots.PackageIndex;
 import com.intellij.openapi.ui.Queryable;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -52,18 +53,23 @@ public class PsiPackageImpl extends PsiPackageBase implements PsiPackage, Querya
   }
 
   @Override
-  protected Collection<PsiDirectory> getAllDirectories(boolean includeLibrarySources) {
-    if (includeLibrarySources) {
+  protected Collection<PsiDirectory> getAllDirectories(GlobalSearchScope scope) {
+    if (!scope.getModelBranchesAffectingScope().isEmpty()) {
+      return ContainerUtil.mapNotNull(PackageIndex.getInstance(getProject()).getDirsByPackageName(getQualifiedName(), scope).findAll(),
+                                      getManager()::findDirectory);
+    }
+
+    if (scope.isForceSearchingInLibrarySources()) {
       if (myDirectoriesWithLibSources == null) {
         myDirectoriesWithLibSources = createCachedDirectories(true);
       }
-      return myDirectoriesWithLibSources.getValue();
+      return ContainerUtil.filter(myDirectoriesWithLibSources.getValue(), d -> scope.contains(d.getVirtualFile()));
     }
     else {
       if (myDirectories == null) {
         myDirectories = createCachedDirectories(false);
       }
-      return myDirectories.getValue();
+      return ContainerUtil.filter(myDirectories.getValue(), d -> scope.contains(d.getVirtualFile()));
     }
   }
 
@@ -105,7 +111,7 @@ public class PsiPackageImpl extends PsiPackageBase implements PsiPackage, Querya
   public boolean isValid() {
     return !getProject().isDisposed() &&
            (PsiPackageImplementationHelper.getInstance().packagePrefixExists(this) ||
-            !getAllDirectories(true).isEmpty());
+            getDirectories().length > 0);
   }
 
   @Override
@@ -184,7 +190,7 @@ public class PsiPackageImpl extends PsiPackageBase implements PsiPackage, Querya
     }
 
     RecursionGuard.StackStamp stamp = RecursionManager.markStack();
-    classes = findAllClasses(name, new EverythingGlobalScope(getProject()));
+    classes = findAllClasses(name, GlobalSearchScope.everythingScope(getProject()));
     if (stamp.mayCacheNow()) {
       map.put(name, classes);
     }
@@ -256,7 +262,7 @@ public class PsiPackageImpl extends PsiPackageBase implements PsiPackage, Querya
 
   @Override
   public boolean containsClassNamed(@NotNull String name) {
-    return getCachedClassesByName(name, new EverythingGlobalScope(getProject())).length > 0;
+    return getCachedClassesByName(name, GlobalSearchScope.everythingScope(getProject())).length > 0;
   }
 
   @Override

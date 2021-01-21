@@ -15,10 +15,10 @@
  */
 package com.android.tools.adtui.webp;
 
-import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.PluginPathManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.system.CpuArch;
 
 import java.io.File;
 import java.io.IOException;
@@ -83,11 +83,8 @@ public final class WebpNativeLibHelper {
     sJniLibLoaded = true;
   }
 
-  /**
-   * Copied from {@link com.intellij.util.lang.UrlClassLoader}.
-   */
   public static String getLibName() {
-    String baseName = SystemInfo.is64Bit ? "webp_jni64" : "webp_jni";
+    String baseName = CpuArch.isIntel64() || SystemInfo.isMac && CpuArch.isArm64() ? "webp_jni64" : "webp_jni";
     String fileName = System.mapLibraryName(baseName);
     if (SystemInfo.isMac) {
       fileName = fileName.replace(".jnilib", ".dylib");
@@ -97,8 +94,11 @@ public final class WebpNativeLibHelper {
 
   public static File getLibLocation() {
     // A terrible hack for dev environment.
-    String libPath = "/lib/libwebp/" + getPlatformName();
-    return new File(PluginPathManager.getPluginHomePath("webp") + libPath);
+    String libPath = "lib/libwebp/" + getPlatformName();
+    File result = new File(PluginPathManager.getPluginHomePath("webp") + "/" + libPath);
+    if (result.exists()) return result;
+    
+    return PluginPathManager.getPluginResource(WebpNativeLibHelper.class, libPath);
   }
 
   private static String getPlatformName() {

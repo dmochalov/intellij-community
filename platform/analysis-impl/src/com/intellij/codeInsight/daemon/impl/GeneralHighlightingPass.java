@@ -24,10 +24,7 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.ProperTextRange;
-import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.UserDataHolderEx;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.problems.Problem;
@@ -45,7 +42,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.Stack;
 import com.intellij.xml.util.XmlStringUtil;
-import gnu.trove.THashSet;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -259,7 +256,7 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
                                     @NotNull List<HighlightInfo> insideResult,
                                     @NotNull List<? super HighlightInfo> outsideResult,
                                     boolean forceHighlightParents) {
-    Set<PsiElement> skipParentsSet = new THashSet<>();
+    Set<PsiElement> skipParentsSet = new HashSet<>();
 
     HighlightInfoHolder holder = createInfoHolder(getFile());
 
@@ -270,8 +267,8 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
       Stack<List<HighlightInfo>> nestedInfos = new Stack<>();
       runVisitors(elements1, ranges1, chunkSize, skipParentsSet, holder, insideResult, outsideResult, forceHighlightParents, visitors,
                   nestedRange, nestedInfos);
-      TextRange priorityIntersection = myPriorityRange.intersection(myRestrictRange);
-      if ((!elements1.isEmpty() || !insideResult.isEmpty()) && priorityIntersection != null) { // do not apply when there were no elements to highlight
+      boolean priorityIntersectionHasElements = myPriorityRange.intersectsStrict(myRestrictRange);
+      if ((!elements1.isEmpty() || !insideResult.isEmpty()) && priorityIntersectionHasElements) { // do not apply when there were no elements to highlight
         myHighlightInfoProcessor.highlightsInsideVisiblePartAreProduced(myHighlightingSession, getEditor(), insideResult, myPriorityRange, myRestrictRange, getId());
       }
       runVisitors(elements2, ranges2, chunkSize, skipParentsSet, holder, insideResult, outsideResult, forceHighlightParents, visitors,
@@ -457,9 +454,8 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
 
 
   protected @NotNull HighlightInfoHolder createInfoHolder(@NotNull PsiFile file) {
-    HighlightInfoFilter[] filters = HighlightInfoFilter.EXTENSION_POINT_NAME.getExtensions();
     EditorColorsScheme actualScheme = getColorsScheme() == null ? EditorColorsManager.getInstance().getGlobalScheme() : getColorsScheme();
-    return new HighlightInfoHolder(file, filters) {
+    return new HighlightInfoHolder(file, () -> HighlightInfoFilter.EXTENSION_POINT_NAME.getExtensions()) {
       int queued;
       @Override
       public @NotNull TextAttributesScheme getColorsScheme() {
@@ -506,11 +502,7 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
       TextRange textRange = todoItem.getTextRange();
       List<TextRange> additionalRanges = todoItem.getAdditionalTextRanges();
 
-      StringJoiner joiner = new StringJoiner("\n");
-      JBIterable.of(textRange).append(additionalRanges).forEach(
-        range -> joiner.add(text.subSequence(range.getStartOffset(), range.getEndOffset()))
-      );
-      String description = joiner.toString();
+      String description = formatDescription(text, textRange, additionalRanges);
       String tooltip = XmlStringUtil.escapeString(StringUtil.shortenPathWithEllipsis(description, 1024)).replace("\n", "<br>");
 
       TextAttributes attributes = todoItem.getPattern().getAttributes().getTextAttributes();
@@ -526,20 +518,30 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
     }
   }
 
+  private static @NlsSafe String formatDescription(@NotNull CharSequence text, TextRange textRange, List<TextRange> additionalRanges) {
+    StringJoiner joiner = new StringJoiner("\n");
+    JBIterable.of(textRange).append(additionalRanges).forEach(
+      range -> joiner.add(text.subSequence(range.getStartOffset(), range.getEndOffset()))
+    );
+    return joiner.toString();
+  }
+
   private static void addTodoItem(int restrictStartOffset,
                                   int restrictEndOffset,
                                   @NotNull ProperTextRange priorityRange,
                                   @NotNull Collection<? super HighlightInfo> insideResult,
                                   @NotNull Collection<? super HighlightInfo> outsideResult,
                                   @NotNull TextAttributes attributes,
-                                  @NotNull String description, @NotNull String tooltip, @NotNull TextRange range) {
+                                  @NotNull @NlsContexts.DetailedDescription String description,
+                                  @NotNull @NlsContexts.Tooltip String tooltip,
+                                  @NotNull TextRange range) {
     if (range.getStartOffset() >= restrictEndOffset || range.getEndOffset() <= restrictStartOffset) return;
     HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.TODO)
-                                      .range(range)
-                                      .textAttributes(attributes)
-                                      .description(description)
-                                      .escapedToolTip(tooltip)
-                                      .createUnconditionally();
+      .range(range)
+      .textAttributes(attributes)
+      .description(description)
+      .escapedToolTip(tooltip)
+      .createUnconditionally();
     Collection<? super HighlightInfo> result = priorityRange.containsRange(info.getStartOffset(), info.getEndOffset()) ? insideResult : outsideResult;
     result.add(info);
   }
@@ -585,7 +587,7 @@ public class GeneralHighlightingPass extends ProgressableTextEditorHighlightingP
     return super.toString() + " updateAll="+myUpdateAll+" range= "+myRestrictRange;
   }
 
-  private static String getPresentableNameText() {
+  private static @Nls String getPresentableNameText() {
     return AnalysisBundle.message("pass.syntax");
   }
 }

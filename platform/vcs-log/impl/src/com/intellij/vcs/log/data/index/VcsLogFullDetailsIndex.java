@@ -21,6 +21,7 @@ import com.intellij.vcs.log.util.StorageId;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -30,7 +31,7 @@ import java.util.function.IntConsumer;
 import java.util.function.ObjIntConsumer;
 
 public class VcsLogFullDetailsIndex<T, D> implements Disposable {
-  protected static final String INDEX = "index"; // NON-NLS
+  @NonNls protected static final String INDEX = "index";
   @NotNull private final MyMapReduceIndex myMapReduceIndex;
   @NotNull protected final StorageId myStorageId;
   @NotNull protected final String myName;
@@ -139,7 +140,7 @@ public class VcsLogFullDetailsIndex<T, D> implements Disposable {
     private MyMapReduceIndex(@NotNull MyIndexExtension<T, D> extension,
                              @NotNull IndexStorage<Integer,T> storage,
                              @Nullable ForwardIndex forwardIndex,
-                             @Nullable ForwardIndexAccessor<Integer, T> forwardIndexAccessor) {
+                             @Nullable ForwardIndexAccessor<Integer, T> forwardIndexAccessor) throws IOException {
       super(extension, storage, forwardIndex, forwardIndexAccessor);
     }
 

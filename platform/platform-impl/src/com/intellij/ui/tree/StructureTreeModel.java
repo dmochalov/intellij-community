@@ -403,10 +403,12 @@ public class StructureTreeModel<Structure extends AbstractTreeStructure>
     }
     HashMap<Object, Node> map = new HashMap<>();
     node.getChildren().forEach(child -> {
+      ProgressManager.checkCanceled();
       Object element = child.getElement();
       if (element != null) map.put(element, child);
     });
     for (int i = 0; i < list.size(); i++) {
+      ProgressManager.checkCanceled();
       Node newNode = list.get(i);
       Node oldNode = map.get(newNode.getElement());
       if (oldNode != null && oldNode.canReuse(newNode, null)) {
@@ -417,8 +419,9 @@ public class StructureTreeModel<Structure extends AbstractTreeStructure>
   }
 
   private static final class Node extends DefaultMutableTreeNode implements LeafState.Supplier {
+    @SuppressWarnings("FieldNameHidesFieldInSuperclass")
     private final Reference<List<Node>> children = new Reference<>();
-    private final LeafState leafState;
+    private LeafState leafState; // NB!: modify in #canReuse only
     private final int hashCode;
 
     private Node(@NotNull AbstractTreeStructure structure, @NotNull Object element, NodeDescriptor<?> parent) {
@@ -427,9 +430,8 @@ public class StructureTreeModel<Structure extends AbstractTreeStructure>
 
     private Node(@NotNull NodeDescriptor descriptor, @NotNull LeafState leafState, int hashCode) {
       super(descriptor, leafState != LeafState.ALWAYS);
-      this.leafState = leafState;
       this.hashCode = hashCode;
-      if (leafState == LeafState.ALWAYS) children.set(null); // validate children for leaf node
+      setLeafState(leafState);
       update(); // an exception may be thrown while updating
     }
 
@@ -440,9 +442,10 @@ public class StructureTreeModel<Structure extends AbstractTreeStructure>
     }
 
     private boolean canReuse(@NotNull Node node, Object element) {
-      if (leafState != node.leafState || hashCode != node.hashCode) return false;
+      if (allowsChildren != node.allowsChildren || hashCode != node.hashCode) return false;
       if (element != null && !matches(element)) return false;
       userObject = node.userObject; // replace old descriptor
+      setLeafState(leafState);
       return true;
     }
 
@@ -554,6 +557,11 @@ public class StructureTreeModel<Structure extends AbstractTreeStructure>
       if (leafState == LeafState.NEVER) return false;
       if (leafState == LeafState.DEFAULT && validator != null) validator.accept(this);
       return children.isValid() && super.isLeaf();
+    }
+
+    private void setLeafState(@NotNull LeafState leafState) {
+      this.leafState = leafState;
+      if (leafState == LeafState.ALWAYS) children.set(null); // validate children for leaf node
     }
 
     @Override

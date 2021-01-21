@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.introduce.inplace;
 
 import com.intellij.codeInsight.lookup.LookupElement;
@@ -46,7 +46,7 @@ public abstract class InplaceVariableIntroducer<E extends PsiElement> extends In
   public InplaceVariableIntroducer(PsiNamedElement elementToRename,
                                    Editor editor,
                                    final Project project,
-                                   String title, E[] occurrences,
+                                   @NlsContexts.Command String title, E[] occurrences,
                                    @Nullable E expr) {
     super(editor, elementToRename, project);
     myTitle = title;
@@ -131,11 +131,7 @@ public abstract class InplaceVariableIntroducer<E extends PsiElement> extends In
   }
 
   @Override
-  protected void collectAdditionalElementsToRename(@NotNull List<Pair<PsiElement, TextRange>> stringUsages) {
-  }
-
-  @Override
-  protected @NlsContexts.Command String getCommandName() {
+  protected String getCommandName() {
     return myTitle;
   }
 
@@ -166,7 +162,7 @@ public abstract class InplaceVariableIntroducer<E extends PsiElement> extends In
                                        final LinkedHashSet<String> names,
                                        final PsiNamedElement elementToRename,
                                        final boolean shouldSelectAll,
-                                       final String advertisementText) {
+                                       final @NlsContexts.PopupAdvertisement String advertisementText) {
       super(initialName, names, elementToRename, elementToRename, shouldSelectAll, advertisementText);
       myPointer = SmartPointerManager.getInstance(elementToRename.getProject()).createSmartPsiElementPointer(elementToRename);
     }

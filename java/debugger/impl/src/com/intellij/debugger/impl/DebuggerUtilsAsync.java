@@ -38,6 +38,13 @@ public final class DebuggerUtilsAsync {
     return completedFuture(value.value());
   }
 
+  public static CompletableFuture<List<Method>> allMethods(ReferenceType type) {
+    if (type instanceof ReferenceTypeImpl && Registry.is("debugger.async.jdi")) {
+      return reschedule(((ReferenceTypeImpl)type).allMethodsAsync());
+    }
+    return completedFuture(type.allMethods());
+  }
+
   public static CompletableFuture<List<Field>> allFields(ReferenceType type) {
     if (type instanceof ReferenceTypeImpl && Registry.is("debugger.async.jdi")) {
       return reschedule(((ReferenceTypeImpl)type).allFieldsAsync());
@@ -177,14 +184,14 @@ public final class DebuggerUtilsAsync {
     return type.name().replace('$', '.').equals(typeName.replace('$', '.'));
   }
 
-  public static CompletableFuture<Type> findAnyBaseType(@NotNull Type subType, Function<Type, CompletableFuture<Boolean>> checker) {
+  public static CompletableFuture<Type> findAnyBaseType(@NotNull Type subType, Function<? super Type, ? extends CompletableFuture<Boolean>> checker) {
     CompletableFuture<Type> res = new CompletableFuture<>();
     findAnyBaseType(subType, checker, res).thenRun(() -> res.complete(null));
     return reschedule(res);
   }
 
   private static CompletableFuture<Void> findAnyBaseType(@Nullable Type type,
-                                                         Function<Type, CompletableFuture<Boolean>> checker,
+                                                         Function<? super Type, ? extends CompletableFuture<Boolean>> checker,
                                                          CompletableFuture<Type> res) {
     if (type == null || res.isDone()) {
       return completedFuture(null);

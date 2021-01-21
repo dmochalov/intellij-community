@@ -22,6 +22,7 @@ import com.intellij.codeInsight.completion.impl.CamelHumpMatcher;
 import com.intellij.codeInsight.lookup.AutoCompletionPolicy;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.TailTypeDecorator;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -41,7 +42,7 @@ import static com.intellij.patterns.PsiJavaPatterns.psiElement;
 /**
  * @author peter
  */
-public class JavaNoVariantsDelegator extends CompletionContributor {
+public class JavaNoVariantsDelegator extends CompletionContributor implements DumbAware {
   @Override
   public void fillCompletionVariants(@NotNull final CompletionParameters parameters, @NotNull final CompletionResultSet result) {
     ResultTracker tracker = new ResultTracker(result) {
@@ -72,7 +73,8 @@ public class JavaNoVariantsDelegator extends CompletionContributor {
       if (parameters.getCompletionType() == CompletionType.BASIC &&
           parameters.getInvocationCount() <= 1 &&
           JavaCompletionContributor.mayStartClassName(result) &&
-          JavaCompletionContributor.isClassNamePossible(parameters)) {
+          JavaCompletionContributor.isClassNamePossible(parameters) &&
+          !JavaCompletionContributor.IN_PERMITS_LIST.accepts(parameters.getPosition())) {
         suggestNonImportedClasses(parameters, JavaCompletionSorting.addJavaSorting(parameters, result.withPrefixMatcher(tracker.betterMatcher)), tracker.session);
       }
     }
@@ -208,11 +210,16 @@ public class JavaNoVariantsDelegator extends CompletionContributor {
         return;
       }
       JavaPsiClassReferenceElement classElement = element.as(JavaPsiClassReferenceElement.CLASS_CONDITION_KEY);
+      PsiElement position = parameters.getPosition();
       if (classElement != null && parameters.getInvocationCount() < 2) {
+        if (JavaClassNameCompletionContributor.AFTER_NEW.accepts(position) &&
+            JavaPsiClassReferenceElement.isInaccessibleConstructorSuggestion(position, classElement.getObject())) {
+          return;
+        }
         classElement.setAutoCompletionPolicy(AutoCompletionPolicy.NEVER_AUTOCOMPLETE);
       }
 
-      element = JavaCompletionUtil.highlightIfNeeded(null, element, element.getObject(), parameters.getPosition());
+      element = JavaCompletionUtil.highlightIfNeeded(null, element, element.getObject(), position);
       if (!sameNamedBatch.isEmpty() && !element.getLookupString().equals(sameNamedBatch.get(0).getLookupString())) {
         result.addAllElements(sameNamedBatch);
         sameNamedBatch.clear();

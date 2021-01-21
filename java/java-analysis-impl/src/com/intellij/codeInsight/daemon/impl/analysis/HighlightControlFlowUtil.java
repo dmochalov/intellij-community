@@ -78,7 +78,7 @@ public final class HighlightControlFlowUtil {
 
   private static @NotNull ControlFlow getControlFlow(@NotNull PsiElement context) throws AnalysisCanceledException {
     LocalsOrMyInstanceFieldsControlFlowPolicy policy = LocalsOrMyInstanceFieldsControlFlowPolicy.getInstance();
-    return ControlFlowFactory.getControlFlow(context, policy, new ControlFlowOptions(true, true));
+    return ControlFlowFactory.getControlFlow(context, policy, ControlFlowOptions.create(true, true, true));
   }
 
   static HighlightInfo checkUnreachableStatement(@Nullable PsiCodeBlock codeBlock) {
@@ -240,7 +240,7 @@ public final class HighlightControlFlowUtil {
     PsiMethod canonicalConstructor = JavaPsiRecordUtil.findCanonicalConstructor(aClass);
     if (canonicalConstructor == null || canonicalConstructor instanceof LightRecordCanonicalConstructor) return null;
     boolean isCompact = JavaPsiRecordUtil.isCompactConstructor(canonicalConstructor);
-    if (isCompact && PsiUtil.getLanguageLevel(aClass) != LanguageLevel.JDK_14_PREVIEW) return null;
+    if (isCompact) return null;
     PsiCodeBlock body = canonicalConstructor.getBody();
     if (body == null) return null;
     PsiField field = JavaPsiRecordUtil.getFieldForComponent(component);
@@ -324,6 +324,7 @@ public final class HighlightControlFlowUtil {
             // variable must be initialized before its usage
             //???
             //if (startOffset < redirectedConstructor.getTextRange().getStartOffset()) continue;
+            if (JavaPsiRecordUtil.isCompactConstructor(redirectedConstructor)) return null;
             PsiCodeBlock body = redirectedConstructor.getBody();
             if (body != null && variableDefinitelyAssignedIn(variable, body)) {
               return null;
@@ -649,8 +650,7 @@ public final class HighlightControlFlowUtil {
       final PsiMember enclosingCtrOrInitializer = PsiUtil.findEnclosingConstructorOrInitializer(expression);
       return enclosingCtrOrInitializer != null &&
              !(enclosingCtrOrInitializer instanceof PsiMethod &&
-               JavaPsiRecordUtil.isCompactConstructor((PsiMethod)enclosingCtrOrInitializer) &&
-               PsiUtil.getLanguageLevel(enclosingCtrOrInitializer) != LanguageLevel.JDK_14_PREVIEW) &&
+               JavaPsiRecordUtil.isCompactConstructor((PsiMethod)enclosingCtrOrInitializer)) &&
              isSameField(enclosingCtrOrInitializer, field, reference, containingFile);
     }
     if (variable instanceof PsiLocalVariable) {

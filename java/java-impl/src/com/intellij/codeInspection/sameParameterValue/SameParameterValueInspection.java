@@ -72,7 +72,7 @@ public class SameParameterValueInspection extends GlobalJavaBatchInspectionTool 
 
 
     IntegerField minimalUsageCountEditor = new IntegerField(null, 1, Integer.MAX_VALUE);
-    minimalUsageCountEditor.getValueEditor().addListener(new ValueEditor.Listener<Integer>() {
+    minimalUsageCountEditor.getValueEditor().addListener(new ValueEditor.Listener<>() {
       @Override
       public void valueChanged(@NotNull Integer newValue) {
         minimalUsageCount = newValue;
@@ -204,6 +204,9 @@ public class SameParameterValueInspection extends GlobalJavaBatchInspectionTool 
                                                  PsiFormatUtilBase.SHOW_NAME | PsiFormatUtilBase.SHOW_CONTAINING_CLASS,
                                                  PsiSubstitutor.EMPTY);
       }
+      else if (value instanceof Character) {
+        stringPresentation = shortName =  "'" + value + "'";
+      }
       else {
         stringPresentation = shortName =  String.valueOf(value);
       }
@@ -216,7 +219,7 @@ public class SameParameterValueInspection extends GlobalJavaBatchInspectionTool 
                                            JavaBundle.message("inspection.same.parameter.problem.descriptor",
                                                                      name,
                                                                      StringUtil.unquoteString(shortName)),
-                                           suggestFix ? createFix(name, stringPresentation) : null,
+                                           suggestFix ? createFix(name, stringPresentation.startsWith("\"\"") ? stringPresentation : StringUtil.escapeLineBreak(stringPresentation)) : null,
                                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING, false);
   }
 

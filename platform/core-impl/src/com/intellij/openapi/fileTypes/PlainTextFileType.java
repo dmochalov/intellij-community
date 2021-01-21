@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
-public final class PlainTextFileType extends LanguageFileType implements PlainTextLikeFileType {
+public final class PlainTextFileType extends LanguageFileType implements PlainTextLikeFileType, OSFileIdeAssociation {
   public static final PlainTextFileType INSTANCE = new PlainTextFileType();
 
   private PlainTextFileType() {
@@ -15,25 +15,27 @@ public final class PlainTextFileType extends LanguageFileType implements PlainTe
   }
 
   @Override
-  @NotNull
-  public String getName() {
+  public @NotNull String getName() {
     return "PLAIN_TEXT";
   }
 
   @Override
-  @NotNull
-  public String getDescription() {
+  public @NotNull String getDescription() {
     return CoreBundle.message("filetype.plaintext.description");
   }
 
   @Override
-  @NotNull
-  public String getDefaultExtension() {
+  public @NotNull String getDefaultExtension() {
     return "txt";
   }
 
   @Override
-  public Icon getIcon() {
+  public @NotNull Icon getIcon() {
     return AllIcons.FileTypes.Text;
+  }
+
+  @Override
+  public ExtensionMode getExtensionsMode() {
+    return ExtensionMode.Selected;
   }
 }

@@ -1,29 +1,32 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.changes.ui
 
+import com.intellij.ui.CellRendererPanel
 import com.intellij.util.ui.ThreeStateCheckBox
 import com.intellij.util.ui.accessibility.AccessibleContextDelegate
-import com.intellij.util.ui.components.BorderLayoutPanel
+import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
+import java.awt.Dimension
 import javax.accessibility.Accessible
 import javax.accessibility.AccessibleContext
 import javax.accessibility.AccessibleRole
-import javax.swing.JComponent
 import javax.swing.JTree
 import javax.swing.tree.TreeCellRenderer
 
-abstract class ChangesTreeCellRenderer<C : JComponent>(private val textRenderer: ChangesBrowserNodeRenderer,
-                                                       protected val component: C) :
-  BorderLayoutPanel(), TreeCellRenderer {
+class ChangesTreeCellRenderer(private val textRenderer: ChangesBrowserNodeRenderer) : CellRendererPanel(), TreeCellRenderer {
+  private val component = ThreeStateCheckBox()
 
   init {
-    addToLeft(component)
-    addToCenter(textRenderer)
-    isOpaque = false
+    buildLayout()
   }
 
-  protected abstract fun C.prepare(tree: ChangesTree, node: ChangesBrowserNode<*>)
+  private fun buildLayout() {
+    layout = BorderLayout()
+
+    add(component, BorderLayout.WEST)
+    add(textRenderer, BorderLayout.CENTER)
+  }
 
   override fun getTreeCellRendererComponent(
     tree: JTree,
@@ -35,7 +38,10 @@ abstract class ChangesTreeCellRenderer<C : JComponent>(private val textRenderer:
     hasFocus: Boolean
   ): Component {
     tree as ChangesTree
+    value as ChangesBrowserNode<*>
+
     background = null
+    isSelected = selected
 
     textRenderer.apply {
       isOpaque = false
@@ -46,14 +52,16 @@ abstract class ChangesTreeCellRenderer<C : JComponent>(private val textRenderer:
     component.apply {
       background = null
       isOpaque = false
-      prepare(tree, value as ChangesBrowserNode<*>)
+
+      isVisible = tree.run { isShowCheckboxes && isInclusionVisible(value) }
+      if (isVisible) {
+        state = tree.getNodeStatus(value)
+        isEnabled = tree.run { isEnabled && isInclusionEnabled(value) }
+      }
     }
-    revalidate()
 
     return this
   }
-
-  override fun getToolTipText(): String? = textRenderer.toolTipText
 
   override fun getAccessibleContext(): AccessibleContext {
     val accessibleComponent = component as? Accessible ?: return super.getAccessibleContext()
@@ -76,16 +84,12 @@ abstract class ChangesTreeCellRenderer<C : JComponent>(private val textRenderer:
     }
     return accessibleContext
   }
-}
 
-class CheckboxTreeCellRenderer(textRenderer: ChangesBrowserNodeRenderer) :
-  ChangesTreeCellRenderer<ThreeStateCheckBox>(textRenderer, ThreeStateCheckBox()) {
+  /**
+   * Otherwise incorrect node sizes are cached - see [com.intellij.ui.tree.ui.DefaultTreeUI.createNodeDimensions].
+   * And [com.intellij.ui.ExpandableItemsHandler] does not work correctly.
+   */
+  override fun getPreferredSize(): Dimension = layout.preferredLayoutSize(this)
 
-  override fun ThreeStateCheckBox.prepare(tree: ChangesTree, node: ChangesBrowserNode<*>) {
-    isVisible = tree.run { isShowCheckboxes && isInclusionVisible(node) }
-    if (isVisible) {
-      state = tree.getNodeStatus(node)
-      isEnabled = tree.run { isEnabled && isInclusionEnabled(node) }
-    }
-  }
+  override fun getToolTipText(): String? = textRenderer.toolTipText
 }

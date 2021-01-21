@@ -4,6 +4,7 @@ package com.intellij.application.options
 import com.intellij.openapi.application.PathMacroContributor
 import com.intellij.openapi.application.PathMacros
 import com.intellij.openapi.components.*
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.util.ModificationTracker
 import com.intellij.util.containers.ContainerUtil
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 
-@State(name = "PathMacrosImpl", storages = [Storage(value = PathVariablesSerializer.STORAGE_FILE_NAME, roamingType = RoamingType.PER_OS)])
+@State(name = "PathMacrosImpl", storages = [Storage(value = PathVariablesSerializer.STORAGE_FILE_NAME, roamingType = RoamingType.PER_OS)], useLoadedStateAsExisting = false)
 open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors: Boolean = true) : PathMacros(), PersistentStateComponent<Element?>, ModificationTracker {
   @Volatile
   private var legacyMacros: Map<String, String> = emptyMap()
@@ -29,6 +30,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
 
   companion object {
     private val EP_NAME = ExtensionPointName<PathMacroContributor>("com.intellij.pathMacroContributor")
+    private val LOG = logger<PathMacrosImpl>()
 
     const val IGNORED_MACRO_ELEMENT = "ignoredMacro"
     const val MAVEN_REPOSITORY = "MAVEN_REPOSITORY"
@@ -78,7 +80,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
     return ContainerUtil.union(userMacroNames, systemMacroNames)
   }
 
-  override fun getValue(name: String) = macros.get(name)
+  override fun getValue(name: String) = macros[name]
 
   override fun removeAllMacros() {
     if (macros.isNotEmpty()) {
@@ -104,7 +106,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
       macros.remove(name)
     }
     else {
-      if (macros.get(name) == value) {
+      if (macros[name] == value) {
         return false
       }
 
@@ -137,6 +139,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
       macroElement.setAttribute(PathVariablesSerializer.NAME_ATTRIBUTE, macro)
       element.addContent(macroElement)
     }
+    LOG.info("Saved path macros: $macros") //temporary added to debug IDEA-256482; LOG.debug cannot be used due to IDEA-256647
     return element
   }
 
@@ -165,10 +168,10 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
         continue
       }
 
-      if (value.length > 1 && value[value.length - 1] == '/') {
+      if (value.lastOrNull() == '/') {
         value = value.substring(0, value.length - 1)
       }
-      newMacros.put(name, value)
+      newMacros[name] = value
     }
 
     val newIgnoredMacros = mutableListOf<String>()
@@ -179,10 +182,24 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
       }
     }
 
+    val forcedMacros = linkedMapOf<String, String>()
+    EP_NAME.forEachExtensionSafe { contributor ->
+      contributor.forceRegisterPathMacros(forcedMacros)
+    }
+
+    for (forcedMacro in forcedMacros) {
+      if (newMacros[forcedMacro.key] != forcedMacro.value) {
+        modificationStamp.incrementAndGet()
+        break
+      }
+    }
+    newMacros.putAll(forcedMacros)
+
     macros = if (newMacros.isEmpty()) emptyMap() else Collections.unmodifiableMap(newMacros)
     legacyMacros = if (newLegacyMacros.isEmpty()) emptyMap() else Collections.unmodifiableMap(newLegacyMacros)
     ignoredMacros.clear()
     ignoredMacros.addAll(newIgnoredMacros)
+    LOG.info("Loaded path macros: $macros") //temporary added to debug IDEA-256482; LOG.debug cannot be used due to IDEA-256647
   }
 
   fun addMacroReplacements(result: ReplacePathToMacroMap) {

@@ -13,10 +13,7 @@ import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.*;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.Consumer;
-import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.Processor;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.*;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -39,6 +36,16 @@ public abstract class FileBasedIndex {
   @Nullable
   public abstract VirtualFile getFileBeingCurrentlyIndexed();
 
+  @ApiStatus.Internal
+  public void registerProjectFileSets(@NotNull Project project) {
+    throw new UnsupportedOperationException();
+  }
+
+  @ApiStatus.Internal
+  public void removeProjectFileSets(@NotNull Project project) {
+    throw new UnsupportedOperationException();
+  }
+
   /**
    * Should be called only in dumb mode and only in a read action
    */
@@ -52,10 +59,6 @@ public abstract class FileBasedIndex {
   public <T> @NotNull Processor<? super T> inheritCurrentDumbAccessType(@NotNull Processor<? super T> processor) {
     return processor;
   }
-
-  public abstract void registerIndexableSet(@NotNull IndexableFileSet set, @Nullable Project project);
-
-  public abstract void removeIndexableSet(@NotNull IndexableFileSet set);
 
   public static FileBasedIndex getInstance() {
     return ApplicationManager.getApplication().getService(FileBasedIndex.class);
@@ -146,13 +149,15 @@ public abstract class FileBasedIndex {
    * Inside the command it's safe to call index related stuff and
    * {@link com.intellij.openapi.project.IndexNotReadyException} are not expected to be happen here.
    *
+   * <p> Please use {@link DumbModeAccessType#ignoreDumbMode(Runnable)} or {@link DumbModeAccessType#ignoreDumbMode(ThrowableComputable)}
+   * since they produce less boilerplate code.
+   *
    * <p> In smart mode, the behavior is similar to direct command execution
-   * @param command - a command to execute
    * @param dumbModeAccessType - defines in which manner command should be executed. Does a client expect only reliable data
+   * @param command - a command to execute
    */
   @ApiStatus.Experimental
-  public void ignoreDumbMode(@NotNull Runnable command,
-                             @NotNull DumbModeAccessType dumbModeAccessType) {
+  public void ignoreDumbMode(@NotNull DumbModeAccessType dumbModeAccessType, @NotNull Runnable command) {
     ignoreDumbMode(dumbModeAccessType, () -> {
       command.run();
       return null;
@@ -176,6 +181,10 @@ public abstract class FileBasedIndex {
 
   @NotNull
   public abstract <K, V> Map<K, V> getFileData(@NotNull ID<K, V> id, @NotNull VirtualFile virtualFile, @NotNull Project project);
+
+  public abstract <V> @Nullable V getSingleEntryIndexData(@NotNull ID<Integer, V> id,
+                                                          @NotNull VirtualFile virtualFile,
+                                                          @NotNull Project project);
 
   public static void iterateRecursively(@NotNull final VirtualFile root,
                                         @NotNull final ContentIterator processor,
@@ -215,8 +224,59 @@ public abstract class FileBasedIndex {
     throw new IncorrectOperationException();
   }
 
-  @ApiStatus.Internal
-  public boolean isIndexingCandidate(@NotNull VirtualFile file, @NotNull ID<?, ?> indexId) {
+  /**
+   * @return true if input file:
+   * <ul>
+   * <li> was scanned before indexing of some project in current IDE session </li>
+   * <li> contains up-to-date indexed state </li>
+   * </ul>
+   */
+  @ApiStatus.Experimental
+  public boolean isFileIndexedInCurrentSession(@NotNull VirtualFile file, @NotNull ID<?, ?> indexId) {
+    throw new UnsupportedOperationException();
+  }
+
+  @ApiStatus.Experimental
+  public static class AllKeysQuery<K, V> {
+    @NotNull
+    private final ID<K, V> indexId;
+    @NotNull
+    private final Collection<? extends K> dataKeys;
+    @Nullable
+    private final Condition<? super V> valueChecker;
+
+    public AllKeysQuery(@NotNull ID<K, V> id,
+                        @NotNull Collection<? extends K> keys,
+                        @Nullable Condition<? super V> checker) {
+      indexId = id;
+      dataKeys = keys;
+      valueChecker = checker;
+    }
+
+    @NotNull
+    public ID<K, V> getIndexId() {
+      return indexId;
+    }
+
+    @NotNull
+    public Collection<? extends K> getDataKeys() {
+      return dataKeys;
+    }
+
+    @Nullable
+    public Condition<? super V> getValueChecker() {
+      return valueChecker;
+    }
+  }
+
+  /**
+   * Analogue of {@link FileBasedIndex#processFilesContainingAllKeys(ID, Collection, GlobalSearchScope, Condition, Processor)}
+   * which optimized to perform several queries for different indexes.
+   */
+  @ApiStatus.Experimental
+  public boolean processFilesContainingAllKeys(@NotNull Collection<AllKeysQuery<?, ?>> queries,
+                                               @NotNull GlobalSearchScope filter,
+                                               @NotNull Processor<? super VirtualFile> processor) {
     throw new UnsupportedOperationException();
   }
 
@@ -233,6 +293,26 @@ public abstract class FileBasedIndex {
   @FunctionalInterface
   public interface InputFilter {
     boolean acceptInput(@NotNull VirtualFile file);
+  }
+
+  /**
+   * An input filter which accepts {@link IndexedFile} as parameter.
+   * One could use this interface for filters which require {@link Project} instance to filter out files.
+   * <br>
+   * Note, that in most of cases no one needs this filter.
+   * And the only use case is to optimize indexed file count when corresponding indexer is relatively slow.
+   */
+  @ApiStatus.Experimental
+  public interface ProjectSpecificInputFilter extends InputFilter {
+    @Override
+    default boolean acceptInput(@NotNull VirtualFile file) {
+      DeprecatedMethodException.reportDefaultImplementation(ProjectSpecificInputFilter.class,
+                                                            "acceptInput",
+                                                            "acceptInput(IndexedFile) should be called");
+      return false;
+    }
+
+    boolean acceptInput(@NotNull IndexedFile file);
   }
 
   /**

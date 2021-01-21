@@ -8,6 +8,8 @@ import com.intellij.diagnostic.StartUpMeasurer;
 import com.intellij.featureStatistics.fusCollectors.LifecycleUsageTriggerCollector;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.SaveAndSyncHandler;
+import com.intellij.ide.lightEdit.LightEdit;
+import com.intellij.ide.lightEdit.LightEditUtil;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationGroup;
 import com.intellij.notification.NotificationType;
@@ -29,10 +31,7 @@ import com.intellij.openapi.project.*;
 import com.intellij.openapi.project.ex.ProjectEx;
 import com.intellij.openapi.project.ex.ProjectManagerEx;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.ShutDownTracker;
-import com.intellij.openapi.util.UserDataHolderEx;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.impl.ZipHandler;
 import com.intellij.serviceContainer.ComponentManagerImpl;
@@ -40,7 +39,9 @@ import com.intellij.ui.AppUIUtil;
 import com.intellij.ui.IdeUICustomization;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -157,7 +158,6 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
                                     @Nullable Project template,
                                     @Nullable ProgressIndicator indicator) {
     LOG.assertTrue(!project.isDefault());
-    boolean succeed = false;
     try {
       if (indicator != null) {
         indicator.setIndeterminate(false);
@@ -167,18 +167,21 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
 
       Activity activity = StartUpMeasurer.startMainActivity("project before loaded callbacks");
       //noinspection deprecation
-      ApplicationManager.getApplication().getMessageBus().syncPublisher(ProjectLifecycleListener.TOPIC).beforeProjectLoaded(project);
+      ApplicationManager.getApplication().getMessageBus().syncPublisher(ProjectLifecycleListener.TOPIC).beforeProjectLoaded(file, project);
       activity.end();
 
       ProjectLoadHelper.registerComponents(project);
       project.getStateStore().setPath(file, isRefreshVfsNeeded, template);
       project.init(preloadServices, indicator);
-      succeed = true;
     }
-    finally {
-      if (!succeed) {
+    catch (Throwable initThrowable) {
+      try {
         WriteAction.runAndWait(() -> Disposer.dispose(project));
       }
+      catch (Throwable disposeThrowable) {
+        initThrowable.addSuppressed(disposeThrowable);
+      }
+      throw initThrowable;
     }
   }
 
@@ -196,11 +199,18 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
 
   @Override
   public @NotNull Project getDefaultProject() {
-    LOG.assertTrue(!ApplicationManager.getApplication().isDisposed(), "Default project has been already disposed!");
+    LOG.assertTrue(!ApplicationManager.getApplication().isDisposed(), "Application has already been disposed!");
     // call instance method to reset timeout
-    LOG.assertTrue(!myDefaultProject.getMessageBus().isDisposed());
+    MessageBus bus = myDefaultProject.getMessageBus(); // re-instantiate if needed
+    LOG.assertTrue(!bus.isDisposed());
     LOG.assertTrue(myDefaultProject.isCached());
     return myDefaultProject;
+  }
+
+  @TestOnly
+  @ApiStatus.Internal
+  public void disposeDefaultProjectAndCleanupComponentsForDynamicPluginTests() {
+    myDefaultProject.disposeDefaultProjectAndCleanupComponentsForDynamicPluginTests();
   }
 
   @Override
@@ -251,10 +261,8 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
   }
 
   public static void showCannotConvertMessage(@NotNull CannotConvertException e, @Nullable Component component) {
-    AppUIUtil.invokeOnEdt(() -> {
-      Messages.showErrorDialog(component, IdeBundle.message("error.cannot.convert.project", e.getMessage()),
-                               IdeBundle.message("title.cannot.convert.project"));
-    });
+    AppUIUtil.invokeOnEdt(() -> Messages.showErrorDialog(component, IdeBundle.message("error.cannot.convert.project", e.getMessage()),
+                                                       IdeBundle.message("title.cannot.convert.project")));
   }
 
   @Override
@@ -275,7 +283,12 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
   // return true if successful
   @Override
   public boolean closeAndDisposeAllProjects(boolean checkCanClose) {
-    for (Project project : getOpenProjects()) {
+    Project[] projects = getOpenProjects();
+    Project lightEditProject = LightEditUtil.getProjectIfCreated();
+    if (lightEditProject != null) {
+      projects = ArrayUtil.append(projects, lightEditProject);
+    }
+    for (Project project : projects) {
       if (!closeProject(project, /* isSaveProject = */ true, /* dispose = */ true, checkCanClose)) {
         return false;
       }
@@ -307,7 +320,7 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
       }
       projectImpl.setTemporarilyDisposed(false);
     }
-    else if (!isProjectOpened(project)) {
+    else if (!isProjectOpened(project) && !LightEdit.owns(project)) {
       if (dispose) {
         if (project instanceof ComponentManagerImpl) {
           ((ComponentManagerImpl)project).stopServicePreloading();
@@ -403,12 +416,6 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
   @Override
   public void addProjectManagerListener(@NotNull VetoableProjectManagerListener listener) {
     myListeners.add(listener);
-  }
-
-  @Override
-  public void addProjectManagerListener(final @NotNull ProjectManagerListener listener, @NotNull Disposable parentDisposable) {
-    addProjectManagerListener(listener);
-    Disposer.register(parentDisposable, () -> removeProjectManagerListener(listener));
   }
 
   @Override
@@ -534,7 +541,7 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
       return true;
     }
 
-    StringBuilder message = new StringBuilder();
+    @NlsContexts.DialogMessage StringBuilder message = new StringBuilder();
     message.append(String.format("%s was unable to save some project files,\nare you sure you want to close this project anyway?",
                                  ApplicationNamesInfo.getInstance().getProductName()));
 
@@ -586,8 +593,19 @@ public abstract class ProjectManagerImpl extends ProjectManagerEx implements Dis
     }
   }
 
+  private Runnable myGetAllExcludedUrlsCallback;
+  @TestOnly
+  public void testOnlyGetExcludedUrlsCallback(@NotNull Disposable parentDisposable, @NotNull Runnable callback) {
+    if (myGetAllExcludedUrlsCallback != null) {
+      throw new IllegalStateException("This method is not reentrant. Expected null but got " + myGetAllExcludedUrlsCallback);
+    }
+    myGetAllExcludedUrlsCallback = callback;
+    Disposer.register(parentDisposable, () -> myGetAllExcludedUrlsCallback = null);
+  }
   @Override
   public @NotNull List<String> getAllExcludedUrls() {
+    Runnable callback = myGetAllExcludedUrlsCallback;
+    if (callback != null) callback.run();
     return myExcludeRootsCache.getExcludedUrls();
   }
 }

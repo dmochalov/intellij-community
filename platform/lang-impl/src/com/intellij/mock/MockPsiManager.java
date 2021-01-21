@@ -20,7 +20,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
-public final class MockPsiManager extends PsiManagerEx {
+public /* not final for Android Studio tests */ class MockPsiManager extends PsiManagerEx {
   private final Project myProject;
   private final Map<VirtualFile,PsiDirectory> myDirectories = new HashMap<>();
   private MockFileManager myMockFileManager;
@@ -142,19 +142,6 @@ public final class MockPsiManager extends PsiManagerEx {
   @Override
   public void afterChange(boolean isPhysical) {
     throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public void registerRunnableToRunOnChange(@NotNull Runnable runnable) {
-  }
-
-  @Override
-  public void registerRunnableToRunOnAnyChange(@NotNull Runnable runnable) {
-  }
-
-  @Override
-  public void registerRunnableToRunAfterAnyChange(@NotNull Runnable runnable) {
-    throw new UnsupportedOperationException("Method registerRunnableToRunAfterAnyChange is not yet implemented in " + getClass().getName());
   }
 
   @Override

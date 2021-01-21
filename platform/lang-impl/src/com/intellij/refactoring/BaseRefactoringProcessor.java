@@ -32,6 +32,7 @@ import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Factory;
+import com.intellij.openapi.util.NlsContexts.Command;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.util.registry.Registry;
@@ -52,6 +53,7 @@ import com.intellij.refactoring.suggested.SuggestedRefactoringProvider;
 import com.intellij.refactoring.ui.ConflictsDialog;
 import com.intellij.refactoring.util.CommonRefactoringUtil;
 import com.intellij.usageView.UsageInfo;
+import com.intellij.usageView.UsageViewBundle;
 import com.intellij.usageView.UsageViewDescriptor;
 import com.intellij.usageView.UsageViewUtil;
 import com.intellij.usages.*;
@@ -177,8 +179,7 @@ public abstract class BaseRefactoringProcessor implements Runnable {
     throw new UnsupportedOperationException();
   }
 
-  @NotNull
-  protected abstract String getCommandName();
+  protected abstract @NotNull @Command String getCommandName();
 
   protected void doRun() {
     if (!PsiDocumentManager.getInstance(myProject).commitAllDocumentsUnderProgress()) {
@@ -320,6 +321,10 @@ public abstract class BaseRefactoringProcessor implements Runnable {
     return CommonRefactoringUtil.checkReadOnlyStatus(project, psiElements);
   }
 
+  public void executeEx(final UsageInfo @NotNull [] usages) {
+    execute(usages);
+  }
+
   protected void execute(final UsageInfo @NotNull [] usages) {
     CommandProcessor.getInstance().executeCommand(myProject, () -> {
       Collection<UsageInfo> usageInfos = new LinkedHashSet<>(Arrays.asList(usages));
@@ -377,21 +382,21 @@ public abstract class BaseRefactoringProcessor implements Runnable {
     nonCodeFiles.remove(null);
     dynamicUsagesCodeFiles.remove(null);
 
-    String codeReferencesText = descriptor.getCodeReferencesText(codeUsageCount, codeFiles.size());
-    presentation.setCodeUsagesString(codeReferencesText);
-    final String commentReferencesText = descriptor.getCommentReferencesText(nonCodeUsageCount, nonCodeFiles.size());
-    if (commentReferencesText != null) {
-      presentation.setNonCodeUsagesString(commentReferencesText);
-    }
-    presentation.setDynamicUsagesString("Dynamic " + StringUtil.decapitalize(descriptor.getCodeReferencesText(dynamicUsagesCount, dynamicUsagesCodeFiles.size())));
-    String generatedCodeString;
-    if (codeReferencesText.contains("in code")) {
-      generatedCodeString = StringUtil.replace(codeReferencesText, "in code", "in generated code");
-    }
-    else {
-      generatedCodeString = codeReferencesText + " in generated code";
-    }
-    presentation.setUsagesInGeneratedCodeString(generatedCodeString);
+    presentation.setCodeUsagesString(UsageViewBundle.message(
+      "usage.view.results.node.prefix",
+      UsageViewBundle.message("usage.view.results.node.code"),
+      descriptor.getCodeReferencesText(codeUsageCount, codeFiles.size())
+    ));
+    presentation.setNonCodeUsagesString(UsageViewBundle.message(
+      "usage.view.results.node.prefix",
+      UsageViewBundle.message("usage.view.results.node.non.code"),
+      descriptor.getCodeReferencesText(nonCodeUsageCount, nonCodeFiles.size())
+    ));
+    presentation.setDynamicUsagesString(UsageViewBundle.message(
+      "usage.view.results.node.prefix",
+      UsageViewBundle.message("usage.view.results.node.dynamic"),
+      descriptor.getCodeReferencesText(dynamicUsagesCount, dynamicUsagesCodeFiles.size())
+    ));
     return presentation;
   }
 
@@ -501,7 +506,8 @@ public abstract class BaseRefactoringProcessor implements Runnable {
                                                                         RefactoringBundle.message("refactoring.prepare.progress"), false, myProject);
 
       ApplicationEx app = ApplicationManagerEx.getApplicationEx();
-      if (Registry.is("run.refactorings.in.model.branch") && canPerformRefactoringInBranch()) {
+      boolean inBranch = Registry.is("run.refactorings.in.model.branch") && canPerformRefactoringInBranch();
+      if (inBranch) {
         callPerformRefactoring(writableUsageInfos, () -> performInBranch(writableUsageInfos));
       }
       else if (Registry.is("run.refactorings.under.progress")) {
@@ -520,11 +526,13 @@ public abstract class BaseRefactoringProcessor implements Runnable {
         e.getKey().performOperation(myProject, e.getValue());
       }
       myTransaction.commit();
-      if (Registry.is("run.refactorings.under.progress")) {
-        app.runWriteActionWithNonCancellableProgressInDispatchThread(commandName, myProject, null, indicator -> performPsiSpoilingRefactoring());
-      }
-      else {
-        app.runWriteAction(this::performPsiSpoilingRefactoring);
+      if (!inBranch) {
+        if (Registry.is("run.refactorings.under.progress")) {
+          app.runWriteActionWithNonCancellableProgressInDispatchThread(commandName, myProject, null, indicator -> performPsiSpoilingRefactoring());
+        }
+        else {
+          app.runWriteAction(this::performPsiSpoilingRefactoring);
+        }
       }
     }
     finally {
@@ -596,10 +604,11 @@ public abstract class BaseRefactoringProcessor implements Runnable {
   }
 
   /**
-   * Refactorings that spoil PSI (write something directly to documents etc.) should
+   * Non-ModelBranch refactorings that spoil PSI (write something directly to documents etc.) should
    * do that in this method.<br>
    * This method is called immediately after
    * <code>{@link #performRefactoring(UsageInfo[])}</code>.
+   * For branch-aware refactorings, please do this work inside {@link #performRefactoringInBranch}.
    */
   protected void performPsiSpoilingRefactoring() {
   }
@@ -679,14 +688,6 @@ public abstract class BaseRefactoringProcessor implements Runnable {
       Collections.sort(result);
       return StringUtil.join(result, "\n");
     }
-  }
-
-  /**
-   * @deprecated use {@link #showConflicts(MultiMap, UsageInfo[])}
-   */
-  @Deprecated
-  protected boolean showConflicts(@NotNull MultiMap<PsiElement, String> conflicts) {
-    return showConflicts(conflicts, null);
   }
 
   protected boolean showConflicts(@NotNull MultiMap<PsiElement, String> conflicts, final UsageInfo @Nullable [] usages) {

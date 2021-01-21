@@ -328,11 +328,12 @@ public final class CompilerTester {
     }
 
     private static boolean isSpamMessage(String text) {
-      return text.contains(JavaCompilerBundle.message("status.compilation.completed.successfully")) ||
+      return text.contains("Build completed successfully in ") ||
              text.contains("used to compile") ||
              text.contains("illegal reflective") ||
              text.contains("Picked up") ||
              text.contains("consider reporting this to the maintainers") ||
+             text.contains("Errors occurred while compiling module") ||
              text.startsWith("Using Groovy-Eclipse");
     }
 

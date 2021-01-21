@@ -174,14 +174,8 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     ).run();
   }
 
-  protected void tearDownFixtures() {
-    if (myTestFixture != null) {
-      try {
-        myTestFixture.tearDown();
-      }
-      catch (Exception ignored) {
-      }
-    }
+  protected void tearDownFixtures() throws Exception {
+    myTestFixture.tearDown();
     myTestFixture = null;
   }
 
@@ -354,7 +348,7 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     JarOutputStream target = new JarOutputStream(new FileOutputStream(f), manifest);
     for (Pair<ByteArraySequence, String> contentEntry : contentEntries) {
-      addJarEntry(contentEntry.first.getBytes(), contentEntry.second, target);
+      addJarEntry(contentEntry.first.toBytes(), contentEntry.second, target);
     }
     target.close();
 
@@ -521,11 +515,11 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     }
   }
 
-  protected static <T, U> void assertOrderedElementsAreEqual(Collection<U> actual, Collection<T> expected) {
+  protected static <T, U> void assertOrderedElementsAreEqual(Collection<? extends U> actual, Collection<? extends T> expected) {
     assertOrderedElementsAreEqual(actual, expected.toArray());
   }
 
-  protected static <T> void assertUnorderedElementsAreEqual(Collection<T> actual, Collection<T> expected) {
+  protected static <T> void assertUnorderedElementsAreEqual(Collection<? extends T> actual, Collection<? extends T> expected) {
     assertEquals(new HashSet<>(expected), new HashSet<>(actual));
   }
 
@@ -538,15 +532,15 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     assertUnorderedElementsAreEqual(Arrays.asList(actual), expected);
   }
 
-  protected static <T> void assertUnorderedElementsAreEqual(Collection<T> actual, T... expected) {
+  protected static <T> void assertUnorderedElementsAreEqual(Collection<? extends T> actual, T... expected) {
     assertUnorderedElementsAreEqual(actual, Arrays.asList(expected));
   }
 
-  protected static <T, U> void assertOrderedElementsAreEqual(Collection<U> actual, T... expected) {
+  protected static <T, U> void assertOrderedElementsAreEqual(Collection<? extends U> actual, T... expected) {
     assertOrderedElementsAreEqual(equalsPredicate(), actual, expected);
   }
 
-  protected static <T, U> void assertOrderedElementsAreEqual(BiPredicate<U, T> predicate, Collection<U> actual, T... expected) {
+  protected static <T, U> void assertOrderedElementsAreEqual(BiPredicate<? super U, ? super T> predicate, Collection<? extends U> actual, T... expected) {
     String s = "\nexpected: " + Arrays.asList(expected) + "\nactual: " + new ArrayList<>(actual);
     assertEquals(s, expected.length, actual.size());
 
@@ -563,7 +557,7 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     assertTrue("expected: " + expectedList + "\n" + "actual: " + actual.toString(), actual.containsAll(expectedList));
   }
 
-  protected static <T> void assertDoNotContain(java.util.List<T> actual, T... expected) {
+  protected static <T> void assertDoNotContain(List<? extends T> actual, T... expected) {
     java.util.List<T> actualCopy = new ArrayList<>(actual);
     actualCopy.removeAll(Arrays.asList(expected));
     assertEquals(actual.toString(), actualCopy.size(), actual.size());

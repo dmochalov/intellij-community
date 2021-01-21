@@ -21,7 +21,6 @@
     <extensionPoint qualifiedName="com.intellij.javaModuleSystem" interface="com.intellij.psi.JavaModuleSystem" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.javaCompilerConfigurationProxy" interface="com.intellij.psi.JavaCompilerConfigurationProxy" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.custom.exception.handler" interface="com.intellij.codeInsight.CustomExceptionHandler" dynamic="true"/>
-    <extensionPoint qualifiedName="com.intellij.lang.psiTypeAnnotationModifier" interface="com.intellij.psi.augment.TypeAnnotationModifier" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.lang.inferredAnnotationProvider" interface="com.intellij.codeInsight.InferredAnnotationProvider" area="IDEA_PROJECT" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.lang.psiAugmentProvider" interface="com.intellij.psi.augment.PsiAugmentProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.psi.clsCustomNavigationPolicy" interface="com.intellij.psi.impl.compiled.ClsCustomNavigationPolicy" dynamic="true"/>
@@ -127,12 +126,19 @@
     <codeInsight.containerProvider implementation="com.intellij.codeInsight.JavaContainerProvider" id="JAVA"/>
     <constantExpressionEvaluator language="JAVA" implementationClass="com.intellij.psi.impl.PsiExpressionEvaluator" />
     <lang.psiAugmentProvider implementation="com.intellij.psi.impl.RecordAugmentProvider"/>
+    <psi.classFileDecompiler id="clsStubBuilder" implementation="com.intellij.psi.impl.compiled.ClsDecompilerImpl" order="last"/>
+    <registryKey key="java.empty.enum.constructor.ref" defaultValue="true"
+                 description="Make enum constructor reference have empty range at the end of the enum field identifier"/>
   </extensions>
 
   <extensions defaultExtensionNs="org.jetbrains.uast">
     <uastLanguagePlugin implementation="org.jetbrains.uast.java.JavaUastLanguagePlugin"/>
     <analysis.uastAnalysisPlugin implementation="org.jetbrains.uast.java.analysis.JavaUastAnalysisPlugin"/>
     <generate.uastCodeGenerationPlugin implementation="org.jetbrains.uast.java.generate.JavaUastCodeGenerationPlugin"/>
+  </extensions>
+  
+  <extensions defaultExtensionNs="com.intellij">
+    <registryKey defaultValue="30" description="UAST usages graph building depth limit" key="uast.usage.graph.default.recursion.depth.limit"/>
   </extensions>
 
   <extensions defaultExtensionNs="com.intellij.jvm">

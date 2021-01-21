@@ -21,7 +21,10 @@ import com.intellij.openapi.fileEditor.impl.text.TextEditorPsiDataProvider;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.project.ProjectManagerListener;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.ActionCallback;
+import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -48,11 +51,17 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
   private final TestEditorSplitter myTestEditorSplitter = new TestEditorSplitter();
 
   private final Project myProject;
-  private int counter = 0;
+  private int counter;
 
   private final Map<VirtualFile, Editor> myVirtualFile2Editor = new HashMap<>();
   private VirtualFile myActiveFile;
-  private static final LightVirtualFile LIGHT_VIRTUAL_FILE = new LightVirtualFile("Dummy.java");
+  private static final MyLightVirtualFile LIGHT_VIRTUAL_FILE = new MyLightVirtualFile();
+  private static class MyLightVirtualFile extends LightVirtualFile {
+    MyLightVirtualFile() {super("Dummy.java");}
+    void clearUserDataOnDispose() {
+      clearUserData();
+    }
+  }
 
   TestEditorManagerImpl(@NotNull Project project) {
     myProject = project;
@@ -95,7 +104,7 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
 
   }
 
-  private Pair<FileEditor[], FileEditorProvider[]> openFileImpl3(OpenFileDescriptor openFileDescriptor, boolean focusEditor) {
+  private Pair<FileEditor[], FileEditorProvider[]> openFileImpl3(FileEditorNavigatable openFileDescriptor, boolean focusEditor) {
     VirtualFile file = openFileDescriptor.getFile();
     boolean isNewEditor = !myVirtualFile2Editor.containsKey(file);
 
@@ -363,6 +372,7 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
   @Override
   public void dispose() {
     closeAllFiles();
+    LIGHT_VIRTUAL_FILE.clearUserDataOnDispose();
   }
 
   @Override
@@ -446,7 +456,7 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
   }
 
   @NotNull
-  private Editor doOpenTextEditor(@NotNull OpenFileDescriptor descriptor) {
+  private Editor doOpenTextEditor(@NotNull FileEditorNavigatable descriptor) {
     VirtualFile file = descriptor.getFile();
     Editor editor = myVirtualFile2Editor.get(file);
 
@@ -472,7 +482,9 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
     }
 
     editor.getSelectionModel().removeSelection();
-    descriptor.navigateIn(editor);
+    if (descriptor instanceof OpenFileDescriptor) {
+      ((OpenFileDescriptor)descriptor).navigateIn(editor);
+    }
     myActiveFile = file;
 
     return editor;
@@ -480,7 +492,7 @@ final class TestEditorManagerImpl extends FileEditorManagerEx implements Disposa
 
   @Override
   @NotNull
-  public List<FileEditor> openEditor(@NotNull OpenFileDescriptor descriptor, boolean focusEditor) {
+  public List<FileEditor> openFileEditor(@NotNull FileEditorNavigatable descriptor, boolean focusEditor) {
     final Ref<Pair<FileEditor[], FileEditorProvider[]>> result = new Ref<>();
     CommandProcessor.getInstance().executeCommand(myProject,
                                                   () -> result.set(openFileImpl3(descriptor, focusEditor)),

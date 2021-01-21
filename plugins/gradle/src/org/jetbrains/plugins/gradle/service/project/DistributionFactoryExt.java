@@ -42,11 +42,6 @@ public final class DistributionFactoryExt extends DistributionFactory {
     super(Time.clock());
   }
 
-  @Deprecated
-  public static void setWrappedDistribution(GradleConnector connector, String wrapperPropertyFile, File gradleUserHome) {
-    setWrappedDistribution(connector, wrapperPropertyFile, gradleUserHome, null);
-  }
-
   public static void setWrappedDistribution(GradleConnector connector,
                                             String wrapperPropertyFile,
                                             File gradleUserHome,
@@ -123,7 +118,7 @@ public final class DistributionFactoryExt extends DistributionFactory {
       File[] files = libDir.listFiles(file -> hasExtension(file, ".jar"));
       // Make sure file order is always consistent
       Arrays.sort(files);
-      return new DefaultClassPath(files);
+      return DefaultClassPath.of(files);
     }
   }
 

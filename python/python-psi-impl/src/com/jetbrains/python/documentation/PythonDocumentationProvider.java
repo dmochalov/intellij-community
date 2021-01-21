@@ -4,6 +4,7 @@ package com.jetbrains.python.documentation;
 import com.intellij.lang.documentation.DocumentationProvider;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
@@ -26,7 +27,6 @@ import com.jetbrains.python.psi.impl.PyClassImpl;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
 import com.jetbrains.python.psi.resolve.QualifiedNameFinder;
 import com.jetbrains.python.psi.types.*;
-import com.jetbrains.python.pyi.PyiUtil;
 import com.jetbrains.python.toolbox.ChainIterable;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
@@ -79,7 +79,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
 
       result
         .add(describeDecorators(function, Function.identity(), TO_ONE_LINE_AND_ESCAPE, ", ", "\n"))
-        .add(describeFunction(function, originalElement, context, true));
+        .add(describeFunction(function, context, true));
 
       final String docStringSummary = getDocStringSummary(function);
       if (docStringSummary != null) {
@@ -127,38 +127,9 @@ public class PythonDocumentationProvider implements DocumentationProvider {
 
   @NotNull
   static ChainIterable<String> describeFunction(@NotNull PyFunction function,
-                                                @Nullable PsiElement original,
                                                 @NotNull TypeEvalContext context,
                                                 boolean forTooltip) {
-
-    final ChainIterable<String> result = new ChainIterable<>(describeFunctionWithTypes(function, context, forTooltip));
-
-    if (showOverloads(function, original, context)) {
-      final List<PyFunction> overloads = PyiUtil.getOverloads(function, context);
-      if (!overloads.isEmpty()) {
-        result.addItem("\nPossible types:\n");
-        boolean first = true;
-        for (PyFunction overload : overloads) {
-          if (!first) {
-            result.addItem("\n");
-          }
-          result.addItem(BULLET_POINT).addItem(" ");
-          describeTypeWithLinks(context.getType(overload), context, function, result);
-          first = false;
-        }
-      }
-    }
-
-    return result;
-  }
-
-  private static boolean showOverloads(@NotNull PyFunction definition, @Nullable PsiElement original, @NotNull TypeEvalContext context) {
-    if (!PyiUtil.isOverload(definition, context)) {
-      return true;
-    }
-    final PyFunction containing = PsiTreeUtil.getParentOfType(original, PyFunction.class, false,
-                                                              PyStatementList.class, PyParameterList.class);
-    return containing == null || !(containing == original || containing.getNameIdentifier() == original);
+    return new ChainIterable<>(describeFunctionWithTypes(function, context, forTooltip));
   }
 
   @NotNull
@@ -166,7 +137,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
     final ChainIterable<String> result = new ChainIterable<>();
     result.addItem(StringUtil.escapeXmlEntities(StringUtil.notNullize(target.getName())));
     result.addItem(": ");
-    describeTypeWithLinks(context.getType(target), context, target, result);
+    describeTypeWithLinks(context.getType(target), target, context, target, result);
     // Can return not physical elements such as foo()[0] for assignments like x, _ = foo()
     final PyExpression value = target.findAssignedValue();
     if (value != null) {
@@ -188,7 +159,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
     final ChainIterable<String> result = new ChainIterable<>();
     result.addItem(StringUtil.escapeXmlEntities(StringUtil.notNullize(parameter.getName())));
     result.addItem(": ");
-    describeTypeWithLinks(context.getType(parameter), context, parameter, result);
+    describeTypeWithLinks(context.getType(parameter), parameter, context, parameter, result);
     return result;
   }
 
@@ -237,6 +208,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
 
       String paramName = parameter.getName();
       PyType paramType = parameter.getType(context);
+      final PyNamedParameter named = as(parameter.getParameter(), PyNamedParameter.class);
       boolean showType = true;
       if (parameter.isPositionalContainer()) {
         paramName = "*" + StringUtil.notNullize(paramName, "args");
@@ -263,14 +235,13 @@ public class PythonDocumentationProvider implements DocumentationProvider {
       }
       else {
         paramName = StringUtil.notNullize(paramName, PyNames.UNNAMED_ELEMENT);
-        final PyNamedParameter named = as(parameter.getParameter(), PyNamedParameter.class);
         // Don't show type for "self" unless it's explicitly annotated
         showType = !parameter.isSelf() || (named != null && new PyTypingTypeProvider().getParameterType(named, function, context) != null);
       }
       result.append(escaped(paramName));
       if (showType) {
         result.append(": ");
-        result.append(formatTypeWithLinks(paramType, function, context));
+        result.append(formatTypeWithLinks(paramType, named, function, context));
       }
       final String defaultValue = parameter.getDefaultValueText();
       result.append(escaped(ObjectUtils.notNull(ParamHelper.getDefaultValuePartInSignature(defaultValue, showType), "")));
@@ -283,7 +254,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
       result.append("\n ");
     }
     result.append(escaped(" -> "))
-      .append(formatTypeWithLinks(context.getReturnType(function), function, context));
+      .append(formatTypeWithLinks(context.getReturnType(function), function, function, context));
     return result.toString();
   }
 
@@ -325,6 +296,7 @@ public class PythonDocumentationProvider implements DocumentationProvider {
    * @return string representation of the type
    */
   @NotNull
+  @NlsSafe
   public static String getTypeName(@Nullable PyType type, @NotNull TypeEvalContext context) {
     return buildTypeModel(type, context).asString();
   }
@@ -338,17 +310,27 @@ public class PythonDocumentationProvider implements DocumentationProvider {
   }
 
   /**
-   * @param type    type which description will be calculated.
-   *                Description is the same as {@link PythonDocumentationProvider#getTypeDescription(PyType, TypeEvalContext)} gives but
-   *                types are converted to links.
-   * @param context type evaluation context
-   * @param anchor  anchor element
-   * @param body    body to be used to append description
+   * @param type      type which description will be calculated.
+   *                  Description is the same as {@link PythonDocumentationProvider#getTypeDescription(PyType, TypeEvalContext)} gives but
+   *                  types are converted to links.
+   * @param typeOwner element that has the given type, can be {@code null} for synthetic parameters
+   * @param context   type evaluation context
+   * @param anchor    anchor element
+   * @param body      body to be used to append description
    */
   public static void describeTypeWithLinks(@Nullable PyType type,
+                                           @Nullable PyTypedElement typeOwner,
                                            @NotNull TypeEvalContext context,
                                            @NotNull PsiElement anchor,
                                            @NotNull ChainIterable<String> body) {
+    // Variable annotated with "typing.TypeAlias" marker is deliberately treated as having "Any" type
+    if (typeOwner instanceof PyTargetExpression && type == null) {
+      PyAssignmentStatement assignment = as(typeOwner.getParent(), PyAssignmentStatement.class);
+      if (assignment != null && PyTypingTypeProvider.isExplicitTypeAlias(assignment, context)) {
+        body.addItem("TypeAlias");
+        return;
+      }
+    }
     buildTypeModel(type, context).toBodyWithLinks(body, anchor);
   }
 
@@ -578,9 +560,12 @@ public class PythonDocumentationProvider implements DocumentationProvider {
   }
 
   @NotNull
-  private static String formatTypeWithLinks(@Nullable PyType type, @NotNull PsiElement anchor, @NotNull TypeEvalContext context) {
+  private static String formatTypeWithLinks(@Nullable PyType type,
+                                            @Nullable PyTypedElement typeOwner,
+                                            @NotNull PsiElement anchor,
+                                            @NotNull TypeEvalContext context) {
     final ChainIterable<String> holder = new ChainIterable<>();
-    describeTypeWithLinks(type, context, anchor, holder);
+    describeTypeWithLinks(type, typeOwner, context, anchor, holder);
     return holder.toString();
   }
 

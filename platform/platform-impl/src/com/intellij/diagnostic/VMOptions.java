@@ -4,10 +4,12 @@ package com.intellij.diagnostic;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.system.CpuArch;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -29,11 +31,11 @@ public final class VMOptions {
   public enum MemoryKind {
     HEAP("Xmx", ""), MIN_HEAP("Xms", ""), PERM_GEN("XX:MaxPermSize", "="), METASPACE("XX:MaxMetaspaceSize", "="), CODE_CACHE("XX:ReservedCodeCacheSize", "=");
 
-    public final String optionName;
+    public final @NlsSafe String optionName;
     public final String option;
     private final Pattern pattern;
 
-    MemoryKind(String name, String separator) {
+    MemoryKind(@NonNls String name, String separator) {
       optionName = name;
       option = "-" + name + separator;
       pattern = Pattern.compile(option + "(\\d*)([a-zA-Z]*)");
@@ -122,13 +124,13 @@ public final class VMOptions {
       if (!StringUtil.isEmptyOrSpaces(content)) {
         Matcher m = pattern.matcher(content);
         if (m.find()) {
-          StringBuffer b = new StringBuffer();
+          StringBuilder b = new StringBuilder();
           m.appendReplacement(b, Matcher.quoteReplacement(value));
           m.appendTail(b);
           content = b.toString();
         }
         else if (!StringUtil.isEmptyOrSpaces(value)) {
-          content = StringUtil.trimTrailing(content) + SystemProperties.getLineSeparator() + value;
+          content = StringUtil.trimTrailing(content) + System.lineSeparator() + value;
         }
       }
       else {
@@ -139,7 +141,7 @@ public final class VMOptions {
     };
   }
 
-  private static void writeGeneralOptions(@NotNull Function<String, String> transformContent) {
+  private static void writeGeneralOptions(@NotNull Function<? super String, String> transformContent) {
     Path path = getWriteFile();
     if (path == null) {
       LOG.warn("VM options file not configured");
@@ -212,8 +214,8 @@ public final class VMOptions {
 
   @NotNull
   public static String getCustomVMOptionsFileName() {
-    String fileName = StringUtil.toLowerCase(ApplicationNamesInfo.getInstance().getProductName());
-    if (SystemInfo.is64Bit && !SystemInfo.isMac) fileName += "64";
+    String fileName = ApplicationNamesInfo.getInstance().getScriptName();
+    if (!SystemInfo.isWindows && CpuArch.isIntel64() || SystemInfo.isXWindow && !CpuArch.is32Bit()) fileName += "64";
     if (SystemInfo.isWindows) fileName += ".exe";
     fileName += ".vmoptions";
     return fileName;

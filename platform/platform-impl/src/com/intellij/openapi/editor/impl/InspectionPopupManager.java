@@ -13,6 +13,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorBundle;
 import com.intellij.openapi.editor.markup.*;
 import com.intellij.openapi.ui.popup.*;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.AncestorListenerAdapter;
@@ -20,7 +21,7 @@ import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.DropDownLink;
 import com.intellij.ui.components.labels.LinkLabel;
 import com.intellij.ui.components.panels.NonOpaquePanel;
-import com.intellij.ui.popup.util.PopupState;
+import com.intellij.ui.popup.PopupState;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.Alarm;
 import com.intellij.util.IJSwingUtilities;
@@ -29,6 +30,7 @@ import com.intellij.util.ui.GridBag;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.xml.util.XmlStringUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -55,7 +57,7 @@ class InspectionPopupManager {
   private final Map<String, JProgressBar> myProgressBarMap = new HashMap<>();
   private final AncestorListener myAncestorListener;
   private final JBPopupListener myPopupListener;
-  private final PopupState myPopupState = new PopupState();
+  private final PopupState<JBPopup> myPopupState = PopupState.forPopup();
   private final Alarm popupAlarm = new Alarm();
   private final List<DropDownLink<?>> levelLinks = new ArrayList<>();
 
@@ -140,7 +142,7 @@ class InspectionPopupManager {
 
     myPopup = myPopupBuilder.createPopup();
     myPopup.addListener(myPopupListener);
-    myPopup.addListener(myPopupState);
+    myPopupState.prepareToShow(myPopup);
     myEditor.getComponent().addAncestorListener(myAncestorListener);
 
     JComponent owner = (JComponent)event.getComponent();
@@ -236,6 +238,9 @@ class InspectionPopupManager {
       else if (getAnalyzerStatus().getExpandedStatus().size() > 0 && getAnalyzerStatus().getAnalyzingType() != AnalyzingType.EMPTY) {
         myContent.add(createDetailsPanel(), gc);
       }
+      else if (!passes.isEmpty()){
+        myProgressPanel.setBorder(JBUI.Borders.emptyBottom(12));
+      }
     }
 
     myContent.add(createLowerPanel(controller),
@@ -253,12 +258,13 @@ class InspectionPopupManager {
   }
 
   private @NotNull JComponent createDetailsPanel() {
-    StringBuilder text = new StringBuilder();
+    @Nls StringBuilder text = new StringBuilder();
     for (int i = 0; i < getAnalyzerStatus().getExpandedStatus().size(); i++) {
       boolean last = i == getAnalyzerStatus().getExpandedStatus().size() - 1;
       StatusItem item = getAnalyzerStatus().getExpandedStatus().get(i);
 
-      text.append(item.getText()).append(" ").append(item.getType());
+      String detailsText = item.getDetailsText();
+      text.append(detailsText != null ? detailsText : item.getText());
       if (!last) {
         text.append(", ");
       }
@@ -285,25 +291,15 @@ class InspectionPopupManager {
       java.util.List<LanguageHighlightLevel> levels = controller.getHighlightLevels();
 
       if (levels.size() == 1) {
-        JLabel highlightLabel = new JLabel(EditorBundle.message("iw.highlight.label") + " ");
-        highlightLabel.setForeground(JBUI.CurrentTheme.Link.linkColor());
-
-        panel.add(highlightLabel, gc.next().anchor(GridBagConstraints.LINE_START));
-
-        DropDownLink<?> link = createDropDownLink(levels.get(0), controller);
+        DropDownLink<?> link = createDropDownLink(levels.get(0), controller, EditorBundle.message("iw.highlight.label") + " ");
         levelLinks.add(link);
         panel.add(link, gc.next());
       }
       else if (levels.size() > 1) {
         for(LanguageHighlightLevel level: levels) {
-          JLabel highlightLabel = new JLabel(level.getLangID() + ": ");
-          highlightLabel.setForeground(JBUI.CurrentTheme.Link.linkColor());
-
-          panel.add(highlightLabel, gc.next().anchor(GridBagConstraints.LINE_START).gridx > 0 ? gc.insetLeft(8) : gc);
-
-          DropDownLink<?> link = createDropDownLink(level, controller);
+          DropDownLink<?> link = createDropDownLink(level, controller, level.getLangID() + ": ");
           levelLinks.add(link);
-          panel.add(link, gc.next());
+          panel.add(link, gc.next().anchor(GridBagConstraints.LINE_START).gridx > 0 ? gc.insetLeft(8) : gc);
         }
       }
     }
@@ -317,7 +313,9 @@ class InspectionPopupManager {
     return panel;
   }
 
-  private @NotNull DropDownLink<InspectionsLevel> createDropDownLink(@NotNull LanguageHighlightLevel level, @NotNull UIController controller) {
+  private @NotNull DropDownLink<InspectionsLevel> createDropDownLink(@NotNull LanguageHighlightLevel level,
+                                                                     @NotNull UIController controller,
+                                                                     @NotNull @Nls String prefix) {
     return new DropDownLink<>(level.getLevel(),
                               controller.getAvailableLevels(),
                               inspectionsLevel -> {
@@ -332,10 +330,17 @@ class InspectionPopupManager {
                                 FeatureUsageData data = new FeatureUsageData().
                                   addProject(myEditor.getProject()).
                                   addLanguage(level.getLangID()).
-                                  addData("level", inspectionsLevel.toString());
+                                  addData("level", inspectionsLevel.name());
 
                                 FUCounterUsageLogger.getInstance().logEvent("inspection.widget", "highlight.level.changed", data);
-                              });
+                              },
+                              true) {
+      @NotNull
+      @Override
+      protected String itemToString(InspectionsLevel item) {
+        return prefix + item.toString();
+      }
+    };
   }
 
 
@@ -350,7 +355,7 @@ class InspectionPopupManager {
   private static final class TrackableLinkLabel extends LinkLabel<Object> {
     private InputEvent myEvent;
 
-    private TrackableLinkLabel(@NotNull String text, @NotNull Runnable action) {
+    private TrackableLinkLabel(@NotNull @NlsContexts.LinkLabel String text, @NotNull Runnable action) {
       super(text, null);
       setListener((__, ___) -> {
         action.run();

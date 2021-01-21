@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.editor.colors.impl;
 
 import com.intellij.configurationStore.BundledSchemeEP;
@@ -42,9 +42,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.serviceContainer.NonInjectable;
 import com.intellij.util.ComponentTreeEventDispatcher;
-import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.io.URLUtil;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.xmlb.annotations.OptionTag;
 import org.jdom.Element;
@@ -54,7 +52,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.UIManager.LookAndFeelInfo;
-import java.net.URL;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -66,8 +64,10 @@ import java.util.function.Function;
   additionalExportDirectory = EditorColorsManagerImpl.FILE_SPEC
 )
 public final class EditorColorsManagerImpl extends EditorColorsManager implements PersistentStateComponent<EditorColorsManagerImpl.State> {
+  public static final ExtensionPointName<AdditionalTextAttributesEP> ADDITIONAL_TEXT_ATTRIBUTES_EP_NAME = new ExtensionPointName<>("com.intellij.additionalTextAttributes");
+
   private static final Logger LOG = Logger.getInstance(EditorColorsManagerImpl.class);
-  private static final ExtensionPointName<BundledSchemeEP> BUNDLED_EP_NAME = ExtensionPointName.create("com.intellij.bundledColorScheme");
+  private static final ExtensionPointName<BundledSchemeEP> BUNDLED_EP_NAME = new ExtensionPointName<>("com.intellij.bundledColorScheme");
 
   private final ComponentTreeEventDispatcher<EditorColorsListener> myTreeDispatcher = ComponentTreeEventDispatcher.create(EditorColorsListener.class);
 
@@ -247,8 +247,8 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
 
   private void loadBundledSchemes() {
     if (!isUnitTestOrHeadlessMode()) {
-      BUNDLED_EP_NAME.forEachExtensionSafe(ep -> {
-        mySchemeManager.loadBundledScheme(ep.getPath() + ".xml", ep);
+      BUNDLED_EP_NAME.processWithPluginDescriptor((ep, pluginDescriptor) -> {
+        mySchemeManager.loadBundledScheme(ep.getPath() + ".xml", null, pluginDescriptor);
       });
     }
   }
@@ -263,7 +263,7 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
         UITheme theme = ((UIThemeBasedLookAndFeelInfo)laf).getTheme();
         String path = theme.getEditorScheme();
         if (path != null) {
-          mySchemeManager.loadBundledScheme(path, theme);
+          mySchemeManager.loadBundledScheme(path, theme, null);
         }
       }
     }
@@ -328,7 +328,7 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
   public void handleThemeAdded(@NotNull UITheme theme) {
     String editorScheme = theme.getEditorScheme();
     if (editorScheme != null) {
-      getSchemeManager().loadBundledScheme(editorScheme, theme);
+      getSchemeManager().loadBundledScheme(editorScheme, theme, null);
       initEditableBundledSchemesCopies();
     }
   }
@@ -380,7 +380,7 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
   @NotNull
   private static MultiMap<String, AdditionalTextAttributesEP> collectAdditionalTextAttributesEPs() {
     MultiMap<String, AdditionalTextAttributesEP> schemeNameToAttributesFile = MultiMap.create();
-    AdditionalTextAttributesEP.EP_NAME.forEachExtensionSafe(attributesEP -> {
+    ADDITIONAL_TEXT_ATTRIBUTES_EP_NAME.forEachExtensionSafe(attributesEP -> {
       schemeNameToAttributesFile.putValue(attributesEP.scheme, attributesEP);
     });
     return schemeNameToAttributesFile;
@@ -414,14 +414,15 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
   private static void loadAdditionalTextAttributesForScheme(@NotNull AbstractColorsScheme scheme,
                                                             @NotNull Collection<AdditionalTextAttributesEP> attributesEPs) {
     for (AdditionalTextAttributesEP attributesEP : attributesEPs) {
-      URL resource = attributesEP.getLoaderForClass().getResource(attributesEP.file);
-      if (resource == null) {
+      InputStream resourceStream = attributesEP.getLoaderForClass().getResourceAsStream(StringUtil.trimStart(attributesEP.file, "/"));
+      if (resourceStream == null) {
         LOG.warn("resource not found: " + attributesEP.file);
         continue;
       }
+
       try {
-        Element root = JDOMUtil.load(URLUtil.openStream(resource));
-        Element attrs = ObjectUtils.notNull(root.getChild("attributes"), root);
+        Element root = JDOMUtil.load(resourceStream);
+        Element attrs = Objects.requireNonNullElse(root.getChild("attributes"), root);
         Element colors = root.getChild("colors");
         scheme.readAttributes(attrs);
         if (colors != null) {
@@ -518,7 +519,7 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
   }
 
   @Override
-  public EditorColorsScheme getScheme(@NotNull String schemeName) {
+  public EditorColorsScheme getScheme(@NonNls @NotNull String schemeName) {
     return mySchemeManager.findSchemeByName(schemeName);
   }
 
@@ -589,8 +590,8 @@ public final class EditorColorsManagerImpl extends EditorColorsManager implement
     return mySchemeManager;
   }
 
-  private static final String TEMP_SCHEME_KEY = "TEMP_SCHEME_KEY";
-  private static final String TEMP_SCHEME_FILE_KEY = "TEMP_SCHEME_FILE_KEY";
+  @NonNls private static final String TEMP_SCHEME_KEY = "TEMP_SCHEME_KEY";
+  @NonNls private static final String TEMP_SCHEME_FILE_KEY = "TEMP_SCHEME_FILE_KEY";
   public static boolean isTempScheme(EditorColorsScheme scheme) {
     if (scheme == null) return false;
 

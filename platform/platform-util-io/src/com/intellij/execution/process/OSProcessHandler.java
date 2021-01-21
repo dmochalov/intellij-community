@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.process;
 
 import com.intellij.diagnostic.LoadingState;
@@ -20,6 +20,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.BaseDataReader;
 import com.intellij.util.io.BaseOutputReader;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -160,7 +161,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
     if (application == null || !application.isInternal() || application.isHeadlessEnvironment()) {
       return;
     }
-    String message = null;
+    @NonNls String message = null;
     if (application.isDispatchThread()) {
       message = "Synchronous execution on EDT: ";
     }
@@ -265,6 +266,10 @@ public class OSProcessHandler extends BaseOSProcessHandler {
         process.destroy();
       }
     }
+  }
+
+  public boolean hasPty() {
+    return myHasPty;
   }
 
   /**

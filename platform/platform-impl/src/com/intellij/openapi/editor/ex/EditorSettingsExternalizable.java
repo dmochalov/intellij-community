@@ -13,7 +13,6 @@ import com.intellij.serviceContainer.NonInjectable;
 import com.intellij.ui.breadcrumbs.BreadcrumbsProvider;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import org.intellij.lang.annotations.MagicConstant;
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
@@ -25,15 +24,20 @@ import java.util.Map;
 import java.util.Set;
 
 @State(name = "EditorSettings", storages = @Storage("editor.xml"))
-public final class EditorSettingsExternalizable implements PersistentStateComponent<EditorSettingsExternalizable.OptionSet> {
+public class EditorSettingsExternalizable implements PersistentStateComponent<EditorSettingsExternalizable.OptionSet> {
   @NonNls
   public static final String PROP_VIRTUAL_SPACE = "VirtualSpace";
+  @NonNls
+  public static final String PROP_BREADCRUMBS_PER_LANGUAGE = "BreadcrumbsPerLanguage";
+
+  @NonNls
+  public static final String PROP_DOC_COMMENT_RENDERING = "DocCommentRendering";
 
   public static final UINumericRange BLINKING_RANGE = new UINumericRange(500, 10, 1500);
   public static final UINumericRange TOOLTIPS_DELAY_RANGE = new UINumericRange(500, 1, 5000);
 
   private static final String SOFT_WRAP_FILE_MASKS_ENABLED_DEFAULT = "*";
-  private static final String SOFT_WRAP_FILE_MASKS_DISABLED_DEFAULT = "*.md; *.txt; *.rst; *.adoc";
+  @NonNls private static final String SOFT_WRAP_FILE_MASKS_DISABLED_DEFAULT = "*.md; *.txt; *.rst; *.adoc";
 
   //Q: make it interface?
   public static final class OptionSet {
@@ -134,8 +138,6 @@ public final class EditorSettingsExternalizable implements PersistentStateCompon
   //private int myTabSize = 4;
   //private boolean myUseTabCharacter = false;
 
-  private int myAdditionalLinesCount = 10;
-
   @NonNls public static final String STRIP_TRAILING_SPACES_NONE = "None";
   @NonNls public static final String STRIP_TRAILING_SPACES_CHANGED = "Changed";
   @NonNls public static final String STRIP_TRAILING_SPACES_WHOLE = "Whole";
@@ -157,7 +159,7 @@ public final class EditorSettingsExternalizable implements PersistentStateCompon
       return new EditorSettingsExternalizable(new OsSpecificState());
     }
     else {
-      return ServiceManager.getService(EditorSettingsExternalizable.class);
+      return ApplicationManager.getApplication().getService(EditorSettingsExternalizable.class);
     }
   }
 
@@ -242,24 +244,6 @@ public final class EditorSettingsExternalizable implements PersistentStateCompon
     myOptions.ARE_GUTTER_ICONS_SHOWN = val;
   }
 
-  /**
-   * @deprecated Not used, to be removed in version 2021.1.
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  public int getAdditionalLinesCount() {
-    return myAdditionalLinesCount;
-  }
-
-  /**
-   * @deprecated Not used, to be removed in version 2021.1.
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  public void setAdditionalLinesCount(int additionalLinesCount) {
-    myAdditionalLinesCount = additionalLinesCount;
-  }
-
   public boolean isFoldingOutlineShown() {
     return myOptions.IS_FOLDING_OUTLINE_SHOWN;
   }
@@ -338,7 +322,11 @@ public final class EditorSettingsExternalizable implements PersistentStateCompon
    */
   public boolean setBreadcrumbsShownFor(String languageID, boolean value) {
     Boolean visible = myOptions.mapLanguageBreadcrumbs.put(languageID, value);
-    return (visible == null || visible) != value;
+    boolean newValue = (visible == null || visible) != value;
+    if (newValue) {
+      myPropertyChangeSupport.firePropertyChange(PROP_BREADCRUMBS_PER_LANGUAGE, visible, (Boolean)value);
+    }
+    return newValue;
   }
 
   public boolean isDocCommentRenderingEnabled() {
@@ -346,7 +334,11 @@ public final class EditorSettingsExternalizable implements PersistentStateCompon
   }
 
   public void setDocCommentRenderingEnabled(boolean value) {
+    boolean oldValue = myOptions.ENABLE_RENDERED_DOC;
     myOptions.ENABLE_RENDERED_DOC = value;
+    if (oldValue != value) {
+      myPropertyChangeSupport.firePropertyChange(PROP_DOC_COMMENT_RENDERING, oldValue, value);
+    }
   }
 
   public boolean isBlockCursor() {

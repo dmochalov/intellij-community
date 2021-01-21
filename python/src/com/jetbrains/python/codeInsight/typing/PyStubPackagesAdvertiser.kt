@@ -8,6 +8,7 @@ import com.intellij.codeInspection.ex.ProblemDescriptorImpl
 import com.intellij.codeInspection.ui.ListEditForm
 import com.intellij.execution.ExecutionException
 import com.intellij.notification.*
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
@@ -36,8 +37,7 @@ private class PyStubPackagesAdvertiser : PyInspection() {
     private val FORCED = emptyMap<String, String>() // top-level package to package on PyPI
 
     // notification will be shown for packages below
-    private val CHECKED = mapOf("boto3" to "boto3",
-                                "coincurve" to "coincurve",
+    private val CHECKED = mapOf("coincurve" to "coincurve",
                                 "docutils" to "docutils",
                                 "pika" to "pika",
                                 "gi" to "PyGObject",
@@ -107,7 +107,7 @@ private class PyStubPackagesAdvertiser : PyInspection() {
       if (availablePackages.isEmpty()) return
 
       val ignoredStubPackages = ignoredPackages.mapNotNull { packageManager.parseRequirement(it) }
-      val cache = ServiceManager.getService(PyStubPackagesAdvertiserCache::class.java).forSdk(sdk)
+      val cache = ApplicationManager.getApplication().getService(PyStubPackagesAdvertiserCache::class.java).forSdk(sdk)
 
       val forcedToLoad = processForcedPackages(file, sources, module, sdk, packageManager, ignoredStubPackages, cache)
       val checkedToLoad = processCheckedPackages(file, sources, module, sdk, packageManager, ignoredStubPackages, cache)
@@ -300,7 +300,7 @@ private class PyStubPackagesAdvertiser : PyInspection() {
             }
 
             val content = PyBundle.message("code.insight.stub.packages.ignored.notification.content",
-                                           stubPkgNamesToUninstall.joinToString { "'$it'" }, stubPkgNamesToUninstall.size > 1)
+                                           stubPkgNamesToUninstall.joinToString { "'$it'" }, stubPkgNamesToUninstall.size)
 
             BALLOON_NOTIFICATIONS.createNotification(content, NotificationType.WARNING).notify(project)
             PyPackageManagerUI(project, sdk, uninstallationListener).uninstall(stubPkgsToUninstall)

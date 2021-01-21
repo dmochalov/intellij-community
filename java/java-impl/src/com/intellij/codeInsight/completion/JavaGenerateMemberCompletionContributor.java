@@ -7,6 +7,7 @@ import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.codeInspection.ex.GlobalInspectionContextBase;
 import com.intellij.icons.AllIcons;
+import com.intellij.java.JavaBundle;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.project.DumbService;
@@ -65,7 +66,7 @@ public final class JavaGenerateMemberCompletionContributor {
       PsiAnnotation annotation = Objects.requireNonNull(PsiTreeUtil.getParentOfType(position, PsiAnnotation.class));
       int annoStart = annotation.getTextRange().getStartOffset();
 
-      result.addElement(itemWithOverrideImplementDialog(annoStart));
+      result.addElement(itemWithOverrideImplementDialog());
 
       suggestGeneratedMethods(
         result.withPrefixMatcher(new NoMiddleMatchesAfterSpace(annotation.getText().substring(0, parameters.getOffset() - annoStart))),
@@ -98,14 +99,18 @@ public final class JavaGenerateMemberCompletionContributor {
   }
 
   @NotNull
-  private static LookupElementBuilder itemWithOverrideImplementDialog(int annoStart) {
-    return LookupElementBuilder.create("Override/Implement methods...").withInsertHandler((context, item) -> {
-      context.getDocument().deleteString(annoStart, context.getTailOffset());
-      context.commitDocument();
-      context.setAddCompletionChar(false);
-      context.setLaterRunnable(() -> {
-        new OverrideMethodsHandler().invoke(context.getProject(), context.getEditor(), context.getFile());
-      });
+  private static LookupElementBuilder itemWithOverrideImplementDialog() {
+    return LookupElementBuilder.create(JavaBundle.message("completion.override.implement.methods")).withLookupString("Override")
+      .withInsertHandler((context, item) -> {
+        PsiAnnotation annotation = PsiTreeUtil.getParentOfType(context.getFile().findElementAt(context.getStartOffset()), PsiAnnotation.class);
+        if (annotation != null) {
+          context.getDocument().deleteString(annotation.getTextRange().getStartOffset(), context.getTailOffset());
+          context.commitDocument();
+        }
+        context.setAddCompletionChar(false);
+        context.setLaterRunnable(() -> {
+          new OverrideMethodsHandler().invoke(context.getProject(), context.getEditor(), context.getFile());
+        });
     });
   }
 
@@ -138,7 +143,7 @@ public final class JavaGenerateMemberCompletionContributor {
         if ((existingMethod == null || existingMethod instanceof SyntheticElement) &&
             addedSignatures.add(prototype.getSignature(PsiSubstitutor.EMPTY))) {
           Icon icon = prototype.getIcon(Iconable.ICON_FLAG_VISIBILITY);
-          result.addElement(createGenerateMethodElement(prototype, PsiSubstitutor.EMPTY, icon, "", new InsertHandler<LookupElement>() {
+          result.addElement(createGenerateMethodElement(prototype, PsiSubstitutor.EMPTY, icon, "", new InsertHandler<>() {
             @Override
             public void handleInsert(@NotNull InsertionContext context, @NotNull LookupElement item) {
               removeLookupString(context);
@@ -179,7 +184,7 @@ public final class JavaGenerateMemberCompletionContributor {
 
     RowIcon icon = IconManager
       .getInstance().createRowIcon(baseMethod.getIcon(0), implemented ? AllIcons.Gutter.ImplementingMethod : AllIcons.Gutter.OverridingMethod);
-    return createGenerateMethodElement(baseMethod, substitutor, icon, baseClass.getName(), new InsertHandler<LookupElement>() {
+    return createGenerateMethodElement(baseMethod, substitutor, icon, baseClass.getName(), new InsertHandler<>() {
       @Override
       public void handleInsert(@NotNull InsertionContext context, @NotNull LookupElement item) {
         removeLookupString(context);
@@ -219,7 +224,7 @@ public final class JavaGenerateMemberCompletionContributor {
   private static AccessToken forceDefaultMethodsInside() {
     CommandProcessor instance = CommandProcessor.getInstance();
     String commandName = instance.getCurrentCommandName();
-    instance.setCurrentCommandName(OverrideImplementUtil.IMPLEMENT_COMMAND_MARKER);
+    instance.setCurrentCommandName(JavaBundle.message("generate.members.implement.command"));
     return new AccessToken() {
       @Override
       public void finish() {

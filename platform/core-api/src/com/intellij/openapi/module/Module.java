@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.extensions.AreaInstance;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.*;
@@ -32,7 +33,7 @@ public interface Module extends ComponentManager, AreaInstance, Disposable {
    * files, it may be stored in a different directory, under .idea/modules or doesn't exist at all if the module configuration is imported
    * from external project system (e.g. Gradle). So only internal subsystems which deal with serialization are supposed to use this method.
    * If you need to find a directory (directories) where source files for the module are located, get its {@link com.intellij.openapi.roots.ModuleRootModel#getContentRoots() content roots}.
-   * If you need to get just some directory near to module files (e.g. to select by default in a file chooser), use {@link com.intellij.openapi.module.ModuleUtil#suggestBaseDirectory}.
+   * If you need to get just some directory near to module files (e.g. to select by default in a file chooser), use {@link com.intellij.openapi.project.ProjectUtil#guessModuleDir(com.intellij.openapi.module.Module)}.
    */
   @ApiStatus.Internal
   @Nullable VirtualFile getModuleFile();
@@ -41,7 +42,7 @@ public interface Module extends ComponentManager, AreaInstance, Disposable {
    * Returns path to the module .iml file. This method isn't supposed to be used from plugins, see {@link #getModuleFile()} details.
    */
   @ApiStatus.Internal
-  @SystemIndependent
+  @SystemIndependent @NonNls 
   default @NotNull String getModuleFilePath() {
     return getModuleNioFile().toString().replace(File.separatorChar, '/');
   }
@@ -64,7 +65,7 @@ public interface Module extends ComponentManager, AreaInstance, Disposable {
    *
    * @return the module name.
    */
-  @NotNull String getName();
+  @NotNull @NlsSafe String getName();
 
   /**
    * Checks if the module instance has been disposed and unloaded.
@@ -94,6 +95,7 @@ public interface Module extends ComponentManager, AreaInstance, Disposable {
    * @deprecated Please store options in your own {@link com.intellij.openapi.components.PersistentStateComponent}
    */
   @Deprecated
+  @NonNls
   @Nullable
   String getOptionValue(@NotNull String key);
 
@@ -160,13 +162,13 @@ public interface Module extends ComponentManager, AreaInstance, Disposable {
   @NotNull
   GlobalSearchScope getModuleRuntimeScope(boolean includeTests);
 
-  @Nullable
+  @Nullable @NonNls
   default String getModuleTypeName() {
     //noinspection deprecation
     return getOptionValue(ELEMENT_TYPE);
   }
 
-  default void setModuleType(@NotNull String name) {
+  default void setModuleType(@NotNull @NonNls String name) {
     //noinspection deprecation
     setOption(ELEMENT_TYPE, name);
   }

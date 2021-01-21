@@ -3,6 +3,7 @@
 package com.intellij.ide.fileTemplates.impl;
 
 import com.intellij.diagnostic.PluginException;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.fileTemplates.*;
 import com.intellij.ide.plugins.DynamicPluginListener;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
@@ -52,7 +53,7 @@ public final class FileTemplateManagerImpl extends FileTemplateManager implement
     myDefaultSettings = ApplicationManager.getApplication().getService(ExportableFileTemplateSettings.class);
     myProject = project;
 
-    myProjectScheme = project.isDefault() ? null : new FileTemplatesScheme("Project") {
+    myProjectScheme = project.isDefault() ? null : new FileTemplatesScheme(IdeBundle.message("project.scheme")) {
       @NotNull
       @Override
       public String getTemplatesDir() {
@@ -221,16 +222,15 @@ public final class FileTemplateManagerImpl extends FileTemplateManager implement
 
   @Override
   public FileTemplate @NotNull [] getInternalTemplates() {
-    List<InternalTemplateBean> internalTemplateBeans = InternalTemplateBean.EP_NAME.getExtensionList();
-    List<FileTemplate> result = new ArrayList<>(internalTemplateBeans.size());
-    for (InternalTemplateBean bean : internalTemplateBeans) {
+    List<FileTemplate> result = new ArrayList<>(InternalTemplateBean.EP_NAME.getPoint().size());
+    InternalTemplateBean.EP_NAME.processWithPluginDescriptor((bean, pluginDescriptor) -> {
       try {
         result.add(getInternalTemplate(bean.name));
       }
       catch (Exception e) {
-        LOG.error("Can't find template " + bean.name, new PluginException(e, bean.getPluginId()));
+        LOG.error("Can't find template " + bean.name, new PluginException(e, pluginDescriptor.getPluginId()));
       }
-    }
+    });
     return result.toArray(FileTemplate.EMPTY_ARRAY);
   }
 

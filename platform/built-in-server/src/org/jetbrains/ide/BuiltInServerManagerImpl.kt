@@ -62,10 +62,8 @@ class BuiltInServerManagerImpl : BuiltInServerManager() {
 
   companion object {
     @JvmField
-    internal val NOTIFICATION_GROUP: NotNullLazyValue<NotificationGroup> = object : NotNullLazyValue<NotificationGroup>() {
-      override fun compute(): NotificationGroup {
-        return NotificationGroup("Built-in Server", NotificationDisplayType.STICKY_BALLOON, true)
-      }
+    internal val NOTIFICATION_GROUP: NotNullLazyValue<NotificationGroup> = NotNullLazyValue.lazy {
+      NotificationGroup("Built-in Server", NotificationDisplayType.STICKY_BALLOON, true)
     }
 
     @JvmStatic
@@ -144,9 +142,9 @@ class BuiltInServerManagerImpl : BuiltInServerManager() {
         catch (e: Throwable) {
           LOG.info(e)
           NOTIFICATION_GROUP.value.createNotification(
-            BuiltInServerBundle.message("notification.content.cannot.start.internal.http.server.git.integration.javascript.debugger.and.liveedit.may.operate.with.errors") +
-            BuiltInServerBundle.message("notification.content.please.check.your.firewall.settings.and.restart") + ApplicationNamesInfo.getInstance().fullProductName,
-            NotificationType.ERROR).notify(null)
+            BuiltInServerBundle.message("notification.content.cannot.start.internal.http.server.and.ask.for.restart.0", ApplicationNamesInfo.getInstance().fullProductName),
+            NotificationType.ERROR
+          ).notify(null)
           return@Consumer
         }
 

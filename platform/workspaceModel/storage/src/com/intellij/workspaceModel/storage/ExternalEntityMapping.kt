@@ -8,11 +8,12 @@ package com.intellij.workspaceModel.storage
 interface ExternalEntityMapping<T> {
   fun getEntities(data: T): List<WorkspaceEntity>
   fun getDataByEntity(entity: WorkspaceEntity): T?
+  fun forEach(action: (key: WorkspaceEntity, value: T) -> Unit)
 }
 
 interface MutableExternalEntityMapping<T> : ExternalEntityMapping<T> {
   fun addMapping(entity: WorkspaceEntity, data: T)
   fun addIfAbsent(entity: WorkspaceEntity, data: T): Boolean
   fun getOrPutDataByEntity(entity: WorkspaceEntity, defaultValue: () -> T): T
-  fun removeMapping(entity: WorkspaceEntity)
+  fun removeMapping(entity: WorkspaceEntity): T?
 }

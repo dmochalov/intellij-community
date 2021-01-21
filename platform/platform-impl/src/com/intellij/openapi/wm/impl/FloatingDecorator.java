@@ -19,6 +19,7 @@ import com.intellij.ui.ScreenUtil;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.util.Alarm;
 import com.intellij.util.MathUtil;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -57,7 +58,7 @@ public final class FloatingDecorator extends JDialog {
   private float myEndRatio; // start and end alpha ratio for transparency animation
 
   FloatingDecorator(@NotNull JFrame owner, @NotNull InternalDecorator decorator) {
-    super(owner, decorator.getToolWindow().getId());
+    super(owner, decorator.getToolWindow().getStripeTitle());
 
     MnemonicHelper.init(getContentPane());
 
@@ -110,6 +111,8 @@ public final class FloatingDecorator extends JDialog {
 
   @Override
   public final void show(){
+    UIUtil.decorateWindowHeader(rootPane);
+    UIUtil.setCustomTitleBar(this, rootPane, runnable -> Disposer.register(myDisposable, () -> runnable.run()));
     boolean isActive = myInfo.isActiveOnStart();
     setFocusableWindowState(isActive);
 

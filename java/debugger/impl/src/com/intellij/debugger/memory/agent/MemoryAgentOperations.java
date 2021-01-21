@@ -3,18 +3,19 @@ package com.intellij.debugger.memory.agent;
 
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
+import com.intellij.debugger.engine.DebuggerUtils;
+import com.intellij.debugger.engine.JVMNameUtil;
 import com.intellij.debugger.engine.evaluation.EvaluateException;
 import com.intellij.debugger.engine.evaluation.EvaluateExceptionUtil;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.impl.ClassLoadingUtils;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
 import com.intellij.debugger.memory.agent.extractor.ProxyExtractor;
-import com.intellij.debugger.memory.agent.parsers.BooleanParser;
-import com.intellij.debugger.memory.agent.parsers.GcRootsPathsParser;
-import com.intellij.debugger.memory.agent.parsers.LongArrayParser;
-import com.intellij.debugger.memory.agent.parsers.LongValueParser;
+import com.intellij.debugger.memory.agent.parsers.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.Pair;
+import com.intellij.util.containers.ContainerUtil;
 import com.sun.jdi.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -26,26 +27,140 @@ import java.util.List;
 final class MemoryAgentOperations {
   private static final Key<MemoryAgent> MEMORY_AGENT_KEY = Key.create("MEMORY_AGENT_KEY");
   private static final Logger LOG = Logger.getInstance(MemoryAgentOperations.class);
+  private static final String proxyConstructorSignature = "(Ljava/lang/Object;J)V";
 
-  static long estimateObjectSize(@NotNull EvaluationContextImpl evaluationContext, @NotNull ObjectReference reference)
-    throws EvaluateException {
-    Value result = callMethod(evaluationContext, MemoryAgentNames.Methods.ESTIMATE_OBJECT_SIZE, Collections.singletonList(reference));
-    return LongValueParser.INSTANCE.parse(result);
-  }
+  @NotNull
+  static MemoryAgentActionResult<Pair<long[], ObjectReference[]>> estimateObjectSize(@NotNull EvaluationContextImpl evaluationContext,
+                                                                                     @NotNull ObjectReference reference,
+                                                                                     @NotNull String cancellationFileName,
+                                                                                     long timeoutInMillis) throws EvaluateException {
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.ESTIMATE_OBJECT_SIZE,
+      cancellationFileName, timeoutInMillis, reference
+    );
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    MemoryAgentActionResult.ErrorCode errCode = errCodeAndResult.getFirst();
+    Pair<long[], ObjectReference[]> sizesAndObjects;
+    if (errCode != MemoryAgentActionResult.ErrorCode.OK) {
+      sizesAndObjects = new Pair<>(new long[0], new ObjectReference[0]);
+    } else {
+      Pair<Long[], ObjectReference[]> parsingResult = SizeAndHeldObjectsParser.INSTANCE.parse(errCodeAndResult.getSecond());
+      sizesAndObjects = new Pair<>(
+        Arrays.stream(parsingResult.getFirst()).mapToLong(Long::longValue).toArray(),
+        parsingResult.getSecond()
+      );
+    }
 
-  static long @NotNull [] estimateObjectsSizes(@NotNull EvaluationContextImpl evaluationContext, @NotNull List<ObjectReference> references)
-    throws EvaluateException {
-    ArrayReference array = wrapWithArray(evaluationContext, references);
-    Value result = callMethod(evaluationContext, MemoryAgentNames.Methods.ESTIMATE_OBJECTS_SIZE, Collections.singletonList(array));
-    return LongArrayParser.INSTANCE.parse(result).stream().mapToLong(Long::longValue).toArray();
+    return new MemoryAgentActionResult<>(sizesAndObjects, errCode);
   }
 
   @NotNull
-  static ReferringObjectsInfo findReferringObjects(@NotNull EvaluationContextImpl evaluationContext,
-                                                   @NotNull ObjectReference reference, int limit) throws EvaluateException {
-    IntegerValue limitValue = evaluationContext.getDebugProcess().getVirtualMachineProxy().mirrorOf(limit);
-    Value value = callMethod(evaluationContext, MemoryAgentNames.Methods.FIND_GC_ROOTS, Arrays.asList(reference, limitValue));
-    return GcRootsPathsParser.INSTANCE.parse(value);
+  static MemoryAgentActionResult<long[]> estimateObjectsSizes(@NotNull EvaluationContextImpl evaluationContext,
+                                                              @NotNull List<ObjectReference> references,
+                                                              @NotNull String cancellationFileName,
+                                                              long timeoutInMillis) throws EvaluateException {
+    ArrayReference array = wrapWithArray(evaluationContext, references);
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.ESTIMATE_OBJECTS_SIZE,
+      cancellationFileName, timeoutInMillis, array
+    );
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    return new MemoryAgentActionResult<>(
+      LongArrayParser.INSTANCE.parse(errCodeAndResult.getSecond()).stream().mapToLong(Long::longValue).toArray(),
+      errCodeAndResult.getFirst()
+    );
+  }
+
+  @NotNull
+  static MemoryAgentActionResult<long[]> getShallowSizeByClasses(@NotNull EvaluationContextImpl evaluationContext,
+                                                                 @NotNull List<ReferenceType> classes,
+                                                                 @NotNull String cancellationFileName,
+                                                                 long timeoutInMillis) throws EvaluateException {
+    ArrayReference array = wrapWithArray(evaluationContext, ContainerUtil.map(classes, ReferenceType::classObject));
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.GET_SHALLOW_SIZE_BY_CLASSES,
+      cancellationFileName, timeoutInMillis, array
+    );
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    return new MemoryAgentActionResult<>(
+      LongArrayParser.INSTANCE.parse(errCodeAndResult.getSecond()).stream().mapToLong(Long::longValue).toArray(),
+      errCodeAndResult.getFirst()
+    );
+  }
+
+  @NotNull
+  static MemoryAgentActionResult<long[]> getRetainedSizeByClasses(@NotNull EvaluationContextImpl evaluationContext,
+                                                                  @NotNull List<ReferenceType> classes,
+                                                                  @NotNull String cancellationFileName,
+                                                                  long timeoutInMillis) throws EvaluateException {
+    ArrayReference array = wrapWithArray(evaluationContext, ContainerUtil.map(classes, ReferenceType::classObject));
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.GET_RETAINED_SIZE_BY_CLASSES,
+      cancellationFileName, timeoutInMillis, array
+    );
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    return new MemoryAgentActionResult<>(
+      LongArrayParser.INSTANCE.parse(errCodeAndResult.getSecond()).stream().mapToLong(Long::longValue).toArray(),
+      errCodeAndResult.getFirst()
+    );
+  }
+
+  @NotNull
+  static MemoryAgentActionResult<Pair<long[], long[]>> getShallowAndRetainedSizeByClasses(@NotNull EvaluationContextImpl evaluationContext,
+                                                                                          @NotNull List<ReferenceType> classes,
+                                                                                          @NotNull String cancellationFileName,
+                                                                                          long timeoutInMillis) throws EvaluateException {
+    ArrayReference array = wrapWithArray(evaluationContext, ContainerUtil.map(classes, ReferenceType::classObject));
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.GET_SHALLOW_AND_RETAINED_SIZE_BY_CLASSES,
+      cancellationFileName, timeoutInMillis, array
+    );
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    Pair<List<Long>, List<Long>> shallowAndRetainedSizes = ShallowAndRetainedSizeParser.INSTANCE.parse(errCodeAndResult.getSecond());
+    return new MemoryAgentActionResult<>(
+      new Pair<>(
+        shallowAndRetainedSizes.getFirst().stream().mapToLong(Long::longValue).toArray(),
+        shallowAndRetainedSizes.getSecond().stream().mapToLong(Long::longValue).toArray()
+      ),
+      errCodeAndResult.getFirst()
+    );
+  }
+
+  @NotNull
+  static MemoryAgentActionResult<ReferringObjectsInfo> findPathsToClosestGCRoots(@NotNull EvaluationContextImpl evaluationContext,
+                                                                                 @NotNull ObjectReference reference,
+                                                                                 int pathsNumber, int objectsNumber,
+                                                                                 @NotNull String cancellationFileName,
+                                                                                 long timeoutInMillis) throws EvaluateException {
+    IntegerValue pathsNumberValue = evaluationContext.getDebugProcess().getVirtualMachineProxy().mirrorOf(pathsNumber);
+    IntegerValue objectsNumberValue = evaluationContext.getDebugProcess().getVirtualMachineProxy().mirrorOf(objectsNumber);
+    Value result = callMethod(
+      evaluationContext,
+      MemoryAgentNames.Methods.FIND_PATHS_TO_CLOSEST_GC_ROOTS,
+      cancellationFileName, timeoutInMillis,
+      reference, pathsNumberValue, objectsNumberValue
+    );
+
+    Pair<MemoryAgentActionResult.ErrorCode, Value> errCodeAndResult = ErrorCodeParser.INSTANCE.parse(result);
+    MemoryAgentActionResult.ErrorCode errCode = errCodeAndResult.getFirst();
+    ReferringObjectsInfo returnValue;
+    if (errCode != MemoryAgentActionResult.ErrorCode.OK) {
+      returnValue = new ReferringObjectsInfo(
+        Collections.singletonList(reference),
+        Collections.singletonList(
+          Collections.singletonList(new CalculationTimeoutReferringObject())
+        )
+      );
+    } else {
+      returnValue = GcRootsPathsParser.INSTANCE.parse(errCodeAndResult.getSecond());
+    }
+
+    return new MemoryAgentActionResult<>(returnValue, errCodeAndResult.getFirst());
   }
 
   @NotNull
@@ -77,7 +192,9 @@ final class MemoryAgentOperations {
       return builder
         .setCanEstimateObjectSize(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_ESTIMATE_OBJECT_SIZE))
         .setCanEstimateObjectsSizes(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_ESTIMATE_OBJECTS_SIZES))
-        .setCanFindGcRoots(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_FIND_GC_ROOTS))
+        .setCanGetShallowSizeByClasses(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_GET_SHALLOW_SIZE_BY_CLASSES))
+        .setCanGetRetainedSizeByClasses(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_GET_RETAINED_SIZE_BY_CLASSES))
+        .setCanFindPathsToClosestGcRoots(checkAgentCapability(context, proxyType, MemoryAgentNames.Methods.CAN_FIND_PATHS_TO_CLOSEST_GC_ROOTS))
         .buildLoaded();
     }
   }
@@ -122,11 +239,30 @@ final class MemoryAgentOperations {
     return false;
   }
 
+  @NotNull
+  private static LongValue getLongValue(@NotNull EvaluationContextImpl evaluationContext, long timeoutInMillis) {
+    return evaluationContext.getDebugProcess().getVirtualMachineProxy().mirrorOf(timeoutInMillis);
+  }
+
+  @NotNull
+  private static StringReference getStringReference(@NotNull EvaluationContextImpl evaluationContext, @NotNull String string) {
+    return evaluationContext.getDebugProcess().getVirtualMachineProxy().mirrorOf(string);
+  }
+
   private static Value callMethod(@NotNull EvaluationContextImpl evaluationContext,
                                   @NotNull String methodName,
-                                  @NotNull List<? extends Value> args) throws EvaluateException {
+                                  @NotNull String cancellationFileName,
+                                  long timeoutInMillis,
+                                  Value... values) throws EvaluateException {
     ClassType proxyType = getProxyType(evaluationContext);
-    return callMethod(evaluationContext, proxyType, methodName, args);
+    return callMethod(
+      evaluationContext,
+      proxyType,
+      methodName,
+      getStringReference(evaluationContext, cancellationFileName),
+      getLongValue(evaluationContext, timeoutInMillis),
+      Arrays.asList(values)
+    );
   }
 
   @NotNull
@@ -134,6 +270,17 @@ final class MemoryAgentOperations {
                                   @NotNull ClassType proxyType,
                                   @NotNull String methodName,
                                   @NotNull List<? extends Value> args) throws EvaluateException {
+    return callMethod(evaluationContext, proxyType, methodName, getStringReference(evaluationContext, ""), getLongValue(evaluationContext, -1), args);
+  }
+
+  @NotNull
+  private static Value callMethod(@NotNull EvaluationContextImpl evaluationContext,
+                                  @NotNull ClassType proxyType,
+                                  @NotNull String methodName,
+                                  @NotNull ObjectReference cancellationFileName,
+                                  @NotNull LongValue timeoutInMillis,
+                                  @NotNull List<? extends Value> args) throws EvaluateException {
+
     DebuggerManagerThreadImpl.assertIsManagerThread();
     long start = System.currentTimeMillis();
     List<Method> methods = DebuggerUtilsEx.declaredMethodsByName(proxyType, methodName);
@@ -145,13 +292,16 @@ final class MemoryAgentOperations {
     }
 
     Method method = methods.get(0);
-    if (!method.isStatic()) {
-      throw EvaluateExceptionUtil.createEvaluateException("Utility method should be static");
-    }
-
-
     Value result = evaluationContext
-      .computeAndKeep(() -> evaluationContext.getDebugProcess().invokeMethod(evaluationContext, proxyType, method, args, true));
+      .computeAndKeep(() -> {
+        DebugProcessImpl debugProcess = evaluationContext.getDebugProcess();
+        Method constructor = DebuggerUtils.findMethod(proxyType, JVMNameUtil.CONSTRUCTOR_NAME, proxyConstructorSignature);
+        if (constructor == null) {
+          throw EvaluateExceptionUtil.createEvaluateException("No appropriate constructor found for proxy class");
+        }
+        ObjectReference proxyInstance = debugProcess.newInstance(evaluationContext, proxyType, constructor, Arrays.asList(cancellationFileName, timeoutInMillis));
+        return debugProcess.invokeMethod(evaluationContext, proxyInstance, method, args);
+      });
 
     LOG.info("Memory agent's method \"" + methodName + "\" took " + (System.currentTimeMillis() - start) + " ms");
     return result;

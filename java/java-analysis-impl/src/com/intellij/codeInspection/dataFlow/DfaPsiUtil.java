@@ -29,6 +29,7 @@ import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.containers.Stack;
 import com.siyeh.ig.callMatcher.CallMatcher;
+import com.siyeh.ig.psiutils.ClassUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -106,10 +107,10 @@ public final class DfaPsiUtil {
   private static Nullability getNullabilityFromAnnotation(PsiModifierListOwner owner, boolean ignoreParameterNullabilityInference) {
     NullableNotNullManager manager = NullableNotNullManager.getInstance(owner.getProject());
     NullabilityAnnotationInfo info = manager.findEffectiveNullabilityInfo(owner);
-    if (info == null) {
+    if (info == null || shouldIgnoreAnnotation(info.getAnnotation())) {
       return Nullability.UNKNOWN;
     }
-    if (ignoreParameterNullabilityInference && owner instanceof PsiParameter && AnnotationUtil.isInferredAnnotation(info.getAnnotation())) {
+    if (ignoreParameterNullabilityInference && owner instanceof PsiParameter && info.isInferred()) {
       List<PsiParameter> supers = AnnotationUtil.getSuperAnnotationOwners((PsiParameter)owner);
       return ContainerUtil.exists(supers, each -> manager.isNullable(each, false)) ? Nullability.NULLABLE :  Nullability.UNKNOWN;
     }
@@ -184,7 +185,7 @@ public final class DfaPsiUtil {
     for (PsiAnnotation annotation : eachType.getAnnotations()) {
       String qualifiedName = annotation.getQualifiedName();
       NullableNotNullManager nnn = NullableNotNullManager.getInstance(annotation.getProject());
-      if (nnn.getNullables().contains(qualifiedName)) {
+      if (nnn.getNullables().contains(qualifiedName) && !shouldIgnoreAnnotation(annotation)) {
         return new NullabilityAnnotationInfo(annotation, Nullability.NULLABLE, false);
       }
       if (nnn.getNotNulls().contains(qualifiedName)) {
@@ -198,6 +199,15 @@ public final class DfaPsiUtil {
       }
     }
     return null;
+  }
+
+  private static boolean shouldIgnoreAnnotation(PsiAnnotation annotation) {
+    PsiClass containingClass = ClassUtils.getContainingClass(annotation);
+    if (containingClass == null) return false;
+    String qualifiedName = containingClass.getQualifiedName();
+    // We deliberately ignore nullability annotations on Guava functional interfaces to avoid noise warnings
+    // See IDEA-170548 for details
+    return "com.google.common.base.Predicate".equals(qualifiedName) || "com.google.common.base.Function".equals(qualifiedName);
   }
 
   /**
@@ -291,7 +301,7 @@ public final class DfaPsiUtil {
     final PsiCodeBlock body = constructor.getBody();
     if (body == null) return Collections.emptySet();
 
-    return CachedValuesManager.getCachedValue(constructor, new CachedValueProvider<Set<PsiField>>() {
+    return CachedValuesManager.getCachedValue(constructor, new CachedValueProvider<>() {
       @NotNull
       @Override
       public Result<Set<PsiField>> compute() {
@@ -345,15 +355,17 @@ public final class DfaPsiUtil {
           }
 
           @Override
-          protected DfaInstructionState @NotNull [] acceptInstruction(@NotNull InstructionVisitor visitor, @NotNull DfaInstructionState instructionState) {
+          protected DfaInstructionState @NotNull [] acceptInstruction(@NotNull InstructionVisitor visitor,
+                                                                      @NotNull DfaInstructionState instructionState) {
             Instruction instruction = instructionState.getInstruction();
             if (currentBlock == body &&
                 (isCallExposingNonInitializedFields(instruction) ||
-                instruction instanceof ReturnInstruction && !((ReturnInstruction)instruction).isViaException())) {
+                 instruction instanceof ReturnInstruction && !((ReturnInstruction)instruction).isViaException())) {
               for (PsiField field : containingClass.getFields()) {
                 if (!instructionState.getMemoryState().isNotNull(getFactory().getVarFactory().createVariableValue(field))) {
                   map.put(field, false);
-                } else if (!map.containsKey(field)) {
+                }
+                else if (!map.containsKey(field)) {
                   map.put(field, true);
                 }
               }
@@ -392,7 +404,7 @@ public final class DfaPsiUtil {
       return MultiMap.empty();
     }
 
-    return CachedValuesManager.getCachedValue(psiClass, new CachedValueProvider<MultiMap<PsiField, PsiExpression>>() {
+    return CachedValuesManager.getCachedValue(psiClass, new CachedValueProvider<>() {
       @NotNull
       @Override
       public Result<MultiMap<PsiField, PsiExpression>> compute() {

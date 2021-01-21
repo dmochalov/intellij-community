@@ -9,7 +9,6 @@ import com.intellij.openapi.diagnostic.runAndLogException
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ex.ProjectEx
 import com.intellij.openapi.project.ex.ProjectNameProvider
 import com.intellij.openapi.project.impl.ProjectStoreFactory
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -20,6 +19,10 @@ import com.intellij.util.SmartList
 import com.intellij.util.io.delete
 import com.intellij.util.io.isDirectory
 import com.intellij.util.io.write
+import com.intellij.workspaceModel.ide.WorkspaceModel
+import com.intellij.workspaceModel.ide.configLocation
+import com.intellij.workspaceModel.ide.impl.jps.serialization.JpsFileContentReaderWithCache
+import com.intellij.workspaceModel.ide.impl.jps.serialization.ProjectStoreWithJpsContentReader
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.annotations.ApiStatus
@@ -28,18 +31,10 @@ import org.jetbrains.jps.util.JpsPathUtil
 import java.nio.file.AccessDeniedException
 import java.nio.file.Path
 
-internal val IProjectStore.nameFile: Path
-  get() = directoryStorePath!!.resolve(ProjectEx.NAME_FILE)
-
 @ApiStatus.Internal
 open class ProjectStoreImpl(project: Project) : ProjectStoreBase(project) {
   private var lastSavedProjectName: String? = null
-
-  /**
-   * This property is temporary added to support saving of modules for workspace model; it can be removed when we move workspaceModel module
-   * near projectModel in the dependency graph and will be able to use it directly from this class
-   */
-  var moduleSavingCustomizer: ModuleSavingCustomizer? = null
+  protected val moduleSavingCustomizer: ModuleSavingCustomizer? = if (WorkspaceModel.isEnabled) ProjectStoreBridge(project) else null
 
   init {
     assert(!project.isDefault)
@@ -91,10 +86,10 @@ open class ProjectStoreImpl(project: Project) : ProjectStoreBase(project) {
     fun doSave() {
       if (currentProjectName == basePath.fileName.toString()) {
         // name equals to base path name - just remove name
-        nameFile.delete()
+        getNameFile().delete()
       }
       else if (basePath.isDirectory()) {
-        nameFile.write(currentProjectName.toByteArray())
+        getNameFile().write(currentProjectName.toByteArray())
       }
     }
 
@@ -102,7 +97,7 @@ open class ProjectStoreImpl(project: Project) : ProjectStoreBase(project) {
       doSave()
     }
     catch (e: AccessDeniedException) {
-      val status = ensureFilesWritable(project, listOf(LocalFileSystem.getInstance().refreshAndFindFileByNioFile(nameFile)!!))
+      val status = ensureFilesWritable(project, listOf(LocalFileSystem.getInstance().refreshAndFindFileByNioFile(getNameFile())!!))
       if (status.hasReadonlyFiles()) {
         throw e
       }
@@ -133,8 +128,6 @@ open class ProjectStoreImpl(project: Project) : ProjectStoreBase(project) {
         catch (e: Throwable) {
           LOG.error("Unable to store project name", e)
         }
-
-        project.messageBus.syncPublisher(ProjectEx.ProjectSaved.TOPIC).duringSave(project)
       }
     }
   }
@@ -166,7 +159,7 @@ interface ModuleSavingCustomizer {
 }
 
 @ApiStatus.Internal
-open class ProjectWithModulesStoreImpl(project: Project) : ProjectStoreImpl(project) {
+open class ProjectWithModulesStoreImpl(project: Project) : ProjectStoreImpl(project), ProjectStoreWithJpsContentReader {
   final override suspend fun saveModules(errors: MutableList<Throwable>,
                                          isForceSavingAllSettings: Boolean,
                                          projectSaveSessionManager: SaveSessionProducerManager): List<SaveSession> {
@@ -189,6 +182,10 @@ open class ProjectWithModulesStoreImpl(project: Project) : ProjectStoreImpl(proj
       }
       saveSessions
     }
+  }
+
+  override fun createContentReader(): JpsFileContentReaderWithCache {
+    return StorageJpsConfigurationReader(project, project.configLocation!!.baseDirectoryUrlString)
   }
 
   private fun commitModuleComponents(moduleStore: ComponentStoreImpl, moduleSaveSessionManager: SaveSessionProducerManager,

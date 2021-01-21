@@ -11,6 +11,8 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
+import com.intellij.openapi.options.ConfigurableEP;
+import com.intellij.openapi.options.SchemeConvertorEPBase;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.ui.popup.IPopupChooserBuilder;
@@ -24,6 +26,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.psi.xml.XmlTokenType;
@@ -37,13 +40,11 @@ import com.intellij.util.xml.GenericAttributeValue;
 import com.intellij.util.xml.highlighting.DomElementAnnotationHolder;
 import com.intellij.util.xml.highlighting.DomHighlightingHelper;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.devkit.DevKitBundle;
-import org.jetbrains.idea.devkit.dom.ActionOrGroup;
-import org.jetbrains.idea.devkit.dom.Extension;
-import org.jetbrains.idea.devkit.dom.ExtensionPoint;
-import org.jetbrains.idea.devkit.dom.Separator;
+import org.jetbrains.idea.devkit.dom.*;
 import org.jetbrains.idea.devkit.util.DescriptorI18nUtil;
 import org.jetbrains.idea.devkit.util.PluginPlatformInfo;
 import org.jetbrains.uast.UExpression;
@@ -58,36 +59,61 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
   @Override
   protected void checkDomElement(DomElement element, DomElementAnnotationHolder holder, DomHighlightingHelper helper) {
     if (element instanceof ActionOrGroup) {
-      highlightAction(holder, (ActionOrGroup)element);
+      highlightActionOrGroup(holder, (ActionOrGroup)element);
     }
     else if (element instanceof Separator) {
       highlightSeparator(holder, (Separator)element);
     }
+    else if (element instanceof OverrideText) {
+      highlightOverrideText(holder, (OverrideText)element);
+    }
     else if (element instanceof Extension) {
-      ExtensionPoint extensionPoint = ((Extension)element).getExtensionPoint();
-      if (extensionPoint != null) {
-        highlightInspectionTag(holder, element, extensionPoint);
-      }
+     highlightExtension(holder, (Extension)element);
     }
   }
 
-  private static void highlightInspectionTag(DomElementAnnotationHolder holder, DomElement element, ExtensionPoint extensionPoint) {
+  private static void highlightExtension(DomElementAnnotationHolder holder, Extension extension) {
+    ExtensionPoint extensionPoint = extension.getExtensionPoint();
+    if (extensionPoint == null) return;
+    final PsiClass beanClass = extensionPoint.getBeanClass().getValue();
+    if (beanClass == null) return;
+
     String epName = extensionPoint.getEffectiveQualifiedName();
-    if (LocalInspectionEP.LOCAL_INSPECTION.getName().equals(epName) || InspectionEP.GLOBAL_INSPECTION.getName().equals(epName)) {
-      if (isInternal(element)) {
+    if (LocalInspectionEP.LOCAL_INSPECTION.getName().equals(epName) ||
+        InspectionEP.GLOBAL_INSPECTION.getName().equals(epName)) {
+      if (isInternal(extension)) {
         return;
       }
-      GenericAttributeValue implementationClass = getAttribute(element, "implementationClass");
+      GenericAttributeValue implementationClass = getAttribute(extension, "implementationClass");
       if (implementationClass == null || implementationClass.getStringValue() == null) {
         return;
       }
-      GenericAttributeValue displayNameAttr = getAttribute(element, "displayName");
-      if (displayNameAttr != null && displayNameAttr.getStringValue() != null) {
-        holder.createProblem(element, ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                             DevKitBundle.message("inspections.plugin.xml.i18n.inspection.tag.family.name"),
-                             null,
-                             new InspectionI18NQuickFix());
+      checkNonLocalizableAttribute(holder, extension, "displayName", new InspectionI18NQuickFix());
+      checkNonLocalizableAttribute(holder, extension, "groupName", null);
+      //checkNonLocalizableAttribute(holder, element, "groupPath", null);
+    }
+    else if (InheritanceUtil.isInheritor(beanClass, ConfigurableEP.class.getName())) {
+      checkNonLocalizableAttribute(holder, extension, "displayName", null);
+
+      // ConfigurableEP#children
+      for (DomElement nestedConfigurable : DomUtil.getDefinedChildren(extension, true, false)) {
+        checkNonLocalizableAttribute(holder, nestedConfigurable, "displayName", null);
       }
+    }
+    else if (InheritanceUtil.isInheritor(beanClass, SchemeConvertorEPBase.class.getName())) {
+      checkNonLocalizableAttribute(holder, extension, "name", null);
+    }
+  }
+
+  private static void checkNonLocalizableAttribute(DomElementAnnotationHolder holder,
+                                                   DomElement element,
+                                                   @NonNls String attributeName,
+                                                   InspectionI18NQuickFix fix) {
+    GenericAttributeValue displayNameAttr = getAttribute(element, attributeName);
+    if (displayNameAttr != null && displayNameAttr.getStringValue() != null) {
+      holder.createProblem(element,
+                           ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                           DevKitBundle.message("inspections.plugin.xml.i18n.inspection.tag.family.name", attributeName), null, fix);
     }
   }
 
@@ -102,21 +128,33 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
     }
   }
 
-  private static void highlightAction(@NotNull DomElementAnnotationHolder holder, @NotNull ActionOrGroup action) {
-    String id = action.getId().getStringValue();
+  private static void highlightOverrideText(DomElementAnnotationHolder holder, OverrideText overrideText) {
+    if (!DomUtil.hasXml(overrideText.getText())) return;
+
+    DomElement parent = overrideText.getParent();
+    PropertiesFile propertiesFile = DescriptorI18nUtil.findBundlePropertiesFile(parent);
+
+    holder.createProblem(overrideText, ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                         DevKitBundle.message("inspections.plugin.xml.i18n.name"),
+                         null, new ActionOrGroupQuickFixAction(propertiesFile != null ? propertiesFile.getVirtualFile() : null, parent instanceof Action));
+  }
+
+  private static void highlightActionOrGroup(@NotNull DomElementAnnotationHolder holder, @NotNull ActionOrGroup actionOrGroup) {
+    String id = actionOrGroup.getId().getStringValue();
     if (id == null) return;
 
-    String text = action.getText().getStringValue();
-    String desc = action.getDescription().getStringValue();
+    String text = actionOrGroup.getText().getStringValue();
+    String desc = actionOrGroup.getDescription().getStringValue();
     if (text == null && desc == null) return;
 
-    if (isInternal(action)) return;
+    if (isInternal(actionOrGroup)) return;
 
-    PropertiesFile propertiesFile = DescriptorI18nUtil.findBundlePropertiesFile(action);
+    PropertiesFile propertiesFile = DescriptorI18nUtil.findBundlePropertiesFile(actionOrGroup);
 
-    holder.createProblem(action, ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+    holder.createProblem(actionOrGroup, ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                          DevKitBundle.message("inspections.plugin.xml.i18n.name"),
-                         null, new ActionQuickFixAction(propertiesFile != null ? propertiesFile.getVirtualFile() : null));
+                         null, new ActionOrGroupQuickFixAction(propertiesFile != null ? propertiesFile.getVirtualFile() : null,
+                                                               actionOrGroup instanceof Action));
   }
 
   private static boolean isInternal(@NotNull DomElement action) {
@@ -196,7 +234,7 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
     @NotNull
     @Override
     public String getFamilyName() {
-      return DevKitBundle.message("inspections.plugin.xml.i18n.inspection.tag.family.name");
+      return DevKitBundle.message("inspections.plugin.xml.i18n.inspection.tag.family.name", "displayName");
     }
 
     @Override
@@ -228,11 +266,12 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
           for (XmlTag tag : tags) {
             psiFiles.add(tag.getContainingFile());
           }
-          WriteCommandAction.runWriteCommandAction(project, getFamilyName(), null, () -> {
-            for (XmlTag tag : tags) {
-              registerPropertyKey(project, tag, propertiesFile);
-            }
-          }, psiFiles.toArray(PsiFile.EMPTY_ARRAY));
+          WriteCommandAction.runWriteCommandAction(
+            project, DevKitBundle.message("inspections.plugin.xml.i18n.inspection.tag.command.name", "displayName"), null, () -> {
+              for (XmlTag tag : tags) {
+                registerPropertyKey(project, tag, propertiesFile);
+              }
+            }, psiFiles.toArray(PsiFile.EMPTY_ARRAY));
         }
       });
     }
@@ -249,7 +288,9 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
         }
         shortName = InspectionProfileEntry.getShortName(StringUtil.getShortName(implementationClass));
       }
-      String key = "inspection." + StringUtil.join(NameUtilCore.splitNameIntoWords(shortName), s -> StringUtil.decapitalize(s), ".") + ".display.name";
+      @NonNls String key =
+        "inspection." + StringUtil.join(NameUtilCore.splitNameIntoWords(shortName), s -> StringUtil.decapitalize(s), ".") +
+        ".display.name";
       xml.setAttribute("key", key);
       xml.setAttribute("bundle", getBundleQName(project, propertiesFile));
 
@@ -261,11 +302,13 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
     }
   }
 
-  private static final class ActionQuickFixAction implements LocalQuickFix, BatchQuickFix<CommonProblemDescriptor> {
+  private static final class ActionOrGroupQuickFixAction implements LocalQuickFix, BatchQuickFix<CommonProblemDescriptor> {
     private final VirtualFile myPropertiesFile;
+    private final boolean myIsAction;
 
-    private ActionQuickFixAction(VirtualFile file) {
+    private ActionOrGroupQuickFixAction(VirtualFile file, boolean isAction) {
       myPropertiesFile = file;
+      myIsAction = isAction;
     }
 
     @Nls(capitalization = Nls.Capitalization.Sentence)
@@ -283,7 +326,7 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
       VirtualFile nullValue = new LightVirtualFile();
       Map<VirtualFile, List<CommonProblemDescriptor>> byPropertyFiles = Arrays.stream(descriptors)
         .filter(d -> d instanceof ProblemDescriptor)
-        .collect(Collectors.groupingBy(cd -> ObjectUtils.notNull(((ActionQuickFixAction)cd.getFixes()[0]).myPropertiesFile, nullValue)));
+        .collect(Collectors.groupingBy(cd -> ObjectUtils.notNull(((ActionOrGroupQuickFixAction)cd.getFixes()[0]).myPropertiesFile, nullValue)));
 
       //in case of multiple files in selection with different bundles, multiple clear read-only status dialog is possible
       for (Map.Entry<VirtualFile, List<CommonProblemDescriptor>> entry : byPropertyFiles.entrySet()) {
@@ -330,11 +373,11 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
           psiFiles.add(t.getContainingFile());
         }
         WriteCommandAction
-          .runWriteCommandAction(project, getFamilyName(), null, () -> {
+          .runWriteCommandAction(project, DevKitBundle.message("inspections.plugin.xml.i18n.command.name"), null, () -> {
                                    if (attachResourceBundle) {
                                      createResourceBundleTag(project, tags, propertiesFile);
                                    }
-                                   extractTextAndDescription(project, tags, propertiesFile);
+                                   extractTextAndDescription(project, tags, propertiesFile, myIsAction);
                                  },
                                  psiFiles.toArray(PsiFile.EMPTY_ARRAY));
       }
@@ -346,34 +389,46 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
         LOG.assertTrue(rootTag != null);
         if (rootTag.findFirstSubTag("resource-bundle") == null) {
           XmlElementFactory elementFactory = XmlElementFactory.getInstance(project);
-          XmlTag rbTag = elementFactory.createTagFromText("<resource-bundle>" + getBundleQName(project, propertiesFile) +"</resource-bundle>");
+          XmlTag rbTag = elementFactory.createTagFromText("<resource-bundle>" +
+                                                          getBundleQName(project, propertiesFile) +
+                                                          "</resource-bundle>");
 
           rootTag.addSubTag(rbTag, false);
         }
       }
     }
 
-    private static void extractTextAndDescription(@NotNull Project project, Collection<XmlTag> tags, PropertiesFile propertiesFile) {
+    private static void extractTextAndDescription(@NotNull Project project,
+                                                  Collection<XmlTag> tags,
+                                                  PropertiesFile propertiesFile,
+                                                  boolean isAction) {
       for (XmlTag tag : tags) {
         String text = tag.getAttributeValue("text");
         tag.setAttribute("text", null);
         String description = tag.getAttributeValue("description");
         tag.setAttribute("description", null);
 
-        String id = tag.getAttributeValue("id");
+        String id;
+        if (tag.getName().equals("override-text")) {
+          id = Objects.requireNonNull(tag.getParentTag()).getAttributeValue("id") + "." + tag.getAttributeValue("place");
+        }
+        else {
+          id = tag.getAttributeValue("id");
+        }
 
         List<PropertiesFile> propertiesFiles = Collections.singletonList(propertiesFile);
+        @NonNls String actionOrGroupPrefix = isAction ? "action." : "group.";
         if (text != null) {
           JavaI18nUtil.DEFAULT_PROPERTY_CREATION_HANDLER.createProperty(project,
                                                                         propertiesFiles,
-                                                                        "action." + id + ".text",
+                                                                        actionOrGroupPrefix + id + ".text",
                                                                         text,
                                                                         new UExpression[0]);
         }
         if (description != null) {
           JavaI18nUtil.DEFAULT_PROPERTY_CREATION_HANDLER.createProperty(project,
                                                                         propertiesFiles,
-                                                                        "description." + id + ".description",
+                                                                        actionOrGroupPrefix + id + ".description",
                                                                         description,
                                                                         new UExpression[0]);
         }
@@ -435,11 +490,12 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
           for (XmlTag tag : tags) {
             psiFiles.add(tag.getContainingFile());
           }
-          WriteCommandAction.runWriteCommandAction(project, getFamilyName(), null, () -> {
-            for (XmlTag tag : tags) {
-              registerPropertyKey(project, tag, propertiesFile);
-            }
-          }, psiFiles.toArray(PsiFile.EMPTY_ARRAY));
+          WriteCommandAction.runWriteCommandAction(
+            project, DevKitBundle.message("inspections.plugin.xml.i18n.key.command.name"), null, () -> {
+              for (XmlTag tag : tags) {
+                registerPropertyKey(project, tag, propertiesFile);
+              }
+            }, psiFiles.toArray(PsiFile.EMPTY_ARRAY));
         }
       });
     }
@@ -451,8 +507,8 @@ public class PluginXmlI18nInspection extends DevKitPluginXmlInspectionBase {
       Separator separator = (Separator)domElement;
 
       String text = StringUtil.defaultIfEmpty(separator.getText().getStringValue(), "noText");
-      String key = "separator." + StringUtil.join(NameUtilCore.splitNameIntoWords(text),
-                                                  s -> StringUtil.trim(StringUtil.decapitalize(s)), ".");
+      @NonNls String key = "separator." + StringUtil.join(NameUtilCore.splitNameIntoWords(text),
+                                                          s -> StringUtil.trim(StringUtil.decapitalize(s)), ".");
 
       JavaI18nUtil.DEFAULT_PROPERTY_CREATION_HANDLER.createProperty(project,
                                                                     Collections.singletonList(propertiesFile),

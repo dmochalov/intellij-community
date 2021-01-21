@@ -28,10 +28,10 @@ import com.intellij.ui.ReferenceEditorComboWithBrowseButton;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.GroovyFileType;
 import org.jetbrains.plugins.groovy.actions.GroovyTemplates;
 import org.jetbrains.plugins.groovy.actions.GroovyTemplatesFactory;
@@ -87,7 +87,7 @@ public class GrIntroduceConstantDialog extends DialogWrapper
     myTargetClass = defaultTargetClass;
     myDefaultTargetClass = defaultTargetClass;
 
-    setTitle(GrIntroduceConstantHandler.REFACTORING_NAME);
+    setTitle(GroovyBundle.message("introduce.constant.title"));
 
     myJavaVisibilityPanel.setVisibility(JavaRefactoringSettings.getInstance().INTRODUCE_CONSTANT_VISIBILITY);
 
@@ -288,7 +288,7 @@ public class GrIntroduceConstantDialog extends DialogWrapper
     else {
       UIUtil.setEnabled(myJavaVisibilityPanel, true, true);
       // exclude all modifiers not visible from all occurrences
-      final Set<String> visible = new THashSet<>();
+      final Set<String> visible = new HashSet<>();
       visible.add(PsiModifier.PRIVATE);
       visible.add(PsiModifier.PROTECTED);
       visible.add(PsiModifier.PACKAGE_LOCAL);

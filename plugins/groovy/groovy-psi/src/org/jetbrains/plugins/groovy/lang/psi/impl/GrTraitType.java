@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.impl;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiAnnotation;
 import com.intellij.psi.PsiIntersectionType;
@@ -55,6 +56,7 @@ public final class GrTraitType extends PsiType {
     return myDelegate.getCanonicalText();
   }
 
+  @NlsSafe
   @NotNull
   @Override
   public String getInternalCanonicalText() {
@@ -99,7 +101,7 @@ public final class GrTraitType extends PsiType {
 
   @NotNull
   public static PsiType createTraitType(PsiType @NotNull [] types) {
-    final Set<PsiType> flattened = PsiIntersectionType.flatten(types, new LinkedHashSet<PsiType>() {
+    final Set<PsiType> flattened = PsiIntersectionType.flatten(types, new LinkedHashSet<>() {
       @Override
       public boolean add(PsiType type) {
         remove(type);

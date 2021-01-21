@@ -2,6 +2,7 @@
 
 package com.intellij.codeInsight.preview;
 
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -86,7 +87,7 @@ public final class ImagePreviewComponent extends JPanel implements PreviewHintCo
     final int height = image.getHeight();
     final ColorModel colorModel = image.getColorModel();
     final int i = colorModel.getPixelSize();
-    return new JLabel(String.format("%dx%d, %dbpp, %s", width, height, i, StringUtil.formatFileSize(imageFileSize)));
+    return new JLabel(LangBundle.message("image.preview.label", width, height, i, StringUtil.formatFileSize(imageFileSize)));
   }
 
   private static boolean refresh(@NotNull VirtualFile file) throws IOException {
@@ -107,12 +108,12 @@ public final class ImagePreviewComponent extends JPanel implements PreviewHintCo
     return false;
   }
 
-  @NotNull
-  public static BufferedImage readImageFromBytes(byte @NotNull [] content) throws IOException {
+  public static @NotNull BufferedImage readImageFromBytes(byte @NotNull [] content) throws IOException {
     try {
-      Image image = SVGLoader.load(new ByteArrayInputStream(content), JBUIScale.sysScale());
-      if (image != null) return ImageUtil.toBufferedImage(image);
-    } catch (IOException ignored) {}
+      return ImageUtil.toBufferedImage(SVGLoader.loadWithoutCache(content, JBUIScale.sysScale()));
+    }
+    catch (IOException ignored) {
+    }
 
     InputStream inputStream = new ByteArrayInputStream(content, 0, content.length);
     try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(inputStream)) {

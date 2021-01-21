@@ -1,5 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
 package com.intellij.usages.impl;
 
 import com.intellij.find.FindManager;
@@ -23,10 +22,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.ui.popup.BalloonBuilder;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.Navigatable;
@@ -280,6 +276,9 @@ public class UsagePreviewPanel extends UsageContextPanelBase implements DataProv
 
   private Editor createEditor(@NotNull PsiFile psiFile, @NotNull Document document) {
     if (isDisposed) return null;
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Creating preview for " + psiFile.getVirtualFile());
+    }
     Project project = psiFile.getProject();
 
     Editor editor = EditorFactory.getInstance().createEditor(document, project, psiFile.getVirtualFile(), !myIsEditor, EditorKind.PREVIEW);
@@ -327,9 +326,9 @@ public class UsagePreviewPanel extends UsageContextPanelBase implements DataProv
   }
 
   @Nullable
-  private String cannotPreviewMessage(@Nullable List<? extends UsageInfo> infos) {
+  private @NlsContexts.StatusText String cannotPreviewMessage(@Nullable List<? extends UsageInfo> infos) {
     if (infos == null || infos.isEmpty()) {
-      return UsageViewBundle.message("select.the.usage.to.preview", myPresentation.getUsagesWord());
+      return UsageViewBundle.message("select.the.usage.to.preview");
     }
     PsiFile psiFile = null;
     for (UsageInfo info : infos) {
@@ -369,16 +368,15 @@ public class UsagePreviewPanel extends UsageContextPanelBase implements DataProv
   }
 
   private static class ReplacementView extends JPanel {
-    private static final String MALFORMED_REPLACEMENT_STRING = "Malformed replacement string";
 
     @Override
     protected void paintComponent(@NotNull Graphics graphics) {
     }
 
-    ReplacementView(@Nullable String replacement) {
+    ReplacementView(@Nullable @NlsSafe String replacement) {
       String textToShow = replacement;
       if (replacement == null) {
-        textToShow = MALFORMED_REPLACEMENT_STRING;
+        textToShow = UsageViewBundle.message("label.malformed.replacement.string");
       }
       JLabel jLabel = new JLabel(textToShow);
       jLabel.setForeground(replacement != null ? new JBColor(Gray._240, Gray._200) : JBColor.RED);

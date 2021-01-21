@@ -5,6 +5,7 @@ import com.intellij.ide.IdeBundle
 import com.intellij.openapi.application.ApplicationBundle
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.CharsetToolkit
 import com.intellij.openapi.vfs.encoding.EncodingManager
@@ -19,7 +20,7 @@ import javax.swing.JList
 class ConsoleEncodingComboBox : ComboBox<ConsoleEncodingComboBox.EncodingItem>() {
   interface EncodingItem
 
-  private data class LabelItem(val label: String) : EncodingItem
+  private data class LabelItem(@NlsContexts.Separator val label: String) : EncodingItem
 
   private interface SelectableItem : EncodingItem
 
@@ -118,7 +119,9 @@ class ConsoleEncodingComboBox : ComboBox<ConsoleEncodingComboBox.EncodingItem>()
       EncodingReference.DEFAULT
     }
   }
+  companion object {
+    private val LOG = Logger.getInstance(ConsoleEncodingComboBox::class.java)
+  }
 }
 
-private val LOG = Logger.getInstance("#" + ConsoleEncodingComboBox::class.java.`package`.name)
 

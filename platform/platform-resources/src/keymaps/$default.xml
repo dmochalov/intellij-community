@@ -2,6 +2,10 @@
   <action id="ShowNavBar">
     <keyboard-shortcut first-keystroke="alt HOME"/>
   </action>
+  <action id="OpenInRightSplit">
+    <keyboard-shortcut first-keystroke="shift ENTER"/>
+    <mouse-shortcut keystroke="alt button1 doubleClick"/> 
+  </action>
   <action id="FileChooser.TogglePathShowing">
     <keyboard-shortcut first-keystroke="control P"/>
   </action>
@@ -83,6 +87,9 @@
   <action id="MethodOverloadSwitchUp"><keyboard-shortcut first-keystroke="control UP"/></action>
   <action id="MethodOverloadSwitchDown"><keyboard-shortcut first-keystroke="control DOWN"/></action>
 
+  <action id="CloseGotItTooltip">
+    <keyboard-shortcut first-keystroke="ESCAPE"/>
+  </action>
   <action id="ReformatCode">
     <keyboard-shortcut first-keystroke="control alt L"/>
   </action>
@@ -970,7 +977,7 @@
     <keyboard-shortcut first-keystroke="alt DELETE"/>
   </action>
   <action id="SelectVirtualTemplateElement">
-    <keyboard-shortcut first-keystroke="TAB"/>
+    <keyboard-shortcut first-keystroke="Alt Shift O"/>
   </action>
   <action id="NextTemplateVariable">
     <keyboard-shortcut first-keystroke="TAB"/>
@@ -1203,9 +1210,6 @@
     <keyboard-shortcut first-keystroke="control alt P"/>
   </action>
 
-  <action id="ViewInplaceComments">
-    <keyboard-shortcut first-keystroke="alt shift BACK_SLASH"/>
-  </action>
   <action id="ToggleFindInSelection">
     <keyboard-shortcut first-keystroke="control alt E"/>
   </action>
@@ -1228,7 +1232,13 @@
   <action id="UsageGrouping.DirectoryStructure">
     <keyboard-shortcut first-keystroke="control alt D"/>
   </action>
-  <action id="UsageGrouping.Package">
-    <keyboard-shortcut first-keystroke="control alt P"/>
+  <action id="SwitchHeaderSource">
+    <keyboard-shortcut first-keystroke="F10"/>
+  </action>
+  <action id="ActivateUnitTestsToolWindow">
+    <keyboard-shortcut first-keystroke="alt shift 8"/>
+  </action>
+  <action id="ActivateNuGetToolWindow">
+    <keyboard-shortcut first-keystroke="alt shift 7"/>
   </action>
 </keymap>

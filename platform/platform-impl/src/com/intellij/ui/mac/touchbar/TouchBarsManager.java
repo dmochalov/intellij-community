@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.mac.touchbar;
 
 import com.intellij.execution.ExecutionListener;
@@ -27,7 +27,8 @@ import com.intellij.openapi.project.ProjectManagerListener;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.SystemInfoRt;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.ui.mac.TouchbarDataKeys;
 import com.intellij.ui.mac.foundation.NSDefaults;
@@ -44,8 +45,10 @@ import java.awt.*;
 import java.awt.event.FocusEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseWheelEvent;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
-import java.util.*;
+import java.util.Map;
 import java.util.function.Predicate;
 
 public final class TouchBarsManager {
@@ -139,7 +142,9 @@ public final class TouchBarsManager {
       }
     }
 
-    StartupManager.getInstance(project).registerPostStartupActivity(() -> projectData.get(BarType.DEFAULT).show());
+    StartupManager.getInstance(project).runAfterOpened(() -> {
+      ApplicationManager.getApplication().invokeLater(() -> projectData.get(BarType.DEFAULT).show(), ModalityState.NON_MODAL);
+    });
 
     project.getMessageBus().connect().subscribe(ExecutionManager.EXECUTION_TOPIC, new ExecutionListener() {
       @Override
@@ -201,11 +206,11 @@ public final class TouchBarsManager {
   }
 
   public static boolean isTouchBarAvailable() {
-    return SystemInfo.isMac && NST.isAvailable();
+    return SystemInfoRt.isMac && NST.isAvailable();
   }
 
   public static boolean isTouchBarEnabled() {
-    return isTouchBarAvailable() && isEnabled;
+    return isTouchBarAvailable() && isEnabled && Registry.is("ide.mac.touchbar.enabled");
   }
 
   public static void reloadAll() {
@@ -491,8 +496,12 @@ public final class TouchBarsManager {
   static void hideContainer(@NotNull BarContainer container) { ourStack.removeContainer(container); }
 
   private static boolean _hasAnyActiveSession(Project project, ProcessHandler handler/*already terminated*/) {
-    ProcessHandler[] processes = ExecutionManager.getInstance(project).getRunningProcesses();
-    return Arrays.stream(processes).anyMatch(h -> h != null && h != handler && (!h.isProcessTerminated() && !h.isProcessTerminating()));
+    for (ProcessHandler h : ExecutionManager.getInstance(project).getRunningProcesses()) {
+      if (h != null && h != handler && (!h.isProcessTerminated() && !h.isProcessTerminating())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static boolean _hasPopup() { return ourTemporaryBars.values().stream().anyMatch(bc -> bc.isPopup()); }

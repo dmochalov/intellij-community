@@ -47,6 +47,7 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -54,7 +55,6 @@ import com.intellij.profile.codeInspection.InspectionProfileManager;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.ExceptionUtil;
-import com.intellij.util.PlatformUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -73,7 +73,7 @@ public class ViewOfflineResultsAction extends AnAction {
     final Presentation presentation = event.getPresentation();
     final Project project = event.getProject();
     presentation.setEnabled(project != null);
-    presentation.setVisible(ActionPlaces.isMainMenuOrActionSearch(event.getPlace()) && !PlatformUtils.isCidr());
+    presentation.setVisible(ActionPlaces.isMainMenuOrActionSearch(event.getPlace()));
   }
 
   @Override
@@ -153,7 +153,7 @@ public class ViewOfflineResultsAction extends AnAction {
   public static InspectionResultsView showOfflineView(@NotNull Project project,
                                                       @Nullable String profileName,
                                                       @NotNull Map<String, Map<String, Set<OfflineProblemDescriptor>>> resMap,
-                                                      @NotNull String title) {
+                                                      @NotNull @NlsContexts.TabTitle String title) {
     InspectionProfileImpl profile;
     if (profileName != null) {
       profile = InspectionProjectProfileManager.getInstance(project).getProfile(profileName, false);
@@ -192,7 +192,7 @@ public class ViewOfflineResultsAction extends AnAction {
   public static InspectionResultsView showOfflineView(@NotNull Project project,
                                                       @NotNull Map<String, Map<String, Set<OfflineProblemDescriptor>>> resMap,
                                                       @NotNull InspectionProfileImpl inspectionProfile,
-                                                      @NotNull String title) {
+                                                      @NotNull @NlsContexts.TabTitle String title) {
     final AnalysisScope scope = new AnalysisScope(project);
     final InspectionManagerEx managerEx = (InspectionManagerEx)InspectionManager.getInstance(project);
     final GlobalInspectionContextImpl context = managerEx.createNewGlobalContext();

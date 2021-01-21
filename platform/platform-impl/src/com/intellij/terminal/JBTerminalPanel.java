@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.terminal;
 
+import com.intellij.ide.DataManager;
 import com.intellij.ide.GeneralSettings;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.SaveAndSyncHandler;
@@ -15,11 +16,13 @@ import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.editor.impl.ComplementaryFontsRegistry;
 import com.intellij.openapi.editor.impl.FontInfo;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.util.JBHiDPIScaledImage;
 import com.intellij.util.ui.ImageUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.jediterm.terminal.TerminalCopyPasteHandler;
 import com.jediterm.terminal.TextStyle;
@@ -92,14 +95,16 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     "ResizeToolWindowRight",
     "ResizeToolWindowUp",
     "ResizeToolWindowDown",
-    "MaximizeToolWindow"
+    "MaximizeToolWindow",
+    
+    "MaintenanceAction"
   };
   private static final int MIN_FONT_SIZE = 8;
 
   private final TerminalEventDispatcher myEventDispatcher = new TerminalEventDispatcher();
   private final JBTerminalSystemSettingsProviderBase mySettingsProvider;
   private final TerminalEscapeKeyListener myEscapeKeyListener;
-  private final List<Consumer<KeyEvent>> myPreKeyEventConsumers = new CopyOnWriteArrayList<>();
+  private final List<Consumer<? super KeyEvent>> myPreKeyEventConsumers = new CopyOnWriteArrayList<>();
 
   private List<AnAction> myActionsToSkip;
 
@@ -114,6 +119,14 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
 
     mySettingsProvider.addListener(this);
     myEscapeKeyListener = new TerminalEscapeKeyListener(this);
+  }
+
+  @Override
+  public Dimension getMinimumSize() {
+    if (isMinimumSizeSet()) {
+      return super.getMinimumSize();
+    }
+    return JBUI.emptySize();
   }
 
   private boolean skipKeyEvent(@NotNull KeyEvent e) {
@@ -142,16 +155,8 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
 
   @Override
   public void handleKeyEvent(@NotNull KeyEvent e) {
-    if (SystemInfo.isMac && SystemInfo.isJavaVersionAtLeast(11, 0, 0)) {
-      // Workaround for https://youtrack.jetbrains.com/issue/JBR-1098
-      // sun.lwawt.macosx.CPlatformResponder.mapNsCharsToCompatibleWithJava converts 0x0003 (NSEnterCharacter) to 0x000a
-      if (e.getKeyChar() == KeyEvent.VK_ENTER && e.getKeyCode() == KeyEvent.VK_C && e.getModifiersEx() == InputEvent.CTRL_DOWN_MASK) {
-        LOG.debug("Fixing Ctrl+C");
-        e.setKeyChar((char)3);
-      }
-    }
     myEscapeKeyListener.handleKeyEvent(e);
-    for (Consumer<KeyEvent> preKeyEventConsumer : myPreKeyEventConsumers) {
+    for (Consumer<? super KeyEvent> preKeyEventConsumer : myPreKeyEventConsumers) {
       preKeyEventConsumer.accept(e);
     }
     if (!e.isConsumed()) {
@@ -159,7 +164,7 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     }
   }
 
-  public void addPreKeyEventHandler(@NotNull Consumer<KeyEvent> preKeyEventHandler) {
+  public void addPreKeyEventHandler(@NotNull Consumer<? super KeyEvent> preKeyEventHandler) {
     myPreKeyEventConsumers.add(preKeyEventHandler);
   }
 
@@ -293,6 +298,14 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     super.processMouseWheelEvent(e);
   }
 
+  @Nullable ToolWindow getContextToolWindow() {
+    return DataManager.getInstance().getDataContext(this).getData(PlatformDataKeys.TOOL_WINDOW);
+  }
+
+  @Nullable Project getContextProject() {
+    return DataManager.getInstance().getDataContext(this).getData(CommonDataKeys.PROJECT);
+  }
+
   /**
    * Adds "Override IDE shortcuts" terminal feature allowing terminal to process all the key events.
    * Without own IdeEventQueue.EventDispatcher, terminal won't receive key events corresponding to IDE action shortcuts.
@@ -308,16 +321,21 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
 
     private boolean dispatchKeyEvent(@NotNull KeyEvent e) {
       if (!skipKeyEvent(e)) {
+        if (!JBTerminalPanel.this.isFocusOwner()) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Prevented attempt to process " + KeyStroke.getKeyStrokeForEvent(e) + " by not focused " +
+                      getDebugTerminalPanelName() + ", unregistering");
+          }
+          unregister();
+          return false;
+        }
         if (LOG.isDebugEnabled()) {
           LOG.debug("Consuming " + KeyStroke.getKeyStrokeForEvent(e) + ", registered:" + myRegistered);
         }
         IdeEventQueue.getInstance().flushDelayedKeyEvents();
-        // Workaround for https://youtrack.jetbrains.com/issue/IDEA-214830, revert once it's fixed.
-        if (SystemInfo.isJavaVersionAtLeast(8, 0, 212)) {
-          // JBTerminalPanel is focused, because TerminalEventDispatcher added in focusGained and removed in focusLost
-          processKeyEvent(e);
-        }
-        dispatchEvent(e);
+        // Workaround for https://youtrack.jetbrains.com/issue/IDEA-214830
+        // Once it's fixed, replace "processKeyEvent(e)" with "dispatchEvent(e)".
+        JBTerminalPanel.this.processKeyEvent(e);
         return true;
       }
       return false;
@@ -326,8 +344,7 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     void register() {
       ApplicationManager.getApplication().assertIsDispatchThread();
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Register terminal event dispatcher for " +
-                  JBTerminalPanel.class.getSimpleName() + "@" + System.identityHashCode(JBTerminalPanel.this));
+        LOG.debug("Register terminal event dispatcher for " + getDebugTerminalPanelName());
       }
       if (myRegistered) {
         LOG.info("Already registered terminal event dispatcher");
@@ -346,13 +363,16 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     void unregister() {
       ApplicationManager.getApplication().assertIsDispatchThread();
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Unregister terminal event dispatcher for " +
-                  JBTerminalPanel.class.getSimpleName() + "@" + System.identityHashCode(JBTerminalPanel.this));
+        LOG.debug("Unregister terminal event dispatcher for " + getDebugTerminalPanelName());
       }
       if (myRegistered) {
         IdeEventQueue.getInstance().removeDispatcher(this);
       }
       myRegistered = false;
+    }
+
+    private @NotNull String getDebugTerminalPanelName() {
+      return JBTerminalPanel.class.getSimpleName() + "@" + System.identityHashCode(JBTerminalPanel.this);
     }
   }
 }

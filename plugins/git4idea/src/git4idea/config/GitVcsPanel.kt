@@ -19,37 +19,45 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager
+import com.intellij.openapi.vcs.changes.onChangeListAvailabilityChanged
 import com.intellij.openapi.vcs.update.AbstractCommonUpdateAction
 import com.intellij.ui.*
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.TextComponentEmptyText
 import com.intellij.ui.components.fields.ExpandableTextField
 import com.intellij.ui.layout.*
+import com.intellij.util.Function
 import com.intellij.util.execution.ParametersListUtil
-import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.VcsExecutablePathSelector
+import com.intellij.vcs.commit.CommitModeManager
 import com.intellij.vcs.log.VcsLogFilterCollection.STRUCTURE_FILTER
 import com.intellij.vcs.log.impl.MainVcsLogUiProperties
 import com.intellij.vcs.log.ui.VcsLogColorManagerImpl
 import com.intellij.vcs.log.ui.filter.StructureFilterPopupComponent
 import com.intellij.vcs.log.ui.filter.VcsLogClassicFilterUi
-import com.intellij.vcs.log.ui.filter.VcsLogPopupComponent
 import git4idea.GitVcs
 import git4idea.branch.GitBranchIncomingOutgoingManager
 import git4idea.i18n.GitBundle
 import git4idea.i18n.GitBundle.message
+import git4idea.index.canEnableStagingArea
+import git4idea.index.enableStagingArea
 import git4idea.repo.GitRepositoryManager
 import git4idea.update.GitUpdateProjectInfoLogProperties
 import git4idea.update.getUpdateMethods
 import org.jetbrains.annotations.CalledInAny
 import java.awt.Color
-import java.util.function.Consumer
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
 import javax.swing.JLabel
 import javax.swing.border.Border
 
+private fun gitSharedSettings(project: Project) = GitSharedSettings.getInstance(project)
 private fun projectSettings(project: Project) = GitVcsSettings.getInstance(project)
 private val applicationSettings get() = GitVcsApplicationSettings.getInstance()
 private val gitOptionGroupName get() = message("settings.git.option.group")
@@ -64,6 +72,8 @@ private fun cdAutoUpdateOnPush(project: Project)                              = 
 private fun cdShowCommitAndPushDialog(project: Project)                       = CheckboxDescriptor(message("settings.push.dialog"), PropertyBinding({ projectSettings(project).shouldPreviewPushOnCommitAndPush() }, { projectSettings(project).setPreviewPushOnCommitAndPush(it) }), groupName = gitOptionGroupName)
 private fun cdHidePushDialogForNonProtectedBranches(project: Project)         = CheckboxDescriptor(message("settings.push.dialog.for.protected.branches"), PropertyBinding({ projectSettings(project).isPreviewPushProtectedOnly }, { projectSettings(project).isPreviewPushProtectedOnly = it }), groupName = gitOptionGroupName)
 private val cdOverrideCredentialHelper                                  get() = CheckboxDescriptor(message("settings.credential.helper"), PropertyBinding({ applicationSettings.isUseCredentialHelper }, { applicationSettings.isUseCredentialHelper = it }), groupName = gitOptionGroupName)
+private fun synchronizeBranchProtectionRules(project: Project)                = CheckboxDescriptor(message("settings.synchronize.branch.protection.rules"), PropertyBinding({gitSharedSettings(project).isSynchronizeBranchProtectionRules}, { gitSharedSettings(project).isSynchronizeBranchProtectionRules = it }), groupName = gitOptionGroupName, comment = message("settings.synchronize.branch.protection.rules.description"))
+private val cdEnableStagingArea                                         get() = CheckboxDescriptor(message("settings.enable.staging.area"), PropertyBinding({ applicationSettings.isStagingAreaEnabled }, { enableStagingArea(it) }), groupName = gitOptionGroupName, comment = message("settings.enable.staging.area.comment"))
 // @formatter:on
 
 internal fun gitOptionDescriptors(project: Project): List<OptionDescription> {
@@ -71,7 +81,8 @@ internal fun gitOptionDescriptors(project: Project): List<OptionDescription> {
     cdCommitOnCherryPick,
     cdAutoUpdateOnPush(project),
     cdWarnAboutCrlf(project),
-    cdWarnAboutDetachedHead(project)
+    cdWarnAboutDetachedHead(project),
+    cdEnableStagingArea
   )
   val manager = GitRepositoryManager.getInstance(project)
   if (manager.moreThanOneRoot()) {
@@ -81,7 +92,7 @@ internal fun gitOptionDescriptors(project: Project): List<OptionDescription> {
 }
 
 internal class GitVcsPanel(private val project: Project) :
-  BoundConfigurable(GitVcs.NAME, "project.propVCSSupport.VCSs.Git"),
+  BoundConfigurable(GitBundle.message("settings.git.option.group"), "project.propVCSSupport.VCSs.Git"),
   SearchableConfigurable {
 
   private val projectSettings by lazy { GitVcsSettings.getInstance(project) }
@@ -96,10 +107,18 @@ internal class GitVcsPanel(private val project: Project) :
   private lateinit var supportedBranchUpLabel: JLabel
 
   private val pathSelector: VcsExecutablePathSelector by lazy {
-    VcsExecutablePathSelector("Git", disposable!!, Consumer { path -> testExecutable(path) })
+    VcsExecutablePathSelector(GitVcs.NAME, disposable!!, object : VcsExecutablePathSelector.ExecutableHandler {
+      override fun patchExecutable(executable: String): String? {
+        return GitExecutableDetector.patchExecutablePath(executable)
+      }
+
+      override fun testExecutable(executable: String) {
+        testGitExecutable(executable)
+      }
+    })
   }
 
-  private fun testExecutable(pathToGit: String) {
+  private fun testGitExecutable(pathToGit: String) {
     val modalityState = ModalityState.stateForComponent(pathSelector.mainPanel)
     val errorNotifier = InlineErrorNotifierFromSettings(
       GitExecutableInlineComponent(pathSelector.errorComponent, modalityState, null),
@@ -263,15 +282,20 @@ internal class GitVcsPanel(private val project: Project) :
 
   override fun createPanel(): DialogPanel = panel {
     gitExecutableRow()
+    row {
+      checkBox(cdEnableStagingArea)
+        .enableIf(StagingAreaAvailablePredicate(project, disposable!!))
+    }
     if (project.isDefault || GitRepositoryManager.getInstance(project).moreThanOneRoot()) {
       row {
         checkBox(cdSyncBranches(project)).applyToComponent {
-          toolTipText = DvcsBundle.message("sync.setting.description", "Git")
+          toolTipText = DvcsBundle.message("sync.setting.description", GitVcs.DISPLAY_NAME.get())
         }
       }
     }
     row {
       checkBox(cdCommitOnCherryPick)
+        .enableIf(ChangeListsEnabledPredicate(project, disposable!!))
     }
     row {
       checkBox(cdAddCherryPickSuffix(project))
@@ -299,7 +323,7 @@ internal class GitVcsPanel(private val project: Project) :
         label(message("settings.clean.working.tree"))
         buttonGroup({ projectSettings.saveChangesPolicy }, { projectSettings.saveChangesPolicy = it }) {
           GitSaveChangesPolicy.values().forEach { saveSetting ->
-            radioButton(saveSetting.name.toLowerCase().capitalize(), saveSetting)
+            radioButton(saveSetting.text, saveSetting)
           }
         }
       }
@@ -317,8 +341,12 @@ internal class GitVcsPanel(private val project: Project) :
     row {
       cell {
         label(message("settings.protected.branched"))
-        val protectedBranchesField = ExpandableTextField(ParametersListUtil.COLON_LINE_PARSER, ParametersListUtil.COLON_LINE_JOINER)
-        val sharedSettings = GitSharedSettings.getInstance(project)
+        val sharedSettings = gitSharedSettings(project)
+        val protectedBranchesField =
+          ExpandableTextFieldWithReadOnlyText(ParametersListUtil.COLON_LINE_PARSER, ParametersListUtil.COLON_LINE_JOINER)
+        if (sharedSettings.isSynchronizeBranchProtectionRules) {
+          protectedBranchesField.readOnlyText = ParametersListUtil.COLON_LINE_JOINER.`fun`(sharedSettings.additionalProhibitedPatterns)
+        }
         protectedBranchesField(growX)
           .withBinding<List<String>>(
             { ParametersListUtil.COLON_LINE_PARSER.`fun`(it.text) },
@@ -327,6 +355,9 @@ internal class GitVcsPanel(private val project: Project) :
               { sharedSettings.forcePushProhibitedPatterns },
               { sharedSettings.forcePushProhibitedPatterns = it })
           )
+      }
+      row {
+        checkBox(synchronizeBranchProtectionRules(project))
       }
     }
     row {
@@ -381,4 +412,66 @@ internal class GitVcsPanel(private val project: Project) :
       }
     }
   }
+}
+
+private typealias ParserFunction = Function<String, List<String>>
+private typealias JoinerFunction = Function<List<String>, String>
+
+internal class ExpandableTextFieldWithReadOnlyText(lineParser: ParserFunction,
+                                                   private val lineJoiner: JoinerFunction) : ExpandableTextField(lineParser, lineJoiner) {
+  var readOnlyText = ""
+
+  init {
+    addFocusListener(object : FocusAdapter() {
+      override fun focusLost(e: FocusEvent) {
+        val myComponent = this@ExpandableTextFieldWithReadOnlyText
+        if (e.component == myComponent) {
+          val document = myComponent.document
+          val documentText = document.getText(0, document.length)
+          updateReadOnlyText(documentText)
+        }
+      }
+    })
+  }
+
+  override fun setText(t: String?) {
+    if (!t.isNullOrBlank() && t != text) {
+      updateReadOnlyText(t)
+    }
+    super.setText(t)
+  }
+
+  private fun updateReadOnlyText(@NlsSafe text: String) {
+    if (readOnlyText.isBlank()) return
+
+    val readOnlySuffix = if (text.isBlank()) readOnlyText else lineJoiner.join("", readOnlyText) // NON-NLS
+    with(emptyText as TextComponentEmptyText) {
+      clear()
+      appendText(text, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+      appendText(readOnlySuffix, SimpleTextAttributes.GRAYED_ATTRIBUTES)
+      setTextToTriggerStatus(text) //this will force status text rendering in case if the text field is not empty
+    }
+  }
+
+  fun JoinerFunction.join(vararg items: String): String = `fun`(items.toList())
+}
+
+private class StagingAreaAvailablePredicate(val project: Project, val disposable: Disposable) : ComponentPredicate() {
+  override fun addListener(listener: (Boolean) -> Unit) {
+    project.messageBus.connect(disposable).subscribe(CommitModeManager.SETTINGS, object : CommitModeManager.SettingsListener {
+      override fun settingsChanged() {
+        listener(invoke())
+      }
+    })
+  }
+
+  override fun invoke(): Boolean = canEnableStagingArea()
+}
+
+private class ChangeListsEnabledPredicate(val project: Project, val disposable: Disposable) : ComponentPredicate() {
+  override fun addListener(listener: (Boolean) -> Unit) {
+    onChangeListAvailabilityChanged(project, disposable, false) { listener(invoke()) }
+  }
+
+  override fun invoke(): Boolean = ChangeListManager.getInstance(project).areChangeListsEnabled()
 }

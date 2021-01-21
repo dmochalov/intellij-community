@@ -6,12 +6,14 @@ import com.intellij.codeInspection.ex.Descriptor;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.ide.IdeBundle;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.packageDependencies.DependencyValidationManagerImpl;
 import com.intellij.psi.search.scope.NonProjectFilesScope;
 import com.intellij.psi.search.scope.packageSet.CustomScopesProviderEx;
 import com.intellij.psi.search.scope.packageSet.NamedScope;
@@ -29,8 +31,6 @@ import java.util.Set;
  * @author Dmitry Batkovich
  */
 public abstract class ScopesChooser extends ComboBoxAction implements DumbAware {
-  public static final String TITLE = "Select a Scope to Change Its Settings";
-
   private final List<Descriptor> myDefaultDescriptors;
   @NotNull
   private final InspectionProfileImpl myInspectionProfile;
@@ -45,7 +45,7 @@ public abstract class ScopesChooser extends ComboBoxAction implements DumbAware 
     myInspectionProfile = inspectionProfile;
     myProject = project;
     myExcludedScopeNames = excludedScopeNames == null ? Collections.emptySet() : ContainerUtil.newHashSet(excludedScopeNames);
-    setPopupTitle(TITLE);
+    setPopupTitle(LangBundle.message("scopes.chooser.popup.title.select.scope.to.change.its.settings"));
     getTemplatePresentation().setText(InspectionsBundle.messagePointer("action.presentation.ScopesChooser.text"));
   }
 
@@ -57,8 +57,10 @@ public abstract class ScopesChooser extends ComboBoxAction implements DumbAware 
     final List<NamedScope> predefinedScopes = new ArrayList<>();
     final List<NamedScope> customScopes = new ArrayList<>();
     for (final NamedScopesHolder holder : NamedScopesHolder.getAllNamedScopeHolders(myProject)) {
-      Collections.addAll(customScopes, holder.getEditableScopes());
       predefinedScopes.addAll(holder.getPredefinedScopes());
+      if (myInspectionProfile.isProjectLevel() == holder instanceof DependencyValidationManagerImpl) {
+        Collections.addAll(customScopes, holder.getEditableScopes());
+      }
     }
     predefinedScopes.remove(CustomScopesProviderEx.getAllScope());
     for (NamedScope predefinedScope : predefinedScopes) {
@@ -96,11 +98,11 @@ public abstract class ScopesChooser extends ComboBoxAction implements DumbAware 
                                final InspectionProfileImpl inspectionProfile,
                                final Set<String> excludedScopeNames) {
     for (final NamedScope scope : scopes) {
-      final String scopeName = scope.getName();
+      final String scopeName = scope.getScopeId();
       if (excludedScopeNames.contains(scopeName)) {
         continue;
       }
-      group.add(new DumbAwareAction(scopeName) {
+      group.add(new DumbAwareAction(scope.getPresentableName()) {
         @Override
         public void actionPerformed(@NotNull final AnActionEvent e) {
           for (final Descriptor defaultDescriptor : defaultDescriptors) {

@@ -10,6 +10,7 @@ import com.intellij.psi.search.*;
 import com.intellij.util.xml.DomService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.idea.devkit.DevKitBundle;
 import org.jetbrains.idea.devkit.dom.IdeaPlugin;
 import org.jetbrains.idea.devkit.util.PsiUtil;
 
@@ -23,7 +24,7 @@ public class PluginDescriptorDomFileSearchScopeProvider implements SearchScopePr
   @Nullable
   @Override
   public String getDisplayName() {
-    return "Plugin Descriptor Files";
+    return DevKitBundle.message("plugin.xml.scopes.display.name");
   }
 
   @NotNull
@@ -32,13 +33,13 @@ public class PluginDescriptorDomFileSearchScopeProvider implements SearchScopePr
     if (DumbService.isDumb(project) || !PsiUtil.isIdeaProject(project)) return Collections.emptyList();
 
     final Collection<VirtualFile> pluginDescriptorFiles =
-      DomService.getInstance().getDomFileCandidates(IdeaPlugin.class, project, GlobalSearchScopesCore.projectProductionScope(project));
+      DomService.getInstance().getDomFileCandidates(IdeaPlugin.class, GlobalSearchScopesCore.projectProductionScope(project));
     GlobalSearchScope scope = GlobalSearchScope.filesScope(project, pluginDescriptorFiles);
     return Collections.singletonList(new DelegatingGlobalSearchScope(scope) {
       @NotNull
       @Override
       public String getDisplayName() {
-        return "All Production " + PluginDescriptorDomFileSearchScopeProvider.this.getDisplayName();
+        return DevKitBundle.message("plugin.xml.scopes.production.display.name");
       }
 
       @Override

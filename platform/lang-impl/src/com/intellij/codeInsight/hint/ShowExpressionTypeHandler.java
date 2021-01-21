@@ -3,6 +3,7 @@
 package com.intellij.codeInsight.hint;
 
 import com.intellij.codeInsight.CodeInsightActionHandler;
+import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.lang.ExpressionTypeProvider;
 import com.intellij.lang.Language;
@@ -12,6 +13,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts.HintText;
 import com.intellij.openapi.util.Pass;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
@@ -49,7 +51,7 @@ public class ShowExpressionTypeHandler implements CodeInsightActionHandler {
     if (handlers.isEmpty()) return;
 
     Map<PsiElement, ExpressionTypeProvider> map = getExpressions(file, editor, handlers);
-    Pass<PsiElement> callback = new Pass<PsiElement>() {
+    Pass<PsiElement> callback = new Pass<>() {
       @Override
       public void pass(@NotNull PsiElement expression) {
         ExpressionTypeProvider provider = Objects.requireNonNull(map.get(expression));
@@ -87,7 +89,7 @@ public class ShowExpressionTypeHandler implements CodeInsightActionHandler {
     }
   }
 
-  private void displayHint(@NotNull DisplayedTypeInfo typeInfo, String informationHint) {
+  private void displayHint(@NotNull DisplayedTypeInfo typeInfo, @HintText String informationHint) {
     ApplicationManager.getApplication().invokeLater(() -> {
       HintManager.getInstance().setRequestFocusForNextHint(myRequestFocus);
       typeInfo.showHint(informationHint);
@@ -163,10 +165,10 @@ public class ShowExpressionTypeHandler implements CodeInsightActionHandler {
       return this.equals(ourCurrentInstance);
     }
 
-    void showHint(String informationHint) {
+    void showHint(@HintText String informationHint) {
       JComponent label = HintUtil.createInformationLabel(informationHint);
       setInstance(this);
-      AccessibleContextUtil.setName(label, "Expression type hint");
+      AccessibleContextUtil.setName(label, CodeInsightBundle.message("accessible.name.expression.type.hint"));
       HintManagerImpl hintManager = (HintManagerImpl)HintManager.getInstance();
       LightweightHint hint = new LightweightHint(label);
       hint.addHintListener(e -> ApplicationManager.getApplication().invokeLater(() -> setInstance(null)));

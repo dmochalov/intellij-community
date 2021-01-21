@@ -1,26 +1,25 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.github.pullrequest.ui.toolwindow
 
-import com.intellij.icons.AllIcons
 import com.intellij.util.text.DateFormatUtil
 import com.intellij.util.ui.JBDimension
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.ListUiUtil
 import com.intellij.util.ui.UIUtil
+import com.intellij.util.ui.codereview.OpenReviewButton
+import com.intellij.util.ui.codereview.OpenReviewButtonViewModel
 import net.miginfocom.layout.CC
 import net.miginfocom.layout.LC
 import net.miginfocom.swing.MigLayout
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestShort
 import org.jetbrains.plugins.github.i18n.GithubBundle
-import org.jetbrains.plugins.github.pullrequest.avatars.CachingGithubAvatarIconsProvider
-import org.jetbrains.plugins.github.ui.InlineIconButton
-import org.jetbrains.plugins.github.util.GithubUIUtil
+import org.jetbrains.plugins.github.ui.avatars.GHAvatarIconsProvider
+import org.jetbrains.plugins.github.ui.util.GHUIUtil
 import java.awt.Component
-import java.awt.GridBagLayout
 import javax.swing.*
 
-class GHPRListCellRenderer(private val avatarIconsProvider: CachingGithubAvatarIconsProvider,
-                           private val openButtonViewModel: GHPROpenButtonViewModel)
+class GHPRListCellRenderer(private val avatarIconsProvider: GHAvatarIconsProvider,
+                           private val openButtonViewModel: OpenReviewButtonViewModel)
   : ListCellRenderer<GHPullRequestShort>, JPanel() {
 
   private val stateIcon = JLabel()
@@ -34,13 +33,7 @@ class GHPRListCellRenderer(private val avatarIconsProvider: CachingGithubAvatarI
     isOpaque = false
     layout = BoxLayout(this, BoxLayout.X_AXIS)
   }
-  private val openButtonPanel = JPanel(GridBagLayout()).apply {
-    isOpaque = false
-    background = JBUI.CurrentTheme.ActionButton.pressedBackground()
-    add(InlineIconButton(AllIcons.General.ArrowRight).apply {
-      toolTipText = GithubBundle.message("pull.request.open.action")
-    })
-  }
+  private val openButtonPanel = OpenReviewButton.createOpenReviewButton(GithubBundle.message("pull.request.open.action"))
 
   init {
     val gapAfter = "${JBUI.scale(5)}px"
@@ -91,21 +84,22 @@ class GHPRListCellRenderer(private val avatarIconsProvider: CachingGithubAvatarI
     val secondaryTextColor = ListUiUtil.WithTallRow.secondaryForeground(list, isSelected)
 
     stateIcon.apply {
-      icon = GithubUIUtil.getPullRequestStateIcon(value.state, value.isDraft)
-      toolTipText = GithubUIUtil.getPullRequestStateText(value.state, value.isDraft)
+      icon = GHUIUtil.getPullRequestStateIcon(value.state, value.isDraft)
+      toolTipText = GHUIUtil.getPullRequestStateText(value.state, value.isDraft)
     }
     title.apply {
       text = value.title
       foreground = primaryTextColor
     }
     info.apply {
-      text = "#${value.number} ${value.author?.login} on ${DateFormatUtil.formatDate(value.createdAt)}"
+      text = GithubBundle.message("pull.request.list.item.info", value.number, value.author?.login,
+                                  DateFormatUtil.formatDate(value.createdAt))
       foreground = secondaryTextColor
     }
     labels.apply {
       removeAll()
       for (label in value.labels) {
-        add(GithubUIUtil.createIssueLabelLabel(label))
+        add(GHUIUtil.createIssueLabelLabel(label))
         add(Box.createRigidArea(JBDimension(4, 0)))
       }
     }

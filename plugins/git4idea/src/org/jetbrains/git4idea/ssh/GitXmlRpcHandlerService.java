@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.git4idea.ssh;
 
 import com.intellij.ide.XmlRpcServer;
@@ -6,7 +6,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import git4idea.config.GitExecutable;
-import gnu.trove.THashMap;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.git4idea.GitExternalApp;
 import org.jetbrains.git4idea.util.ScriptGenerator;
@@ -18,14 +18,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.intellij.openapi.diagnostic.Logger.getInstance;
-
 /**
  * <p>The provider of external application scripts called by Git when a remote operation needs communication with the user.</p>
  * <p>
  *   Usage:
  *   <ol>
- *     <li>Get the script from {@link #getScriptPath()}.</li>
+ *     <li>Get the script from {@link #getScriptPath(GitExecutable, boolean)}.</li>
  *     <li>Set up proper environment variable
  *         (e.g. {@code GIT_SSH} for SSH connections, or {@code GIT_ASKPASS} for HTTP) pointing to the script.</li>
  *     <li>{@link #registerHandler(Object) Register} the handler of Git requests.</li>
@@ -38,16 +36,16 @@ import static com.intellij.openapi.diagnostic.Logger.getInstance;
  * </p>
  */
 public abstract class GitXmlRpcHandlerService<T> implements Disposable {
-  private static final Logger LOG = getInstance(GitXmlRpcHandlerService.class);
+  private static final Logger LOG = Logger.getInstance(GitXmlRpcHandlerService.class);
 
-  @NotNull private final String myScriptTempFilePrefix;
-  @NotNull private final String myHandlerName;
+  @NotNull private final @NonNls String myScriptTempFilePrefix;
+  @NotNull private final @NonNls String myHandlerName;
   @NotNull private final Class<? extends GitExternalApp> myScriptMainClass;
 
-  @NotNull private final Map<String, File> myScriptPaths = new HashMap<>();
+  @NotNull private final Map<@NonNls String, File> myScriptPaths = new HashMap<>();
   @NotNull private final Object SCRIPT_FILE_LOCK = new Object();
 
-  @NotNull private final THashMap<UUID, T> handlers = new THashMap<>();
+  @NotNull private final Map<UUID, T> handlers = new HashMap<>();
   @NotNull private final Object HANDLERS_LOCK = new Object();
 
   /**
@@ -55,7 +53,9 @@ public abstract class GitXmlRpcHandlerService<T> implements Disposable {
    * @param aClass      Main class of the external application invoked by Git,
    *                    which is able to handle its requests and pass to the main IDEA instance.
    */
-  protected GitXmlRpcHandlerService(@NotNull String prefix, @NotNull String handlerName, @NotNull Class<? extends GitExternalApp> aClass) {
+  protected GitXmlRpcHandlerService(@NotNull @NonNls String prefix,
+                                    @NotNull @NonNls String handlerName,
+                                    @NotNull Class<? extends GitExternalApp> aClass) {
     myScriptTempFilePrefix = prefix;
     myHandlerName = handlerName;
     myScriptMainClass = aClass;
@@ -77,7 +77,7 @@ public abstract class GitXmlRpcHandlerService<T> implements Disposable {
   @NotNull
   public File getScriptPath(@NotNull GitExecutable executable, boolean useBatchFile) throws IOException {
     synchronized (SCRIPT_FILE_LOCK) {
-      String id = executable.getId() + (useBatchFile ? "-bat" : "");
+      String id = executable.getId() + (useBatchFile ? "-bat" : ""); //NON-NLS
       File scriptPath = myScriptPaths.get(id);
       if (scriptPath == null || !scriptPath.exists()) {
         ScriptGenerator generator = new ScriptGenerator(myScriptTempFilePrefix + "-" + executable.getId(), myScriptMainClass);

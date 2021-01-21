@@ -300,24 +300,6 @@ public final class PsiImplUtil {
     return null;
   }
 
-  /** @deprecated use {@link AnnotationTargetUtil#findAnnotationTarget(PsiAnnotation, PsiAnnotation.TargetType...)} (to be removed ion IDEA 17) */
-  @Deprecated
-  public static PsiAnnotation.TargetType findApplicableTarget(@NotNull PsiAnnotation annotation, PsiAnnotation.TargetType @NotNull ... types) {
-    return AnnotationTargetUtil.findAnnotationTarget(annotation, types);
-  }
-
-  /** @deprecated use {@link AnnotationTargetUtil#findAnnotationTarget(PsiClass, PsiAnnotation.TargetType...)} (to be removed ion IDEA 17) */
-  @Deprecated
-  public static PsiAnnotation.TargetType findApplicableTarget(@NotNull PsiClass annotationType, PsiAnnotation.TargetType @NotNull ... types) {
-    return AnnotationTargetUtil.findAnnotationTarget(annotationType, types);
-  }
-
-  /** @deprecated use {@link AnnotationTargetUtil#getTargetsForLocation(PsiAnnotationOwner)} (to be removed ion IDEA 17) */
-  @Deprecated
-  public static PsiAnnotation.TargetType @NotNull [] getTargetsForLocation(@Nullable PsiAnnotationOwner owner) {
-    return AnnotationTargetUtil.getTargetsForLocation(owner);
-  }
-
   @Nullable
   public static ASTNode findDocComment(@NotNull CompositeElement element) {
     TreeElement node = element.getFirstChildNode();
@@ -333,7 +315,6 @@ public final class PsiImplUtil {
    */
   @Deprecated
   public static PsiType normalizeWildcardTypeByPosition(@NotNull PsiType type, @NotNull PsiExpression expression) {
-    PsiUtilCore.ensureValid(expression);
     PsiUtil.ensureValidType(type);
 
     PsiExpression topLevel = expression;
@@ -627,11 +608,7 @@ public final class PsiImplUtil {
   }
 
   public static void collectTypeUseAnnotations(@NotNull PsiModifierList modifierList, @NotNull List<? super PsiAnnotation> annotations) {
-    for (PsiAnnotation annotation : modifierList.getAnnotations()) {
-      if (AnnotationTargetUtil.isTypeAnnotation(annotation)) {
-        annotations.add(annotation);
-      }
-    }
+    AnnotationTargetUtil.collectStrictlyTypeUseAnnotations(modifierList, annotations);
   }
 
   private static final Key<Boolean> TYPE_ANNO_MARK = Key.create("type.annotation.mark");
@@ -772,6 +749,11 @@ public final class PsiImplUtil {
       return JavaResolveResult.EMPTY_ARRAY;
     }
     PsiFile psiFile = SharedImplUtil.getContainingFile(fileElement);
+    return multiResolveImpl(element, psiFile, incompleteCode, resolver);
+  }
+
+  public static <T extends PsiJavaCodeReferenceElement> @NotNull JavaResolveResult @NotNull [] multiResolveImpl(
+    @NotNull T element, PsiFile psiFile, boolean incompleteCode, ResolveCache.@NotNull PolyVariantContextResolver<? super T> resolver) {
     PsiManager manager = psiFile == null ? null : psiFile.getManager();
     if (manager == null) {
       PsiUtilCore.ensureValid(element);

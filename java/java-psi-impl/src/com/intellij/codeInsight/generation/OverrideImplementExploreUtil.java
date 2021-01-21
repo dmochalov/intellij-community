@@ -1,8 +1,8 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.generation;
 
 import com.intellij.codeInsight.MemberImplementorExplorer;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.NullableLazyValue;
 import com.intellij.openapi.util.VolatileNullableLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
@@ -128,7 +128,7 @@ public class OverrideImplementExploreUtil {
   private static final NullableLazyValue<MemberImplementorExplorersProvider> ourExplorersProvider = new VolatileNullableLazyValue<MemberImplementorExplorersProvider>() {
     @Override
     protected MemberImplementorExplorersProvider compute() {
-      return ServiceManager.getService(MemberImplementorExplorersProvider.class);
+      return ApplicationManager.getApplication().getService(MemberImplementorExplorersProvider.class);
     }
   };
 
@@ -169,7 +169,11 @@ public class OverrideImplementExploreUtil {
     return isDefaultMethod(aClass, abstractOne) ||
            // abstract methods from java.lang.Record (equals/hashCode/toString) are implicitly implemented in subclasses
            // so it could be reasonable to expect them in 'override' method dialog
-           CommonClassNames.JAVA_LANG_RECORD.equals(Objects.requireNonNull(abstractOne.getContainingClass()).getQualifiedName());
+           belongsToRecord(abstractOne);
+  }
+
+  static boolean belongsToRecord(@NotNull PsiMethod method) {
+    return CommonClassNames.JAVA_LANG_RECORD.equals(Objects.requireNonNull(method.getContainingClass()).getQualifiedName());
   }
 
   private static boolean preferLeftForImplement(@NotNull PsiMethod left, @NotNull PsiMethod right) {

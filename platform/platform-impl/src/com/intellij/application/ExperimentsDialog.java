@@ -1,7 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.application;
 
 import com.intellij.ide.IdeBundle;
+import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ExperimentalFeature;
 import com.intellij.openapi.application.Experiments;
 import com.intellij.openapi.project.Project;
@@ -21,23 +22,22 @@ import javax.swing.table.TableModel;
 /**
  * @author Konstantin Bulenkov
  */
-public class ExperimentsDialog extends DialogWrapper {
-  protected ExperimentsDialog(@Nullable Project project) {
+public final class ExperimentsDialog extends DialogWrapper {
+  ExperimentsDialog(@Nullable Project project) {
     super(project);
     init();
     setTitle(IdeBundle.message("dialog.title.experimental.features"));
   }
 
-  @Nullable
   @Override
-  protected JComponent createCenterPanel() {
+  protected @NotNull JComponent createCenterPanel() {
     ExperimentalFeature[] features = Experiments.EP_NAME.getExtensions();
     JBTable table = new JBTable(createModel(features));
+    table.setShowGrid(false);
     table.getEmptyText().setText(IdeBundle.message("empty.text.no.features.available"));
     table.getColumnModel().getColumn(0).setCellRenderer(getIdRenderer());
     table.getColumnModel().getColumn(1).setCellRenderer(getValueRenderer());
     table.getColumnModel().getColumn(1).setCellEditor(new BooleanTableCellEditor());
-    table.setStriped(true);
     table.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
     JTextArea myDescription = new JTextArea(4, 50);
@@ -106,8 +106,8 @@ public class ExperimentsDialog extends DialogWrapper {
       @Override
       public String getColumnName(int column) {
         switch (column) {
-          case 0: return "Name";
-          case 1: return "Enabled";
+          case 0: return ApplicationBundle.message("column.name");
+          case 1: return IdeBundle.message("column.enabled");
           default: throw new IllegalArgumentException("Wrong column number");
         }
       }

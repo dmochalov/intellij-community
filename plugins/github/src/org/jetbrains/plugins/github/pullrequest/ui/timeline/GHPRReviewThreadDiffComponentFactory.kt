@@ -6,27 +6,26 @@ import com.intellij.openapi.diff.impl.patch.PatchHunk
 import com.intellij.openapi.diff.impl.patch.PatchLine
 import com.intellij.openapi.diff.impl.patch.PatchReader
 import com.intellij.openapi.diff.impl.patch.apply.GenericPatchApplier
-import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.EditorFactory
-import com.intellij.openapi.editor.EditorKind
 import com.intellij.openapi.editor.LineNumberConverter
-import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.impl.LineNumberConverterAdapter
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.changes.patch.AppliedTextPatch
 import com.intellij.openapi.vcs.changes.patch.tool.PatchChangeBuilder
+import com.intellij.util.ui.codereview.timeline.TimelineDiffComponentFactory
 import org.jetbrains.plugins.github.util.GHPatchHunkUtil
 import javax.swing.JComponent
 
-class GHPRReviewThreadDiffComponentFactory(private val project: Project, private val editorFactory: EditorFactory) {
+class GHPRReviewThreadDiffComponentFactory(project: Project, editorFactory: EditorFactory) {
+  private val timelineDiffComponentFactory = TimelineDiffComponentFactory(project, editorFactory)
 
-  fun createComponent(diffHunk: String): JComponent {
+  fun createComponent(diffHunk: String, startLine: Int?): JComponent {
     try {
       val patchReader = PatchReader(GHPatchHunkUtil.createPatchFromHunk("_", diffHunk))
-      val patchHunk = patchReader.readTextPatches().firstOrNull()?.hunks?.firstOrNull()?.let { truncateHunk(it) }
+      val patchHunk = patchReader.readTextPatches().firstOrNull()?.hunks?.firstOrNull()?.let { truncateHunk(it, startLine != null) }
                       ?: throw IllegalStateException("Could not parse diff hunk")
 
-      if (patchHunk.lines.find { it.type != PatchLine.Type.CONTEXT } != null) {
+      if (patchHunk.lines.any { it.type != PatchLine.Type.CONTEXT }) {
         val appliedSplitHunks = GenericPatchApplier.SplitHunk.read(patchHunk).map {
           AppliedTextPatch.AppliedSplitPatchHunk(it, -1, -1, AppliedTextPatch.HunkStatus.NOT_APPLIED)
         }
@@ -35,10 +34,8 @@ class GHPRReviewThreadDiffComponentFactory(private val project: Project, private
         builder.exec(appliedSplitHunks)
 
         val patchContent = builder.patchContent.removeSuffix("\n")
-        val document = editorFactory.createDocument(patchContent)
 
-        return EditorHandlerPanel.create(editorFactory) {
-          val editor = createEditor(document)
+        return timelineDiffComponentFactory.createDiffComponent(patchContent) { editor ->
           editor.gutter.apply {
             setLineNumberConverter(LineNumberConverterAdapter(builder.lineConvertor1.createConvertor()),
                                    LineNumberConverterAdapter(builder.lineConvertor2.createConvertor()))
@@ -49,22 +46,18 @@ class GHPRReviewThreadDiffComponentFactory(private val project: Project, private
                                                       hunk.patchDeletionRange,
                                                       hunk.patchInsertionRange,
                                                       null)
-          editor
         }
       }
       else {
         val patchContent = patchHunk.text.removeSuffix("\n")
-        val document = editorFactory.createDocument(patchContent)
 
-        return EditorHandlerPanel.create(editorFactory) {
-          val editor = createEditor(document)
+        return timelineDiffComponentFactory.createDiffComponent(patchContent) { editor ->
           editor.gutter.apply {
             setLineNumberConverter(
               LineNumberConverter.Increasing { _, line -> line + patchHunk.startLineBefore },
               LineNumberConverter.Increasing { _, line -> line + patchHunk.startLineAfter }
             )
           }
-          editor
         }
       }
     }
@@ -73,13 +66,15 @@ class GHPRReviewThreadDiffComponentFactory(private val project: Project, private
     }
   }
 
-  private fun truncateHunk(hunk: PatchHunk): PatchHunk {
-    if (hunk.lines.size <= DIFF_SIZE) return hunk
+  private fun truncateHunk(hunk: PatchHunk, isMultiline: Boolean): PatchHunk {
+    val maxDiffSize = if (isMultiline) MULTILINE_DIFF_SIZE else SINGLE_LINE_DIFF_SIZE
+
+    if (hunk.lines.size <= maxDiffSize) return hunk
 
     var startLineBefore: Int = hunk.startLineBefore
     var startLineAfter: Int = hunk.startLineAfter
 
-    val toRemoveIdx = hunk.lines.lastIndex - DIFF_SIZE
+    val toRemoveIdx = hunk.lines.lastIndex - maxDiffSize
     for (i in 0..toRemoveIdx) {
       val line = hunk.lines[i]
       when (line.type) {
@@ -99,31 +94,8 @@ class GHPRReviewThreadDiffComponentFactory(private val project: Project, private
     }
   }
 
-  private fun createEditor(document: Document): EditorEx {
-    return (editorFactory.createViewer(document, project, EditorKind.DIFF) as EditorEx).apply {
-      setHorizontalScrollbarVisible(true)
-      setVerticalScrollbarVisible(false)
-      setCaretEnabled(false)
-      setBorder(null)
-      settings.apply {
-        isCaretRowShown = false
-        additionalLinesCount = 0
-        additionalColumnsCount = 0
-        isRightMarginShown = false
-        setRightMargin(-1)
-        isFoldingOutlineShown = false
-        isIndentGuidesShown = false
-        isVirtualSpace = false
-        isWheelFontChangeEnabled = false
-        isAdditionalPageAtBottom = false
-        lineCursorWidth = 1
-      }
-
-      gutterComponentEx.setPaintBackground(false)
-    }
-  }
-
   companion object {
-    private const val DIFF_SIZE = 3
+    private const val SINGLE_LINE_DIFF_SIZE = 3
+    private const val MULTILINE_DIFF_SIZE = 10
   }
 }

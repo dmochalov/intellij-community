@@ -189,7 +189,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
   @Override
   public boolean differsFromDefault(@NotNull EditorColorsScheme scheme) {
     if (scheme.getName().startsWith(Scheme.EDITABLE_COPY_PREFIX)) {
-      String displayName = SchemeManager.getBaseName(scheme);
+      String displayName = Scheme.getBaseName(scheme.getName());
       EditorColorsScheme defaultScheme = DefaultColorSchemesManager.getInstance().getScheme(displayName);
       if (defaultScheme == null) {
         defaultScheme = EditorColorsManager.getInstance().getScheme(displayName);
@@ -431,6 +431,14 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
           return DisplayPriority.LANGUAGE_SETTINGS;
         }
 
+        @Override
+        public int getWeight() {
+          if (page instanceof DisplayPrioritySortable) {
+            return ((DisplayPrioritySortable)page).getWeight();
+          }
+          return ColorAndFontPanelFactoryEx.super.getWeight();
+        }
+
         @NotNull
         @Override
         public Class<?> getOriginalClass() {
@@ -439,26 +447,13 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
       });
     }
     extensions.addAll(ColorAndFontPanelFactory.EP_NAME.getExtensionList());
-    extensions.sort((f1, f2) -> {
-      if (f1 instanceof DisplayPrioritySortable) {
-        if (f2 instanceof DisplayPrioritySortable) {
-          int result1 = ((DisplayPrioritySortable)f1).getPriority().compareTo(((DisplayPrioritySortable)f2).getPriority());
-          if (result1 != 0) return result1;
-        }
-        else {
-          return 1;
-        }
-      }
-      else if (f2 instanceof DisplayPrioritySortable) {
-        return -1;
-      }
-      return f1.getPanelDisplayName().compareToIgnoreCase(f2.getPanelDisplayName());
-    });
-
+    extensions.sort(
+      (f1, f2) -> DisplayPrioritySortable.compare(f1, f2, factory -> factory.getPanelDisplayName())
+    );
     return new ArrayList<>(extensions);
   }
 
-  public static String getFontConfigurableName() {
+  public static @NlsContexts.ConfigurableName String getFontConfigurableName() {
     return ApplicationBundle.message("title.colors.scheme.font");
   }
 
@@ -590,15 +585,15 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
 
 
   private static void initScopesDescriptors(@NotNull List<? super EditorSchemeAttributeDescriptor> descriptions, @NotNull MyColorScheme scheme) {
-    Set<Pair<NamedScope,NamedScopesHolder>> namedScopes = new ObjectOpenCustomHashSet<>(new Hash.Strategy<Pair<NamedScope, NamedScopesHolder>>() {
+    Set<Pair<NamedScope,NamedScopesHolder>> namedScopes = new ObjectOpenCustomHashSet<>(new Hash.Strategy<>() {
       @Override
       public int hashCode(@Nullable Pair<NamedScope, NamedScopesHolder> object) {
-        return object == null ? 0 : object.getFirst().getName().hashCode();
+        return object == null ? 0 : object.getFirst().getScopeId().hashCode();
       }
 
       @Override
       public boolean equals(@Nullable Pair<NamedScope, NamedScopesHolder> o1, @Nullable Pair<NamedScope, NamedScopesHolder> o2) {
-        return o1 == o2 || (o1 != null && o2 != null && o1.getFirst().getName().equals(o2.getFirst().getName()));
+        return o1 == o2 || (o1 != null && o2 != null && o1.getFirst().getScopeId().equals(o2.getFirst().getScopeId()));
       }
     });
     Project[] projects = ProjectManager.getInstance().getOpenProjects();
@@ -610,10 +605,10 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
 
     List<Pair<NamedScope, NamedScopesHolder>> list = new ArrayList<>(namedScopes);
 
-    list.sort((o1, o2) -> o1.getFirst().getName().compareToIgnoreCase(o2.getFirst().getName()));
+    list.sort((o1, o2) -> o1.getFirst().getPresentableName().compareToIgnoreCase(o2.getFirst().getPresentableName()));
     for (Pair<NamedScope,NamedScopesHolder> pair : list) {
       NamedScope namedScope = pair.getFirst();
-      String name = namedScope.getName();
+      String name = namedScope.getScopeId();
       TextAttributesKey textAttributesKey = ScopeAttributesUtil.getScopeTextAttributeKey(name);
       if (scheme.getAttributes(textAttributesKey) == null) {
         scheme.setAttributes(textAttributesKey, new TextAttributes());
@@ -622,7 +617,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
 
       PackageSet value = namedScope.getValue();
       String toolTip = holder.getDisplayName() + (value==null ? "" : ": "+ value.getText());
-      descriptions.add(new SchemeTextAttributesDescription(name, getScopesGroup(), textAttributesKey, scheme, holder.getIcon(), toolTip));
+      descriptions.add(new SchemeTextAttributesDescription(namedScope.getPresentableName(), getScopesGroup(), textAttributesKey, scheme, holder.getIcon(), toolTip));
     }
   }
 
@@ -834,7 +829,8 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
         fallbackColor = scheme.getColor(fallbackKey);
         myBaseAttributeDescriptor = ColorSettingsPages.getInstance().getColorDescriptor(fallbackKey);
         if (myBaseAttributeDescriptor == null) {
-          myBaseAttributeDescriptor = Pair.create(null, new ColorDescriptor(fallbackKey.getExternalName(), fallbackKey, myKind));
+          @NlsSafe String fallbackKeyExternalName = fallbackKey.getExternalName();
+          myBaseAttributeDescriptor = Pair.create(null, new ColorDescriptor(fallbackKeyExternalName, fallbackKey, myKind));
         }
         myFallbackAttributes = new TextAttributes(myKind == ColorDescriptor.Kind.FOREGROUND ? fallbackColor : null,
                                                   myKind == ColorDescriptor.Kind.BACKGROUND ? fallbackColor : null,
@@ -1525,7 +1521,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract
     return page != null;
   }
 
-  public static String getScopesGroup() {
+  public static @NlsContexts.ConfigurableName String getScopesGroup() {
     return ApplicationBundle.message("title.scope.based");
   }
 }

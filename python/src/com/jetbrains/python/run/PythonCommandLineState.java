@@ -23,6 +23,7 @@ import com.intellij.execution.target.value.TargetEnvironmentFunctions;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.facet.Facet;
 import com.intellij.facet.FacetManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -37,6 +38,7 @@ import com.intellij.openapi.roots.impl.libraries.LibraryEx;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.PersistentLibraryKind;
 import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
@@ -47,6 +49,7 @@ import com.intellij.remote.ProcessControlWithMappings;
 import com.intellij.util.PlatformUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.execution.ParametersListUtil;
+import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.PythonHelpersLocator;
 import com.jetbrains.python.console.PyDebugConsoleBuilder;
 import com.jetbrains.python.debugger.PyDebugRunner;
@@ -71,6 +74,8 @@ import java.util.*;
 import java.util.function.Function;
 
 /**
+ * Since this state is async, any method could be called on any thread
+ *
  * @author traff, Leonid Shalupov
  */
 public abstract class PythonCommandLineState extends CommandLineState {
@@ -117,7 +122,7 @@ public abstract class PythonCommandLineState extends CommandLineState {
       serverSocket = new ServerSocket(0);
     }
     catch (IOException e) {
-      throw new ExecutionException("Failed to find free socket port", e);
+      throw new ExecutionException(PyBundle.message("runcfg.error.message.failed.to.find.free.socket.port"), e);
     }
     return serverSocket;
   }
@@ -175,7 +180,21 @@ public abstract class PythonCommandLineState extends CommandLineState {
                                  PythonProcessStarter processStarter,
                                  CommandLinePatcher... patchers) throws ExecutionException {
     final ProcessHandler processHandler = startProcess(processStarter, patchers);
-    final ConsoleView console = createAndAttachConsole(myConfig.getProject(), processHandler, executor);
+    final Ref<Object> consoleRef = Ref.create();
+    ApplicationManager.getApplication().invokeAndWait(
+      () -> {
+        try {
+          consoleRef.set(createAndAttachConsole(myConfig.getProject(), processHandler, executor));
+        }
+        catch (ExecutionException | RuntimeException e) {
+          consoleRef.set(e);
+        }
+      });
+
+    if (consoleRef.get() instanceof ExecutionException) throw (ExecutionException)consoleRef.get();
+    else if (consoleRef.get() instanceof RuntimeException) throw (RuntimeException)consoleRef.get();
+
+    var console = (ConsoleView)consoleRef.get();
     return new DefaultExecutionResult(console, processHandler, createActions(console, processHandler));
   }
 
@@ -225,20 +244,6 @@ public abstract class PythonCommandLineState extends CommandLineState {
   @NotNull
   protected ProcessHandler startProcess() throws ExecutionException {
     return startProcess(getDefaultPythonProcessStarter());
-  }
-
-  /**
-   * Patches the command line parameters applying patchers from first to last, and then runs it.
-   *
-   * @param patchers any number of patchers; any patcher may be null, and the whole argument may be null.
-   * @return handler of the started process
-   * @throws ExecutionException
-   * @deprecated use {@link #startProcess(PythonProcessStarter, CommandLinePatcher...)} instead
-   */
-  @Deprecated
-  @NotNull
-  protected ProcessHandler startProcess(CommandLinePatcher... patchers) throws ExecutionException {
-    return startProcess(getDefaultPythonProcessStarter(), patchers);
   }
 
   /**
@@ -299,7 +304,8 @@ public abstract class PythonCommandLineState extends CommandLineState {
 
     // TODO [Targets API] [major] Meaningful progress indicator should be taken
     EmptyProgressIndicator progressIndicator = new EmptyProgressIndicator();
-    TargetEnvironment targetEnvironment = targetEnvironmentFactory.prepareRemoteEnvironment(targetEnvironmentRequest, progressIndicator);
+    TargetEnvironment targetEnvironment = targetEnvironmentFactory
+      .prepareRemoteEnvironment(targetEnvironmentRequest, TargetEnvironmentAwareRunProfileState.TargetProgressIndicator.EMPTY);
 
     List<String> interpreterParameters = getConfiguredInterpreterParameters();
     TargetedCommandLine targetedCommandLine =
@@ -645,7 +651,7 @@ public abstract class PythonCommandLineState extends CommandLineState {
   }
 
   /**
-   * @see PythonEnvUtil#setupEncodingEnvs(java.util.Map, java.nio.charset.Charset)
+   * @see PythonEnvUtil#setupEncodingEnvs(Map, Charset)
    */
   private static void setupEncodingEnvs(@NotNull PythonExecution pythonExecution, @NotNull Charset charset) {
     pythonExecution.addEnvironmentVariable(PythonEnvUtil.PYTHONIOENCODING, charset.name());
@@ -809,7 +815,7 @@ public abstract class PythonCommandLineState extends CommandLineState {
   @NotNull
   public static Collection<String> collectPythonPath(@Nullable Module module, boolean addContentRoots,
                                                      boolean addSourceRoots) {
-    Collection<String> pythonPathList = new LinkedHashSet<String>();
+    Collection<String> pythonPathList = new LinkedHashSet<>();
     if (module != null) {
       Set<Module> dependencies = new HashSet<>();
       ModuleUtilCore.getDependencies(module, dependencies);
@@ -923,7 +929,7 @@ public abstract class PythonCommandLineState extends CommandLineState {
   protected String getInterpreterPath() throws ExecutionException {
     String interpreterPath = myConfig.getInterpreterPath();
     if (interpreterPath == null) {
-      throw new ExecutionException("Cannot find Python interpreter for this run configuration");
+      throw new ExecutionException(PyBundle.message("runcfg.error.message.cannot.find.python.interpreter"));
     }
     return interpreterPath;
   }

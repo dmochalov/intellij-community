@@ -12,6 +12,7 @@ import com.intellij.openapi.fileTypes.FileTypeExtensionPoint;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleType;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.references.PomService;
@@ -21,9 +22,9 @@ import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.ReferenceSetBase;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.ArrayUtilRt;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.xml.*;
 import com.intellij.util.xml.reflect.DomAttributeChildDescription;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.devkit.DevKitBundle;
@@ -37,7 +38,7 @@ import java.util.*;
 import static org.jetbrains.idea.devkit.util.ExtensionLocatorKt.locateExtensionsByExtensionPoint;
 import static org.jetbrains.idea.devkit.util.ExtensionLocatorKt.locateExtensionsByExtensionPointAndId;
 
-public class ExtensionOrderConverter implements CustomReferenceConverter<String> {
+public final class ExtensionOrderConverter implements CustomReferenceConverter<String> {
   private static final Logger LOG = Logger.getInstance(ExtensionOrderConverter.class);
 
   @Override
@@ -53,7 +54,7 @@ public class ExtensionOrderConverter implements CustomReferenceConverter<String>
       return PsiReference.EMPTY_ARRAY;
     }
 
-    return new ReferenceSetBase<PsiReference>(orderValue, element, 0, ',') {
+    return new ReferenceSetBase<>(orderValue, element, 0, ',') {
       @Override
       protected List<PsiReference> createReferences(TextRange range, int index) {
         String orderPart = range.substring(orderValue);
@@ -116,7 +117,7 @@ public class ExtensionOrderConverter implements CustomReferenceConverter<String>
   }
 
   private static List<TextRange> getWordIndicesInOrderPart(String orderPart) {
-    return StringUtil.getWordIndicesIn(orderPart, ContainerUtil.set(' ', ':'));
+    return StringUtil.getWordIndicesIn(orderPart, Set.of(' ', ':'));
   }
 
   private static boolean isBeforeOrAfterKeyword(String str) {
@@ -228,7 +229,8 @@ public class ExtensionOrderConverter implements CustomReferenceConverter<String>
     @Override
     public String getUnresolvedMessagePattern() {
       ExtensionPoint ep = myExtension.getExtensionPoint();
-      return "Cannot resolve ''{0}'' " + (ep != null ? ep.getEffectiveQualifiedName() + " " : "") + "extension";
+      final String epFqn = ep != null ? ep.getEffectiveQualifiedName() + " " : "";
+      return DevKitBundle.message("plugin.xml.convert.extension.order.cannot.resolve", epFqn);
     }
 
     @Override
@@ -259,11 +261,11 @@ public class ExtensionOrderConverter implements CustomReferenceConverter<String>
           continue;
         }
 
-        String extensionMark = null; // to display {language} or {file type}
+        @NlsSafe String extensionMark = null; // to display {language} or {file type}
         if (currentExtensionLanguage != null) {
           String language = getSpecificExtensionAttribute(extension, languageEpClass, "language");
           if (language != null) {
-            if (!language.equals("any") && !language.isEmpty() && !language.equals(currentExtensionLanguage)) {
+            if (!language.equals("any") && !language.isEmpty() && !language.equals(currentExtensionLanguage)) { //NON-NLS
               continue;
             }
             extensionMark = language;
@@ -305,9 +307,10 @@ public class ExtensionOrderConverter implements CustomReferenceConverter<String>
     }
 
     @Nullable
+    @NlsSafe
     private static String getSpecificExtensionAttribute(@NotNull Extension e,
                                                         @NotNull PsiClass parentBeanClass,
-                                                        @NotNull String attribute) {
+                                                        @NotNull @NonNls String attribute) {
       ExtensionPoint ep = e.getExtensionPoint();
       if (ep == null) {
         return null;

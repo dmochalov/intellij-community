@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.structureView.impl.java;
 
 import com.intellij.ide.util.treeView.WeighedItem;
@@ -28,16 +28,18 @@ public final class PropertyGroup implements Group, ColoredItemPresentation, Acce
   @NotNull private final String myPropertyName;
   @NotNull private final String myTypeText;
 
-  private SmartPsiElementPointer myFieldPointer;
-  private SmartPsiElementPointer myGetterPointer;
-  private SmartPsiElementPointer mySetterPointer;
+  private SmartPsiElementPointer<?> myFieldPointer;
+  private SmartPsiElementPointer<?> myGetterPointer;
+  private SmartPsiElementPointer<?> mySetterPointer;
   private boolean myIsStatic;
+
   public static final Icon PROPERTY_READ_ICON = loadIcon("/nodes/propertyRead.png");
   public static final Icon PROPERTY_READ_STATIC_ICON = loadIcon("/nodes/propertyReadStatic.png");
   public static final Icon PROPERTY_WRITE_ICON = loadIcon("/nodes/propertyWrite.png");
   public static final Icon PROPERTY_WRITE_STATIC_ICON = loadIcon("/nodes/propertyWriteStatic.png");
   public static final Icon PROPERTY_READ_WRITE_ICON = loadIcon("/nodes/propertyReadWrite.png");
   public static final Icon PROPERTY_READ_WRITE_STATIC_ICON = loadIcon("/nodes/propertyReadWriteStatic.png");
+
   private final Project myProject;
   private final Collection<TreeElement> myChildren = new ArrayList<>();
 
@@ -122,11 +124,6 @@ public final class PropertyGroup implements Group, ColoredItemPresentation, Acce
   }
 
   @Override
-  public String getLocationString() {
-    return null;
-  }
-
-  @Override
   public String getPresentableText() {
     return myPropertyName + ": " + myTypeText;
   }
@@ -202,7 +199,7 @@ public final class PropertyGroup implements Group, ColoredItemPresentation, Acce
   }
 
   private static Icon loadIcon(@NonNls String resourceName) {
-    Icon icon = IconLoader.findIcon(resourceName);
+    Icon icon = IconLoader.findIcon(resourceName, PropertyGroup.class, PropertyGroup.class.getClassLoader(), null, true);
     Application application = ApplicationManager.getApplication();
     if (icon == null && application != null && application.isUnitTestMode()) {
       return new ImageIcon();

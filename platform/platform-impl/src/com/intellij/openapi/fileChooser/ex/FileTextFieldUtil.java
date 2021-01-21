@@ -4,6 +4,7 @@ package com.intellij.openapi.fileChooser.ex;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileChooser.ex.FileLookup.Finder;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
@@ -80,7 +81,7 @@ public final class FileTextFieldUtil {
     }
 
 
-    ReadAction.run(new ThrowableRunnable<RuntimeException>() {
+    ReadAction.run(new ThrowableRunnable<>() {
       @Override
       public void run() {
         if (result.current != null) {
@@ -97,7 +98,6 @@ public final class FileTextFieldUtil {
           }
         }
 
-        int currentDiff = Integer.MIN_VALUE;
         FileLookup.LookupFile toPreselect = result.myPreselected;
 
         if (toPreselect == null || !result.myToComplete.contains(toPreselect)) {
@@ -106,13 +106,9 @@ public final class FileTextFieldUtil {
             for (FileLookup.LookupFile each : result.myToComplete) {
               String eachName = StringUtil.toUpperCase(each.getName());
               if (!eachName.startsWith(result.effectivePrefix)) continue;
-              int diff = result.effectivePrefix.compareTo(eachName);
-              currentDiff = Math.max(diff, currentDiff);
-              if (currentDiff == diff) {
-                toPreselect = each;
-                toPreselectFixed = true;
-                break;
-              }
+              toPreselect = each;
+              toPreselectFixed = true;
+              break;
             }
 
             if (!toPreselectFixed) {
@@ -133,7 +129,7 @@ public final class FileTextFieldUtil {
               }
             }
 
-            if (toPreselect == null && !result.myToComplete.contains(toPreselect) && result.myToComplete.size() > 0) {
+            if (toPreselect == null && !result.myToComplete.contains(null) && result.myToComplete.size() > 0) {
               toPreselect = result.myToComplete.get(0);
             }
           }
@@ -189,11 +185,11 @@ public final class FileTextFieldUtil {
     return lastFound;
   }
 
-  @NotNull
-  public static String getLookupString(@NotNull FileLookup.LookupFile file, @NotNull Finder finder, @Nullable FileTextFieldImpl.CompletionResult result) {
-    if (file.getMacro() != null) {
-      return file.getMacro();
-    }
+  public static @NlsSafe @NotNull String getLookupString(@NotNull FileLookup.LookupFile file,
+                                                         @NotNull Finder finder,
+                                                         @Nullable FileTextFieldImpl.CompletionResult result) {
+    String macro = file.getMacro();
+    if (macro != null) return macro;
     String prefix = result != null && result.myKidsAfterSeparator.contains(file) ? finder.getSeparator() : "";
     return prefix + file.getName();
   }

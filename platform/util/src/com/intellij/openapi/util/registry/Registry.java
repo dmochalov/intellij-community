@@ -2,6 +2,7 @@
 package com.intellij.openapi.util.registry;
 
 import com.intellij.diagnostic.LoadingState;
+import com.intellij.openapi.util.NlsSafe;
 import org.jdom.Element;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
@@ -13,7 +14,6 @@ import java.lang.ref.SoftReference;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Provides a UI to configure internal settings of the IDE.
@@ -28,11 +28,11 @@ public final class Registry  {
   public static final String REGISTRY_BUNDLE = "misc.registry";
 
   private final Map<String, String> myUserProperties = new LinkedHashMap<>();
-  private final ConcurrentMap<String, RegistryValue> myValues = new ConcurrentHashMap<>();
+  private final Map<String, RegistryValue> myValues = new ConcurrentHashMap<>();
   private final Map<String, RegistryKeyDescriptor> myContributedKeys = new HashMap<>();
 
   private static final Registry ourInstance = new Registry();
-  private volatile boolean myLoaded = false;
+  private volatile boolean myLoaded;
 
   public static @NotNull RegistryValue get(@NonNls @NotNull String key) {
     return getInstance().doGet(key);
@@ -106,7 +106,7 @@ public final class Registry  {
     return bundle;
   }
 
-  public String getBundleValue(@NonNls @NotNull String key, boolean mustExist) throws MissingResourceException {
+  public @NlsSafe String getBundleValue(@NonNls @NotNull String key, boolean mustExist) throws MissingResourceException {
     if (myContributedKeys.containsKey(key)) {
       return myContributedKeys.get(key).getDefaultValue();
     }
@@ -230,13 +230,5 @@ public final class Registry  {
   public static synchronized void removeKey(@NonNls @NotNull String key) {
     ourInstance.myContributedKeys.remove(key);
     ourInstance.myValues.remove(key);
-  }
-
-  /**
-   * @deprecated Use extension point `com.intellij.registryKey`.
-   */
-  @Deprecated
-  public static synchronized void addKey(@NonNls @NotNull String key, @NotNull String description, int defaultValue, boolean restartRequired) {
-    getInstance().myContributedKeys.put(key, new RegistryKeyDescriptor(key, description, Integer.toString(defaultValue), restartRequired, null));
   }
 }

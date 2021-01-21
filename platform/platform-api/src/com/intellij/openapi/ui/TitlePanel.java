@@ -1,21 +1,19 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.ui;
 
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 
 public final class TitlePanel extends JPanel {
-  public TitlePanel(String title, String description) {
+  public TitlePanel(@Nls(capitalization = Nls.Capitalization.Title) String title, @NlsContexts.Label String description) {
     super(new BorderLayout());
     JLabel label = new JLabel(title);
     add(label, BorderLayout.NORTH);

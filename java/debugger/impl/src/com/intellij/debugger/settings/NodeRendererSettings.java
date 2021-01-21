@@ -18,9 +18,9 @@ import com.intellij.debugger.ui.tree.ValueDescriptor;
 import com.intellij.debugger.ui.tree.render.*;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
@@ -99,7 +99,7 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
   }
 
   public static NodeRendererSettings getInstance() {
-    return ServiceManager.getService(NodeRendererSettings.class);
+    return ApplicationManager.getApplication().getService(NodeRendererSettings.class);
   }
 
   public void setAlternateCollectionViewsEnabled(boolean enabled) {
@@ -582,7 +582,7 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     }
   }
 
-  static void visitAnnotatedElements(String annotationFqn, Project project, BiConsumer<PsiModifierListOwner, PsiAnnotation> consumer) {
+  static void visitAnnotatedElements(String annotationFqn, Project project, BiConsumer<? super PsiModifierListOwner, ? super PsiAnnotation> consumer) {
     JavaAnnotationIndex.getInstance().get(StringUtil.getShortName(annotationFqn), project, GlobalSearchScope.allScope(project))
       .forEach(annotation -> {
         PsiElement parent = annotation.getContext();

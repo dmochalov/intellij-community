@@ -14,10 +14,12 @@ import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.ui.popup.ListPopupStep;
 import com.intellij.openapi.ui.popup.PopupStep;
 import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.WindowStateService;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.ui.FlatSpeedSearchPopup;
 import com.intellij.openapi.vcs.ui.PopupListElementRendererWithIcon;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.*;
 import com.intellij.ui.components.panels.OpaquePanel;
 import com.intellij.ui.popup.KeepingPopupOpenAction;
@@ -27,6 +29,8 @@ import com.intellij.ui.popup.list.ListPopupModel;
 import com.intellij.util.FontUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,7 +42,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import static com.intellij.icons.AllIcons.General.CollapseComponentHover;
+import static com.intellij.icons.AllIcons.General.FitContent;
 import static com.intellij.util.ui.UIUtil.DEFAULT_HGAP;
 import static com.intellij.util.ui.UIUtil.DEFAULT_VGAP;
 
@@ -57,12 +61,15 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
   private final List<AnAction> mySettingsActions = new ArrayList<>();
   private final List<AnAction> myToolbarActions = new ArrayList<>();
 
-  public BranchActionGroupPopup(@NotNull String title,
+  public BranchActionGroupPopup(@NotNull @NlsContexts.PopupTitle String title,
                                 @NotNull Project project,
                                 @NotNull Condition<? super AnAction> preselectActionCondition,
                                 @NotNull ActionGroup actions,
                                 @Nullable String dimensionKey) {
-    super(title, createBranchSpeedSearchActionGroup(actions), SimpleDataContext.getProjectContext(project),
+    super(title, createBranchSpeedSearchActionGroup(actions), SimpleDataContext.builder()
+            .add(CommonDataKeys.PROJECT, project)
+            .add(PlatformDataKeys.CONTEXT_COMPONENT, IdeFocusManager.getInstance(project).getFocusOwner())
+            .build(),
           preselectActionCondition, true);
     getTitle().setBackground(JBColor.PanelBackground);
     myProject = project;
@@ -89,7 +96,7 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
       }
     };
     AnAction restoreSizeButton =
-      new AnAction(DvcsBundle.messagePointer("action.BranchActionGroupPopup.Anonymous.text.restore.size"), CollapseComponentHover) {
+      new AnAction(DvcsBundle.messagePointer("action.BranchActionGroupPopup.Anonymous.text.restore.size"), FitContent) {
       @Override
       public void actionPerformed(@NotNull AnActionEvent e) {
         WindowStateService.getInstance(myProject).putSizeFor(myProject, dimensionKey, null);
@@ -372,7 +379,7 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
       updateInfoComponent(myInfoLabel, additionalInfoAction != null ? additionalInfoAction.getInfoText() : null, isSelected);
     }
 
-    private void updateInfoComponent(@NotNull ErrorLabel infoLabel, @Nullable String infoText, boolean isSelected) {
+    private void updateInfoComponent(@NotNull ErrorLabel infoLabel, @Nullable @Nls String infoText, boolean isSelected) {
       if (infoText != null) {
         infoLabel.setVisible(true);
         infoLabel.setText(infoText);
@@ -435,24 +442,25 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
   private static class MoreAction extends DumbAwareAction implements KeepingPopupOpenAction {
 
     @NotNull private final Project myProject;
-    @Nullable private final String mySettingName;
+    @Nullable private final @NonNls String mySettingName;
     private final boolean myDefaultExpandValue;
     private boolean myIsExpanded;
-    @NotNull private final String myToCollapseText;
-    @NotNull private final String myToExpandText;
+    @NotNull private final @Nls String myToCollapseText;
+    @NotNull private final @Nls String myToExpandText;
 
     MoreAction(@NotNull Project project,
-                      int numberOfHiddenNodes,
-                      @Nullable String settingName,
-                      boolean defaultExpandValue,
-                      boolean hasFavorites) {
+               int numberOfHiddenNodes,
+               @Nullable @NonNls String settingName,
+               boolean defaultExpandValue,
+               boolean hasFavorites) {
       super();
       myProject = project;
       mySettingName = settingName;
       myDefaultExpandValue = defaultExpandValue;
       assert numberOfHiddenNodes > 0;
-      myToExpandText = "Show " + numberOfHiddenNodes + " More...";
-      myToCollapseText = "Show " + (hasFavorites ? "Only Favorites" : "Less");
+      myToExpandText = DvcsBundle.message("action.branch.popup.show.n.nodes.more", numberOfHiddenNodes);
+      myToCollapseText = hasFavorites ? DvcsBundle.message("action.branch.popup.show.only.favorites")
+                                      : DvcsBundle.message("action.branch.popup.show.less");
       setExpanded(
         settingName != null ? PropertiesComponent.getInstance(project).getBoolean(settingName, defaultExpandValue) : defaultExpandValue);
     }

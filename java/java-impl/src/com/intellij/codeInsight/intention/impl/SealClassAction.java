@@ -25,14 +25,12 @@ import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SequentialModalProgressTask;
 import com.intellij.util.SequentialTask;
 import com.intellij.util.containers.ContainerUtil;
+import com.siyeh.ig.psiutils.SealedUtils;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.PropertyKey;
 
 import java.util.*;
-
-import static com.intellij.util.ObjectUtils.tryCast;
 
 public class SealClassAction extends BaseElementAtCaretIntentionAction {
   @Override
@@ -73,20 +71,24 @@ public class SealClassAction extends BaseElementAtCaretIntentionAction {
     PsiClass aClass = PsiTreeUtil.getParentOfType(element, PsiClass.class);
     if (aClass == null) return;
     if (!isAvailable(aClass, editor)) return;
-    PsiJavaFile parentFile = (PsiJavaFile)aClass.getContainingFile();
-    if (aClass.isInterface()) {
-      if (FunctionalExpressionSearch.search(aClass).findFirst() != null) {
+    sealClass(project, editor, aClass);
+  }
+
+  static void sealClass(@NotNull Project project, Editor editor, PsiClass psiClass) {
+    PsiJavaFile parentFile = (PsiJavaFile)psiClass.getContainingFile();
+    if (psiClass.isInterface()) {
+      if (FunctionalExpressionSearch.search(psiClass).findFirst() != null) {
         showError(project, editor, "intention.error.make.sealed.class.is.used.in.functional.expression");
         return;
       }
     }
 
-    PsiJavaModule module = JavaModuleGraphUtil.findDescriptorByElement(aClass);
+    PsiJavaModule module = JavaModuleGraphUtil.findDescriptorByElement(psiClass);
 
     List<PsiClass> inheritors = new ArrayList<>();
     Ref<String> message = new Ref<>();
-    ClassInheritorsSearch.search(aClass, false).forEach(inheritor -> {
-      String errorTitle = checkInheritor(parentFile, module, inheritor);
+    ClassInheritorsSearch.search(psiClass, false).forEach(inheritor -> {
+      String errorTitle = SealedUtils.checkInheritor(parentFile, module, inheritor);
       if (errorTitle != null) {
         message.set(errorTitle);
         return false;
@@ -110,12 +112,12 @@ public class SealClassAction extends BaseElementAtCaretIntentionAction {
     if (!names.isEmpty()) {
       modifier = PsiModifier.SEALED;
       if (shouldCreatePermitsList(inheritors, parentFile)) {
-        addPermitsClause(project, aClass, names);
+        addPermitsClause(project, psiClass, names);
       }
       setInheritorsModifiers(project, inheritors);
     }
     else {
-      if (aClass.isInterface()) {
+      if (psiClass.isInterface()) {
         showError(project, editor, "intention.error.make.sealed.class.interface.has.no.inheritors");
         return;
       }
@@ -124,36 +126,16 @@ public class SealClassAction extends BaseElementAtCaretIntentionAction {
       }
     }
     ApplicationManager.getApplication().runWriteAction(() -> {
-      PsiModifierList modifierList = Objects.requireNonNull(aClass.getModifierList());
+      PsiModifierList modifierList = Objects.requireNonNull(psiClass.getModifierList());
       modifierList.setModifierProperty(modifier, true);
     });
-  }
-
-  public static @Nullable String checkInheritor(@NotNull PsiJavaFile parentFile, @Nullable PsiJavaModule module, @NotNull PsiClass inheritor) {
-    if (PsiUtil.isLocalOrAnonymousClass(inheritor)) {
-      return "intention.error.make.sealed.class.has.anonymous.or.local.inheritors";
-    }
-
-    if (module == null) {
-      PsiJavaFile file = tryCast(inheritor.getContainingFile(), PsiJavaFile.class);
-      if (file == null) return "intention.error.make.sealed.class.inheritors.not.in.java.file";
-      if (!parentFile.getPackageName().equals(file.getPackageName())) {
-        return "intention.error.make.sealed.class.different.packages";
-      }
-    }
-    else {
-      if (JavaModuleGraphUtil.findDescriptorByElement(inheritor) != module) {
-        return "intention.error.make.sealed.class.different.modules";
-      }
-    }
-    return null;
   }
 
   private static void showError(@NotNull Project project, Editor editor, @PropertyKey(resourceBundle = JavaBundle.BUNDLE) String message) {
     CommonRefactoringUtil.showErrorHint(project, editor, JavaBundle.message(message), getErrorTitle(), null);
   }
 
-  public boolean shouldCreatePermitsList(List<PsiClass> inheritors, PsiFile parentFile) {
+  private static boolean shouldCreatePermitsList(List<PsiClass> inheritors, PsiFile parentFile) {
     return !inheritors.stream().allMatch(psiClass -> psiClass.getContainingFile() == parentFile);
   }
 
@@ -167,7 +149,7 @@ public class SealClassAction extends BaseElementAtCaretIntentionAction {
     });
   }
 
-  public void setInheritorsModifiers(@NotNull Project project, List<PsiClass> inheritors) {
+  private static void setInheritorsModifiers(@NotNull Project project, List<PsiClass> inheritors) {
     String title = JavaBundle.message("intention.make.sealed.class.task.title.set.inheritors.modifiers");
     SequentialModalProgressTask task = new SequentialModalProgressTask(project, title, true);
     task.setTask(new SequentialTask() {
@@ -200,7 +182,7 @@ public class SealClassAction extends BaseElementAtCaretIntentionAction {
     ProgressManager.getInstance().run(task);
   }
 
-  public static void addPermitsClause(@NotNull Project project, PsiClass aClass, List<String> nonNullNames) {
+  private static void addPermitsClause(@NotNull Project project, PsiClass aClass, List<String> nonNullNames) {
     String permitsClause = StreamEx.of(nonNullNames).sorted().joining(",", "permits ", "");
     PsiReferenceList permitsList = createPermitsClause(project, permitsClause);
     PsiReferenceList implementsList = Objects.requireNonNull(aClass.getImplementsList());

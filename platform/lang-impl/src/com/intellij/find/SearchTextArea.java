@@ -14,15 +14,17 @@ import com.intellij.openapi.editor.EditorCopyPasteHelper;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.DocumentAdapter;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextArea;
 import com.intellij.ui.components.panels.NonOpaquePanel;
-import com.intellij.ui.popup.util.PopupState;
+import com.intellij.ui.popup.PopupState;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.ui.JBInsets;
@@ -52,6 +54,7 @@ import static java.awt.event.InputEvent.*;
 import static javax.swing.ScrollPaneConstants.*;
 
 public class SearchTextArea extends JPanel implements PropertyChangeListener {
+  private static final JBColor BUTTON_SELECTED_BACKGROUND = JBColor.namedColor("SearchOption.selectedBackground", 0xDAE4ED, 0x5C6164);
   public static final String JUST_CLEARED_KEY = "JUST_CLEARED";
   public static final KeyStroke NEW_LINE_KEYSTROKE
     = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, (SystemInfo.isMac ? META_DOWN_MASK : CTRL_DOWN_MASK) | SHIFT_DOWN_MASK);
@@ -73,6 +76,12 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
     public void paintBackground(Graphics g, JComponent component, int state) {
       if (((MyActionButton)component).isRolloverState()) {
         super.paintBackground(g, component, state);
+        return;
+      }
+      if (state == ActionButtonComponent.SELECTED && component.isEnabled()) {
+        Rectangle rect = new Rectangle(component.getSize());
+        JBInsets.removeFrom(rect, component.getInsets());
+        paintLookBackground(g, rect, BUTTON_SELECTED_BACKGROUND);
       }
     }
   };
@@ -178,6 +187,7 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
     });
     myScrollPane.getViewport().setBorder(null);
     myScrollPane.getViewport().setOpaque(false);
+    myScrollPane.getHorizontalScrollBar().putClientProperty(JBScrollPane.IGNORE_SCROLLBAR_IN_INSETS, Boolean.TRUE);
     myScrollPane.setOpaque(false);
 
     myHistoryPopupButton = new MyActionButton(new ShowHistoryAction(), false);
@@ -213,6 +223,7 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
     iconsPanelWrapper.setBorder(JBUI.Borders.emptyTop(1));
     JPanel p = new NonOpaquePanel(new BorderLayout());
     p.add(myIconsPanel, BorderLayout.NORTH);
+    myIconsPanel.setBorder(JBUI.Borders.emptyRight(5));
     iconsPanelWrapper.add(p, BorderLayout.WEST);
     iconsPanelWrapper.add(myExtraActionsPanel, BorderLayout.CENTER);
 
@@ -259,7 +270,7 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
     myExtraActionsPanel.setBorder(JBUI.Borders.empty());
     ArrayList<Component> addedButtons = new ArrayList<>();
     if (actions != null && actions.length > 0) {
-      JPanel buttonsGrid = new NonOpaquePanel(new GridLayout(1, actions.length, 0, 0));
+      JPanel buttonsGrid = new NonOpaquePanel(new GridLayout(1, actions.length, JBUI.scale(4), 0));
       for (AnAction action : actions) {
         if (action instanceof TooltipDescriptionProvider) {
           action.getTemplatePresentation().setDescription(FindBundle.message("find.embedded.buttons.description"));
@@ -270,7 +281,7 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
       }
       myExtraActionsPanel.setLayout(new BorderLayout());
       myExtraActionsPanel.add(buttonsGrid, BorderLayout.NORTH);
-      myExtraActionsPanel.setBorder(new CompoundBorder(JBUI.Borders.customLine(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground(), 0, 1, 0, 0), JBUI.Borders.emptyLeft(4)));
+      myExtraActionsPanel.setBorder(new CompoundBorder(JBUI.Borders.customLine(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground(), 0, 1, 0, 0), JBUI.Borders.emptyLeft(5)));
     }
     return addedButtons;
   }
@@ -332,7 +343,7 @@ public class SearchTextArea extends JPanel implements PropertyChangeListener {
   public void setInfoText(String info) {}
 
   private class ShowHistoryAction extends DumbAwareAction {
-    private final PopupState myPopupState = new PopupState();
+    private final PopupState<JBPopup> myPopupState = PopupState.forPopup();
 
     ShowHistoryAction() {
       super(FindBundle.message(mySearchMode ? "find.search.history" : "find.replace.history"),

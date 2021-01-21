@@ -1,6 +1,7 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.updateSettings.impl.pluginsAdvertisement;
 
+import com.intellij.execution.RunManager;
 import com.intellij.openapi.components.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
@@ -13,7 +14,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 @State(name = "UnknownFeatures", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
-public class UnknownFeaturesCollector implements PersistentStateComponent<Element> {
+@Service
+public final class UnknownFeaturesCollector implements PersistentStateComponent<Element> {
   @NonNls private static final String FEATURE_ID = "featureType";
   @NonNls private static final String IMPLEMENTATION_NAME = "implementationName";
 
@@ -25,7 +27,7 @@ public class UnknownFeaturesCollector implements PersistentStateComponent<Elemen
   }
 
   public void registerUnknownRunConfiguration(@NotNull String configurationId, @Nullable String factoryName) {
-    registerUnknownFeature("com.intellij.configurationType", configurationId,
+    registerUnknownFeature(RunManager.CONFIGURATION_TYPE_FEATURE_ID, configurationId,
                            "Run Configuration", StringUtil.notNullize(factoryName, configurationId));
   }
 

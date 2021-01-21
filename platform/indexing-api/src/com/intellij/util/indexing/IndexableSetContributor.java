@@ -1,6 +1,8 @@
 // Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.indexing;
 
+import com.intellij.diagnostic.PluginException;
+import com.intellij.ide.plugins.PluginUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.project.Project;
@@ -13,7 +15,10 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * @author peter
+ * Represents a set of files which should be indexed additionally to a default ones.
+ * <br>
+ * Files provided by {@link IndexableSetContributor} will be indexed (or ensured up to date) on project loading and
+ * {@link FileBasedIndex} automatically rebuilds indexes for these files when they are going to be changed.
  */
 public abstract class IndexableSetContributor {
 
@@ -56,9 +61,9 @@ public abstract class IndexableSetContributor {
                                                  @NotNull Set<VirtualFile> roots) {
     for (VirtualFile root : roots) {
       if (root == null || !root.isValid()) {
-        LOG.error("Please fix " + contributor.getClass().getName() + "#" + methodInfo + ".\n" +
-                  (root == null ? "The returned set is not expected to contain nulls, but it is " + roots
-                                : "Invalid file returned: " + root));
+        LOG.error(PluginException.createByClass("Please fix " + contributor.getClass().getName() + "#" + methodInfo + ".\n" +
+                                                (root == null ? "The returned set is not expected to contain nulls, but it is " + roots
+                                                              : "Invalid file returned: " + root), null, contributor.getClass()));
         return new LinkedHashSet<>(ContainerUtil.filter(roots, virtualFile -> virtualFile != null && virtualFile.isValid()));
       }
     }

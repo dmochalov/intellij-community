@@ -61,21 +61,6 @@ class GithubUrlUtilTest : TestCase() {
     runTestCase(tests) { `in` -> removeProtocolPrefix(`in`) }
   }
 
-  fun testRemovePort() {
-    val tests = TestCase<String>()
-
-    tests.add("github.com/user/repo/", "github.com/user/repo/")
-    tests.add("github.com", "github.com")
-    tests.add("github.com/", "github.com/")
-
-    tests.add("github.com:80/user/repo/", "github.com/user/repo/")
-    tests.add("github.com:80/user/repo", "github.com/user/repo")
-    tests.add("github.com:80/user", "github.com/user")
-    tests.add("github.com:80", "github.com")
-
-    runTestCase(tests) { `in` -> removePort(`in`) }
-  }
-
   fun testGetUserAndRepositoryFromRemoteUrl() {
     val tests = TestCase<GHRepositoryPath?>()
 
@@ -153,33 +138,6 @@ class GithubUrlUtilTest : TestCase() {
     tests.add("HttP://GitHub.com/user/repo/", "GitHub.com")
 
     runTestCase(tests) { `in` -> getHostFromUrl(`in`) }
-  }
-
-  fun testGetApiUrl() {
-    val tests = TestCase<String>()
-
-    tests.add("github.com", "https://api.github.com")
-    tests.add("https://github.com/", "https://api.github.com")
-
-    tests.add("https://my.site.com/", "https://my.site.com/api/v3")
-    tests.add("https://api.site.com/", "https://api.site.com/api/v3")
-    tests.add("https://url.github.com/", "https://url.github.com/api/v3")
-
-    tests.add("my.site.com/", "https://my.site.com/api/v3")
-    tests.add("api.site.com/", "https://api.site.com/api/v3")
-    tests.add("url.github.com/", "https://url.github.com/api/v3")
-
-    tests.add("http://my.site.com/", "http://my.site.com/api/v3")
-    tests.add("http://api.site.com/", "http://api.site.com/api/v3")
-    tests.add("http://url.github.com/", "http://url.github.com/api/v3")
-
-    tests.add("HTTP://GITHUB.com", "http://api.github.com")
-    tests.add("HttP://GitHub.com/", "http://api.github.com")
-
-    tests.add("https://ghe.com/suffix", "https://ghe.com/suffix/api/v3")
-    tests.add("https://ghe.com/suFFix", "https://ghe.com/suFFix/api/v3")
-
-    runTestCase(tests) { `in` -> getApiUrl(`in`) }
   }
 
   fun testUri() {

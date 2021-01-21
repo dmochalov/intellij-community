@@ -18,6 +18,7 @@ import java.util.List;
 /**
  * @author Bas Leijdekkers
  */
+@SuppressWarnings("ComponentNotRegistered")
 public class TextFilter extends FilterAction {
 
   boolean myShowHierarchy;
@@ -67,10 +68,9 @@ public class TextFilter extends FilterAction {
 
   @Override
   public FilterEditor<MatchVariableConstraint> getEditor() {
-    return new FilterEditor<MatchVariableConstraint>(myTable.getMatchVariable(), myTable.getConstraintChangedCallback()) {
+    return new FilterEditor<>(myTable.getMatchVariable(), myTable.getConstraintChangedCallback()) {
 
       private final EditorTextField myTextField = UIUtil.createRegexComponent("", myTable.getProject());
-      private final JCheckBox myWordsCheckBox = new JCheckBox(SSRBundle.message("whole.words.check.box"), false);
       private final JCheckBox myHierarchyCheckBox = new JCheckBox(SSRBundle.message("within.type.hierarchy.check.box"), false);
       private final JLabel myTextLabel = new JLabel(SSRBundle.message("text.label"));
       private final ContextHelpLabel myHelpLabel = ContextHelpLabel.create(SSRBundle.message("text.filter.help.text"));
@@ -83,40 +83,36 @@ public class TextFilter extends FilterAction {
 
         layout.setHorizontalGroup(
           layout.createParallelGroup()
-                .addGroup(
-                  layout.createSequentialGroup()
-                        .addComponent(myTextLabel)
-                        .addComponent(myTextField)
-                        .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED, 1, 1)
-                        .addComponent(myHelpLabel)
-                )
-                .addGroup(
-                  layout.createSequentialGroup()
-                        .addComponent(myWordsCheckBox)
-                        .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(myHierarchyCheckBox)
-                )
+            .addGroup(
+              layout.createSequentialGroup()
+                .addComponent(myTextLabel)
+                .addComponent(myTextField)
+                .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED, 1, 1)
+                .addComponent(myHelpLabel)
+            )
+            .addGroup(
+              layout.createSequentialGroup()
+                .addComponent(myHierarchyCheckBox)
+            )
         );
         layout.setVerticalGroup(
           layout.createSequentialGroup()
-                .addGroup(
-                  layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                        .addComponent(myTextLabel)
-                        .addComponent(myTextField)
-                        .addComponent(myHelpLabel)
-                )
-                .addGroup(
-                  layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                        .addComponent(myWordsCheckBox)
-                        .addComponent(myHierarchyCheckBox)
-                )
+            .addGroup(
+              layout.createParallelGroup(GroupLayout.Alignment.CENTER)
+                .addComponent(myTextLabel)
+                .addComponent(myTextField)
+                .addComponent(myHelpLabel)
+            )
+            .addGroup(
+              layout.createParallelGroup(GroupLayout.Alignment.CENTER)
+                .addComponent(myHierarchyCheckBox)
+            )
         );
       }
 
       @Override
       protected void loadValues() {
         myTextField.setText((myConstraint.isInvertRegExp() ? "!" : "") + myConstraint.getRegExp());
-        myWordsCheckBox.setSelected(myConstraint.isWholeWordsOnly());
         myHierarchyCheckBox.setSelected(myConstraint.isWithinHierarchy());
         myHierarchyCheckBox.setVisible(myShowHierarchy);
       }
@@ -132,7 +128,7 @@ public class TextFilter extends FilterAction {
           myConstraint.setRegExp(text);
           myConstraint.setInvertRegExp(false);
         }
-        myConstraint.setWholeWordsOnly(myWordsCheckBox.isSelected());
+        myConstraint.setWholeWordsOnly(false);
         myConstraint.setWithinHierarchy(myHierarchyCheckBox.isSelected());
       }
 

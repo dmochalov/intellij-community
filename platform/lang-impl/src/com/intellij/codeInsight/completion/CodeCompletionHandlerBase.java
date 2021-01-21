@@ -321,9 +321,9 @@ public class CodeCompletionHandlerBase {
         completionFinished(indicator, hasModifiers);
       }
       catch (Throwable e) {
+        LOG.error(e);
         indicator.closeAndFinish(true);
         CompletionServiceImpl.setCompletionPhase(CompletionPhase.NoCompletion);
-        LOG.error(e);
       }
       return;
     }
@@ -397,7 +397,7 @@ public class CodeCompletionHandlerBase {
 
     AutoCompletionContext context =
       new AutoCompletionContext(parameters, items.toArray(LookupElement.EMPTY_ARRAY), indicator.getOffsetMap(), indicator.getLookup());
-    AutoCompletionDecision resultingDecision =  FileBasedIndex.getInstance().ignoreDumbMode(DumbModeAccessType.RELIABLE_DATA_ONLY, () -> {
+    AutoCompletionDecision resultingDecision = DumbModeAccessType.RELIABLE_DATA_ONLY.ignoreDumbMode(() -> {
       for (final CompletionContributor contributor : CompletionContributor.forParameters(parameters)) {
         AutoCompletionDecision decision = contributor.handleAutoCompletionPossibility(context);
         if (decision != null) {
@@ -686,9 +686,9 @@ public class CodeCompletionHandlerBase {
         if (item.requiresCommittedDocuments()) {
           PsiDocumentManager.getInstance(project).commitAllDocuments();
         }
-        FileBasedIndex.getInstance().ignoreDumbMode(() -> {
+        DumbModeAccessType.RELIABLE_DATA_ONLY.ignoreDumbMode(() -> {
           item.handleInsert(context);
-        }, DumbModeAccessType.RELIABLE_DATA_ONLY);
+        });
         PostprocessReformattingAspect.getInstance(project).doPostponedFormatting();
       }
       finally {

@@ -12,10 +12,7 @@ import com.intellij.codeInsight.lookup.LookupManager
 import com.intellij.diagnostic.StartUpMeasurer
 import com.intellij.doLoadApp
 import com.intellij.execution.process.ProcessIOExecutorService
-import com.intellij.ide.DataManager
-import com.intellij.ide.GeneratedSourceFileChangeTracker
-import com.intellij.ide.GeneratedSourceFileChangeTrackerImpl
-import com.intellij.ide.IdeEventQueue
+import com.intellij.ide.*
 import com.intellij.ide.impl.HeadlessDataManager
 import com.intellij.ide.startup.impl.StartupManagerImpl
 import com.intellij.ide.structureView.StructureViewFactory
@@ -179,6 +176,7 @@ private var testCounter = 0
 // Kotlin allows to easily debug code and to get clear and short stack traces
 @ApiStatus.Internal
 fun tearDownProjectAndApp(project: Project) {
+  if (project.isDisposed) return;
   val isLightProject = ProjectManagerImpl.isLight(project)
   val l = mutableListOf<Throwable>()
   val app = ApplicationManager.getApplication()
@@ -264,13 +262,13 @@ fun disposeApplicationAndCheckForLeaks() {
     l.catchAndStoreExceptions { UIUtil.dispatchAllInvocationEvents() }
 
     l.catchAndStoreExceptions {
-      val app = ApplicationManager.getApplication() as? ApplicationImpl
-      if (app != null) {
-        println(app.writeActionStatistics())
-      }
-      println(ActionUtil.ActionPauses.STAT.statistics())
       println((AppExecutorUtil.getAppScheduledExecutorService() as AppScheduledExecutorService).statistics())
       println("ProcessIOExecutorService threads created: ${(ProcessIOExecutorService.INSTANCE as ProcessIOExecutorService).threadCounter}")
+    }
+
+    l.catchAndStoreExceptions {
+      val app = ApplicationManager.getApplication() as? ApplicationImpl
+      app?.messageBus?.syncPublisher(AppLifecycleListener.TOPIC)?.appWillBeClosed(false)
     }
 
     l.catchAndStoreExceptions { UsefulTestCase.waitForAppLeakingThreads(10, TimeUnit.SECONDS) }

@@ -18,6 +18,8 @@ import java.util.function.Supplier;
 public final class ProhibitAWTEvents implements IdeEventQueue.EventDispatcher {
   private static final Logger LOG = Logger.getInstance(ProhibitAWTEvents.class);
 
+  private static long ourUseCount;
+
   private final String myActivityName;
   private boolean myReported;
 
@@ -35,29 +37,38 @@ public final class ProhibitAWTEvents implements IdeEventQueue.EventDispatcher {
   }
 
   @NotNull
-  public static AccessToken start(@NotNull String activityName) {
+  public static AccessToken start(@NotNull @NonNls String activityName) {
     if (!SwingUtilities.isEventDispatchThread()) {
       // some crazy highlighting queries getData outside EDT: https://youtrack.jetbrains.com/issue/IDEA-162970
       return AccessToken.EMPTY_ACCESS_TOKEN;
     }
     ProhibitAWTEvents dispatcher = new ProhibitAWTEvents(activityName);
     IdeEventQueue.getInstance().addPostprocessor(dispatcher, null);
+    ourUseCount ++;
     return new AccessToken() {
       @Override
       public void finish() {
+        //noinspection AssignmentToStaticFieldFromInstanceMethod
+        ourUseCount--;
         IdeEventQueue.getInstance().removePostprocessor(dispatcher);
       }
     };
   }
 
-  public static <T> T prohibitEventsInside(@NonNls @NotNull String activityName, @NotNull Supplier<T> supplier) {
+  public static <T> T prohibitEventsInside(@NonNls @NotNull String activityName, @NotNull Supplier<? extends T> supplier) {
     ProhibitAWTEvents dispatcher = new ProhibitAWTEvents(activityName);
     IdeEventQueue.getInstance().addPostprocessor(dispatcher, null);
     try {
+      ourUseCount++;
       return supplier.get();
     }
     finally {
+      ourUseCount--;
       IdeEventQueue.getInstance().removePostprocessor(dispatcher);
     }
+  }
+
+  public static boolean areEventsProhibited() {
+    return ourUseCount != 0;
   }
 }

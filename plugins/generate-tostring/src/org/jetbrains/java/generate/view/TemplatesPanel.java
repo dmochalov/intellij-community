@@ -1,8 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
 package org.jetbrains.java.generate.view;
 
 import com.intellij.java.JavaBundle;
@@ -28,7 +24,7 @@ import java.util.Collections;
 import java.util.Objects;
 
 public class TemplatesPanel extends NamedItemsListEditor<TemplateResource> {
-  private static final Namer<TemplateResource> NAMER = new Namer<TemplateResource>() {
+  private static final Namer<TemplateResource> NAMER = new Namer<>() {
     @Override
     public String getName(TemplateResource templateResource) {
       return templateResource.getFileName();
@@ -47,7 +43,7 @@ public class TemplatesPanel extends NamedItemsListEditor<TemplateResource> {
 
   private static final Factory<TemplateResource> FACTORY = () -> new TemplateResource();
 
-  private static final Cloner<TemplateResource> CLONER = new Cloner<TemplateResource>() {
+  private static final Cloner<TemplateResource> CLONER = new Cloner<>() {
     @Override
     public TemplateResource cloneOf(TemplateResource templateResource) {
       if (templateResource.isDefault()) return templateResource;
@@ -93,8 +89,18 @@ public class TemplatesPanel extends NamedItemsListEditor<TemplateResource> {
   }
 
   @Override
-  protected String subjDisplayName() {
-    return "template";
+  protected String getCopyDialogTitle() {
+    return JavaBundle.message("dialog.title.copy.template");
+  }
+
+  @Override
+  protected String getCreateNewDialogTitle() {
+    return JavaBundle.message("dialog.title.create.new.template");
+  }
+
+  @Override
+  protected @NlsContexts.Label String getNewLabelText() {
+    return JavaBundle.message("label.new.template.name");
   }
 
   @Override

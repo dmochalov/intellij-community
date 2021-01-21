@@ -1,8 +1,11 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.utils;
 
-import com.intellij.internal.statistic.connect.StatisticsService;
+import com.intellij.internal.statistic.eventLog.connection.EventLogSendListener;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsService;
 import com.intellij.internal.statistic.eventLog.*;
+import com.intellij.internal.statistic.eventLog.connection.EventLogStatisticsService;
+import com.intellij.internal.statistic.eventLog.connection.EventLogUploadSettingsService;
 import com.intellij.internal.statistic.persistence.UsageStatisticsPersistenceComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.text.StringUtil;
@@ -20,38 +23,44 @@ public final class StatisticsUploadAssistant {
   private StatisticsUploadAssistant() {}
 
   public static boolean isSendAllowed() {
-    if (Boolean.getBoolean(IDEA_SUPPRESS_REPORT_STATISTICS) || Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT)) {
+    if (isSuppressStatisticsReport() || isLocalStatisticsWithoutReport()) {
       return false;
     }
 
-    if (isHeadlessStatisticsEnabled()) {
-      return true;
+    if (ApplicationManager.getApplication().isHeadlessEnvironment()) {
+      return isHeadlessStatisticsEnabled();
     }
     UsageStatisticsPersistenceComponent settings = UsageStatisticsPersistenceComponent.getInstance();
     return settings != null && settings.isAllowed();
   }
 
   public static boolean isCollectAllowed() {
-    if (isHeadlessStatisticsEnabled()) {
-      return true;
+    if (ApplicationManager.getApplication().isHeadlessEnvironment()) {
+      return isHeadlessStatisticsEnabled();
     }
     final UsageStatisticsPersistenceComponent settings = UsageStatisticsPersistenceComponent.getInstance();
-    return (settings != null && settings.isAllowed()) || Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT);
+    return (settings != null && settings.isAllowed()) || isLocalStatisticsWithoutReport();
   }
 
   private static boolean isHeadlessStatisticsEnabled() {
-    return Boolean.getBoolean(IDEA_HEADLESS_ENABLE_STATISTICS) && ApplicationManager.getApplication().isHeadlessEnvironment();
+    return Boolean.getBoolean(IDEA_HEADLESS_ENABLE_STATISTICS);
   }
 
   public static boolean isTestStatisticsEnabled() {
-    return Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT) || StringUtil.isNotEmpty(System.getenv("TEAMCITY_VERSION"));
+    return isLocalStatisticsWithoutReport() || isTeamcityDetected();
   }
 
   public static @NotNull StatisticsService getEventLogStatisticsService(@NotNull String recorderId) {
     EventLogSendListener listener = new EventLogSendListener() {
       @Override
-      public void onLogsSend(@NotNull List<String> successfullySentFiles, int failed, int totalLocalFiles) {
-        EventLogSystemLogger.logFilesSend(recorderId, totalLocalFiles, successfullySentFiles.size(), failed, false, successfullySentFiles);
+      public void onLogsSend(@NotNull List<String> successfullySentFiles,
+                             @NotNull List<Integer> errors,
+                             int totalLocalFiles) {
+        int success = successfullySentFiles.size();
+        int failed = errors.size();
+        EventLogSystemLogger.logFilesSend(
+          recorderId, totalLocalFiles, success, failed, false, successfullySentFiles, errors
+        );
       }
     };
 
@@ -62,7 +71,19 @@ public final class StatisticsUploadAssistant {
     );
   }
 
-  public static EventLogUploadSettingsService createExternalSettings(@NotNull String recorderId, boolean isTest) {
-    return new EventLogUploadSettingsService(recorderId, new EventLogInternalApplicationInfo(recorderId, isTest));
+  public static EventLogUploadSettingsService createExternalSettings(@NotNull String recorderId, boolean isTest, long cacheTimeoutMs) {
+    return new EventLogUploadSettingsService(recorderId, new EventLogInternalApplicationInfo(recorderId, isTest), cacheTimeoutMs);
+  }
+
+  public static boolean isTeamcityDetected() {
+    return StringUtil.isNotEmpty(System.getenv("TEAMCITY_VERSION"));
+  }
+
+  public static boolean isSuppressStatisticsReport() {
+    return Boolean.getBoolean(IDEA_SUPPRESS_REPORT_STATISTICS);
+  }
+
+  public static boolean isLocalStatisticsWithoutReport() {
+    return Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT);
   }
 }

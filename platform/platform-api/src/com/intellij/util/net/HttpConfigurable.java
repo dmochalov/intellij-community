@@ -9,7 +9,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
@@ -34,10 +33,7 @@ import com.intellij.util.proxy.SharedProxyConfig;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import com.intellij.util.xmlb.annotations.Transient;
 import org.jdom.Element;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.crypto.spec.SecretKeySpec;
 import javax.swing.*;
@@ -98,7 +94,7 @@ public class HttpConfigurable implements PersistentStateComponent<HttpConfigurab
   });
 
   public static HttpConfigurable getInstance() {
-    return ServiceManager.getService(HttpConfigurable.class);
+    return ApplicationManager.getApplication().getService(HttpConfigurable.class);
   }
 
   public static boolean editConfigurable(@Nullable JComponent parent) {
@@ -251,7 +247,7 @@ public class HttpConfigurable implements PersistentStateComponent<HttpConfigurab
     return Base64.getEncoder().encodeToString(password.getBytes(StandardCharsets.UTF_8));
   }
 
-  public PasswordAuthentication getGenericPromptedAuthentication(final String prefix, final String host, final String prompt, final int port, final boolean remember) {
+  public PasswordAuthentication getGenericPromptedAuthentication(final @Nls String prefix, final @NlsSafe String host, final String prompt, final int port, final boolean remember) {
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       return null;
     }
@@ -268,7 +264,7 @@ public class HttpConfigurable implements PersistentStateComponent<HttpConfigurab
         return;
       }
 
-      AuthenticationDialog dialog = new AuthenticationDialog(PopupUtil.getActiveComponent(), prefix + host,
+      AuthenticationDialog dialog = new AuthenticationDialog(PopupUtil.getActiveComponent(), prefix + ": "+ host,
                                                              IdeBundle.message("dialog.message.please.enter.credentials.for", prompt), "", "", remember);
       dialog.show();
       if (dialog.getExitCode() == DialogWrapper.OK_EXIT_CODE) {

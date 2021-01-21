@@ -25,12 +25,14 @@ import java.io.OutputStream
 import java.net.URI
 import java.net.URISyntaxException
 
+@Suppress("HardCodedStringLiteral")
 internal class InstallPluginService : RestService() {
   override fun getServiceName() = "installPlugin"
 
   override fun isOriginAllowed(request: HttpRequest) = OriginCheckResult.ASK_CONFIRMATION
 
   var isAvailable = true
+  private val trustedHosts = System.getProperty("idea.api.install.hosts.trusted", "").split(",")
 
   override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
     val pluginId = getStringParameter("pluginId", urlDecoder)
@@ -130,6 +132,7 @@ internal class InstallPluginService : RestService() {
 
     return (originHost != null && (
       listOf("plugins.jetbrains.com", "package-search.services.jetbrains.com", "package-search.jetbrains.com").contains(originHost) ||
+      trustedHosts.contains(originHost) ||
       originHost.endsWith(".dev.marketplace.intellij.net") ||
       NetUtils.isLocalhost(originHost))) || super.isHostTrusted(request, urlDecoder)
   }

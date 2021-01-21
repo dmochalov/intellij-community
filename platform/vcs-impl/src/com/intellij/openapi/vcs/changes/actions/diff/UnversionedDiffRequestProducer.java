@@ -8,6 +8,7 @@ import com.intellij.diff.contents.DiffContent;
 import com.intellij.diff.requests.DiffRequest;
 import com.intellij.diff.requests.SimpleDiffRequest;
 import com.intellij.diff.util.DiffUtil;
+import com.intellij.openapi.diff.DiffBundle;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
@@ -26,10 +27,13 @@ import java.util.Objects;
 public final class UnversionedDiffRequestProducer implements ChangeDiffRequestChain.Producer {
   @Nullable private final Project myProject;
   @NotNull private final FilePath myPath;
+  @NotNull private final ChangesBrowserNode.Tag myTag;
 
-  private UnversionedDiffRequestProducer(@Nullable Project project, @NotNull FilePath path) {
+  private UnversionedDiffRequestProducer(@Nullable Project project, @NotNull FilePath path,
+                                         @NotNull ChangesBrowserNode.Tag tag) {
     myProject = project;
     myPath = path;
+    myTag = tag;
   }
 
   @NotNull
@@ -44,10 +48,9 @@ public final class UnversionedDiffRequestProducer implements ChangeDiffRequestCh
     return FileStatus.UNKNOWN;
   }
 
-  @Nullable
   @Override
-  public Object getPopupTag() {
-    return ChangesBrowserNode.UNVERSIONED_FILES_TAG;
+  public ChangesBrowserNode.Tag getPopupTag() {
+    return myTag;
   }
 
   @NotNull
@@ -61,14 +64,20 @@ public final class UnversionedDiffRequestProducer implements ChangeDiffRequestCh
   public DiffRequest process(@NotNull UserDataHolder context, @NotNull ProgressIndicator indicator)
     throws DiffRequestProducerException, ProcessCanceledException {
     VirtualFile file = myPath.getVirtualFile();
-    if (file == null) throw new DiffRequestProducerException("Can't show diff - file not found");
+    if (file == null) throw new DiffRequestProducerException(DiffBundle.message("error.cant.show.diff.file.not.found"));
     return createRequest(myProject, file);
   }
 
 
   @NotNull
   public static UnversionedDiffRequestProducer create(@Nullable Project project, @NotNull FilePath path) {
-    return new UnversionedDiffRequestProducer(project, path);
+    return create(project, path, ChangesBrowserNode.UNVERSIONED_FILES_TAG);
+  }
+
+  @NotNull
+  public static UnversionedDiffRequestProducer create(@Nullable Project project, @NotNull FilePath path,
+                                                      @NotNull ChangesBrowserNode.Tag tag) {
+    return new UnversionedDiffRequestProducer(project, path, tag);
   }
 
   @NotNull

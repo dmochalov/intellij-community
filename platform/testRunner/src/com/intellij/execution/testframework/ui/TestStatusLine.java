@@ -19,17 +19,19 @@ import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.testframework.TestIconMapper;
 import com.intellij.execution.testframework.TestRunnerBundle;
 import com.intellij.execution.testframework.sm.runner.states.TestStateInfo;
+import com.intellij.icons.AllIcons;
+import com.intellij.ide.nls.NlsMessages;
 import com.intellij.openapi.progress.util.ColorProgressBar;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.util.ui.EdtInvocationManager;
 import com.intellij.util.ui.JBDimension;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -44,6 +46,7 @@ public class TestStatusLine extends NonOpaquePanel {
   protected final JProgressBar myProgressBar = new JProgressBar();
   protected final SimpleColoredComponent myState = new SimpleColoredComponent();
   private final JPanel myProgressPanel;
+  private final JLabel myWarning = new JLabel();
 
   public TestStatusLine() {
     super(new BorderLayout());
@@ -53,9 +56,17 @@ public class TestStatusLine extends NonOpaquePanel {
     myProgressBar.putClientProperty("ProgressBar.stripeWidth", 3);
     myProgressBar.putClientProperty("ProgressBar.flatEnds", Boolean.TRUE);
     setStatusColor(ColorProgressBar.GREEN);
-    JPanel stateWrapper = new NonOpaquePanel(new BorderLayout());
+
+    JPanel stateWrapper = new NonOpaquePanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
     myState.setOpaque(false);
-    stateWrapper.add(myState, BorderLayout.NORTH);
+    stateWrapper.add(myState);
+
+    myWarning.setOpaque(false);
+    myWarning.setVisible(false);
+    myWarning.setIcon(AllIcons.General.Warning);
+    myWarning.setBorder(JBUI.Borders.emptyLeft(10));
+    stateWrapper.add(myWarning);
+
     add(stateWrapper, BorderLayout.CENTER);
     myState.append(ExecutionBundle.message("junit.runing.info.starting.label"));
   }
@@ -66,7 +77,14 @@ public class TestStatusLine extends NonOpaquePanel {
                                 final int ignoredTestsCount,
                                 final Long duration,
                                 final long endTime) {
-    UIUtil.invokeLaterIfNeeded(() -> doFormatTestMessage(testsTotal, finishedTestsCount, failuresCount, ignoredTestsCount, duration, endTime));
+    UIUtil.invokeLaterIfNeeded(() -> {
+      doFormatTestMessage(testsTotal, finishedTestsCount, failuresCount, ignoredTestsCount, duration, endTime);
+      updateWarningVisibility();
+    });
+  }
+
+  private void updateWarningVisibility() {
+    myWarning.setVisible(myState.getCharSequence(false).length() > 0 && StringUtil.isNotEmpty(myWarning.getText()));
   }
 
   private void doFormatTestMessage(int testsTotal,
@@ -95,10 +113,10 @@ public class TestStatusLine extends NonOpaquePanel {
 
     formatCounts(failuresCount, ignoredTestsCount, passedCount, testsTotal);
 
-    myState.append(" – " + StringUtil.formatDuration(duration, "\u2009"), SimpleTextAttributes.GRAY_ATTRIBUTES);
+    @NlsSafe String fragment = " – " + NlsMessages.formatDurationApproximateNarrow(duration);
+    myState.append(fragment, SimpleTextAttributes.GRAY_ATTRIBUTES);
   }
 
-  @SuppressWarnings("DialogTitleCapitalization")
   private void formatCounts(int failuresCount, int ignoredTestsCount, int passedCount, int testsTotal) {
     boolean something = false;
     if (failuresCount > 0) {
@@ -169,10 +187,11 @@ public class TestStatusLine extends NonOpaquePanel {
     myProgressPanel.setPreferredSize(size);
   }
 
-  public void setText(String progressStatus_text) {
+  public void setText(@Nls String progressStatus_text) {
     UIUtil.invokeLaterIfNeeded(() -> {
       myState.clear();
       myState.append(progressStatus_text);
+      myWarning.setVisible(!progressStatus_text.isEmpty());
     });
   }
 
@@ -180,5 +199,11 @@ public class TestStatusLine extends NonOpaquePanel {
   @NotNull
   public String getStateText() {
     return myState.toString();
+  }
+
+  @ApiStatus.Internal
+  public void setWarning(@Nls @NotNull String suffix) {
+    myWarning.setText(suffix);
+    updateWarningVisibility();
   }
 }

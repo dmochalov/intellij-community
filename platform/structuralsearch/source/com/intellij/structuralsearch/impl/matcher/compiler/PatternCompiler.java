@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.compiler;
 
 import com.intellij.codeInsight.template.Template;
@@ -28,17 +28,14 @@ import com.intellij.structuralsearch.impl.matcher.predicates.*;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SmartList;
-import gnu.trove.THashSet;
-import gnu.trove.TIntArrayList;
-import gnu.trove.TIntHashSet;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,10 +43,12 @@ import java.util.regex.Pattern;
  * Compiles the handlers for usability
  */
 public final class PatternCompiler {
-
   private static final Logger LOG = Logger.getInstance(PatternCompiler.class);
   private static String ourLastSearchPlan;
 
+  /**
+   * @return the compiled pattern, or null when there is no structural search profile found for the file type in the match options.
+   */
   public static CompiledPattern compilePattern(Project project, MatchOptions options, boolean checkForErrors, boolean optimizeScope)
     throws MalformedPatternException, NoMatchFoundException {
     return ReadAction.compute(() -> doCompilePattern(project, options, checkForErrors, optimizeScope));
@@ -74,6 +73,9 @@ public final class PatternCompiler {
 
     try {
       final List<PsiElement> elements = compileByAllPrefixes(project, options, result, context, prefixes, checkForErrors);
+      if (elements.isEmpty()) {
+        return null;
+      }
       final CompiledPattern pattern = context.getPattern();
       collectVariableNodes(pattern, elements, checkForErrors);
       pattern.setNodes(elements);
@@ -285,8 +287,7 @@ public final class PatternCompiler {
           if (result == Boolean.FALSE) {
             return finalElements;
           }
-          alternativeVariant = new String[prefixSequence.length];
-          System.arraycopy(prefixSequence, 0, alternativeVariant, 0, prefixSequence.length);
+          alternativeVariant = prefixSequence.clone();
         }
       }
     }
@@ -297,7 +298,7 @@ public final class PatternCompiler {
   }
 
   private static int @NotNull [] findAllTypedVarOffsets(final PsiFile file, final Pattern[] substitutionPatterns) {
-    final TIntHashSet result = new TIntHashSet();
+    final IntSet result = new IntOpenHashSet();
 
     file.accept(new PsiRecursiveElementWalkingVisitor() {
       @Override
@@ -318,7 +319,7 @@ public final class PatternCompiler {
       }
     });
 
-    final int[] resultArray = result.toArray();
+    final int[] resultArray = result.toIntArray();
     Arrays.sort(resultArray);
     return resultArray;
   }
@@ -335,9 +336,9 @@ public final class PatternCompiler {
                                             final int patternEndOffset,
                                             final int[] varEndOffsets,
                                             final boolean strict) {
-    final TIntArrayList errorOffsets = new TIntArrayList();
+    final IntArrayList errorOffsets = new IntArrayList();
     final boolean[] containsErrorTail = {false};
-    final TIntHashSet varEndOffsetsSet = new TIntHashSet(varEndOffsets);
+    final IntSet varEndOffsetsSet = new IntOpenHashSet(varEndOffsets);
 
     element.accept(new PsiRecursiveElementWalkingVisitor() {
       @Override
@@ -357,7 +358,7 @@ public final class PatternCompiler {
     });
 
     for (int i = 0; i < errorOffsets.size(); i++) {
-      final int errorOffset = errorOffsets.get(i);
+      final int errorOffset = errorOffsets.getInt(i);
       if (errorOffset <= offset) {
         return true;
       }
@@ -413,7 +414,7 @@ public final class PatternCompiler {
     final int segmentsCount = template.getSegmentsCount();
     final String text = template.getTemplateText();
     int prevOffset = 0;
-    final Set<String> variableNames = new THashSet<>();
+    final Set<String> variableNames = new HashSet<>();
 
     for(int i = 0; i < segmentsCount; i++) {
       final int offset = template.getSegmentOffset(i);
@@ -585,7 +586,7 @@ public final class PatternCompiler {
       final String problem = ScriptSupport.checkValidScript(script, matchOptions);
       if (problem != null) {
         if (checkForErrors) {
-          throw new MalformedPatternException("Script constraint for " + constraint.getName() + " has problem " + problem);
+          throw new MalformedPatternException(SSRBundle.message("error.script.constraint.for.0.has.problem.1", constraint.getName(), problem));
         }
         else {
           return;

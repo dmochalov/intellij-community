@@ -48,6 +48,7 @@ import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.siyeh.IntentionPowerPackBundle;
+import com.siyeh.ig.psiutils.MethodCallUtils;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -1171,7 +1172,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
           final int delta = baseMethod.getParameterList().getParametersCount() - method.getParameterList().getParametersCount();
           if (delta > 0) {
             if (toRemove.length > 0 && toRemove[toRemove.length - 1]) { //todo check if implicit parameter is not the last one
-              conflictDescriptions.putValue(baseMethod, "Implicit last parameter should not be deleted");
+              conflictDescriptions.putValue(baseMethod, JavaRefactoringBundle.message("implicit.last.parameter.warning"));
             }
           }
           else if (prototype != null && baseMethod == myChangeInfo.getMethod()) {
@@ -1195,7 +1196,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
               for (int i = 0; i < toRemove.length; i++) {
                 if (toRemove[i] && i < args.length) {
                   if (RemoveUnusedVariableUtil.checkSideEffects(args[i], null, new ArrayList<>())) {
-                    conflictDescriptions.putValue(args[i], "Parameter '" + myChangeInfo.getOldParameterNames()[i] + "' has usage that is not safe to delete");
+                    conflictDescriptions.putValue(args[i], JavaRefactoringBundle.message("safe.delete.parameter.usage.warning", myChangeInfo.getOldParameterNames()[i]));
                   }
                 }
               }
@@ -1207,18 +1208,42 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
       return conflictDescriptions;
     }
 
-    private static void checkParametersToDelete(PsiMethod method, boolean[] toRemove, MultiMap<PsiElement, @Nls String> conflictDescriptions) {
+    public static void checkParametersToDelete(PsiMethod method, boolean[] toRemove, MultiMap<PsiElement, @Nls String> conflictDescriptions) {
       if (method instanceof SyntheticElement) return;
       final PsiParameter[] parameters = method.getParameterList().getParameters();
       final PsiCodeBlock body = method.getBody();
       if (body != null) {
         final LocalSearchScope searchScope = new LocalSearchScope(body);
+        final PsiMethodCallExpression superCall = getSuperCall(method, body);
         for (int i = 0; i < toRemove.length; i++) {
-          if (toRemove[i] && ReferencesSearch.search(parameters[i], searchScope).findFirst() != null) {
-            conflictDescriptions.putValue(parameters[i], StringUtil.capitalize(RefactoringUIUtil.getDescription(parameters[i], true)) + " is used in method body");
+          if (toRemove[i]) {
+            for (PsiReference ref : ReferencesSearch.search(parameters[i], searchScope)) {
+              if (superCall == null || !passUnchangedParameterToSuperCall(superCall, i, ref)) {
+                String paramName = StringUtil.capitalize(RefactoringUIUtil.getDescription(parameters[i], true));
+                conflictDescriptions.putValue(parameters[i], JavaRefactoringBundle.message("parameter.used.in.method.body.warning", paramName));
+                break;
+              }
+            }
           }
         }
       }
+    }
+
+    private static boolean passUnchangedParameterToSuperCall(PsiMethodCallExpression superCall, int i, PsiReference ref) {
+      return ArrayUtil.find(superCall.getArgumentList().getExpressions(), PsiUtil.skipParenthesizedExprUp(ref.getElement())) == i;
+    }
+
+    private static PsiMethodCallExpression getSuperCall(PsiMethod method, PsiCodeBlock body) {
+      PsiStatement[] statements = body.getStatements();
+      PsiStatement firstStmt = statements.length > 0 ? statements[0] : null;
+      if (firstStmt instanceof PsiExpressionStatement) {
+        PsiExpression call = ((PsiExpressionStatement)firstStmt).getExpression();
+        if (call instanceof PsiMethodCallExpression && 
+            MethodCallUtils.isSuperMethodCall((PsiMethodCallExpression)call, method)) {
+          return (PsiMethodCallExpression)call;
+        }
+      }
+      return null;
     }
 
     private void checkContract(MultiMap<PsiElement, @Nls String> conflictDescriptions, PsiMethod method, boolean override) {
@@ -1227,11 +1252,11 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
       }
       catch (ContractConverter.ContractInheritedException e) {
         if (!override) {
-          conflictDescriptions.putValue(method, "@Contract annotation cannot be updated automatically: " + e.getMessage());
+          conflictDescriptions.putValue(method, JavaRefactoringBundle.message("changeSignature.contract.converter.can.not.update.annotation", e.getMessage()));
         }
       }
       catch (ContractConverter.ContractConversionException e) {
-        conflictDescriptions.putValue(method, "@Contract annotation cannot be updated automatically: " + e.getMessage());
+        conflictDescriptions.putValue(method, JavaRefactoringBundle.message("changeSignature.contract.converter.can.not.update.annotation", e.getMessage()));
       }
     }
 
@@ -1279,7 +1304,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
 
     public static void searchForHierarchyConflicts(PsiMethod method, MultiMap<PsiElement, @Nls String> conflicts, final String modifier) {
       SuperMethodsSearch.search(method, ReadAction.compute(method::getContainingClass), true, false).forEach(
-        new ReadActionProcessor<MethodSignatureBackedByPsiMethod>() {
+        new ReadActionProcessor<>() {
           @Override
           public boolean processInReadAction(MethodSignatureBackedByPsiMethod methodSignature) {
             final PsiMethod superMethod = methodSignature.getMethod();
@@ -1292,7 +1317,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
             return true;
           }
         });
-      OverridingMethodsSearch.search(method).forEach(new ReadActionProcessor<PsiMethod>() {
+      OverridingMethodsSearch.search(method).forEach(new ReadActionProcessor<>() {
         @Override
         public boolean processInReadAction(PsiMethod overridingMethod) {
           if (!isVisibleFromOverridingMethod(method, overridingMethod, modifier)) {

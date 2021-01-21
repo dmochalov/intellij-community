@@ -8,6 +8,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiInvalidElementAccessException;
@@ -86,7 +87,7 @@ public class ImplementationSearcher {
       if (!ProgressManager.getInstance().runProcessWithProgressSynchronously(new Runnable() {
         @Override
         public void run() {
-          search(element, editor).forEach(new PsiElementProcessorAdapter<PsiElement>(collectProcessor){
+          search(element, editor).forEach(new PsiElementProcessorAdapter<>(collectProcessor) {
             @Override
             public boolean processInReadAction(PsiElement element) {
               return !accept(element) || super.processInReadAction(element);
@@ -112,7 +113,7 @@ public class ImplementationSearcher {
   public abstract static class BackgroundableImplementationSearcher extends ImplementationSearcher {
     @Override
     protected PsiElement[] searchDefinitions(PsiElement element, Editor editor) {
-      CommonProcessors.CollectProcessor<PsiElement> processor = new CommonProcessors.CollectProcessor<PsiElement>() {
+      CommonProcessors.CollectProcessor<PsiElement> processor = new CommonProcessors.CollectProcessor<>() {
         @Override
         public boolean process(PsiElement element) {
           processElement(element);
@@ -126,7 +127,7 @@ public class ImplementationSearcher {
     protected abstract void processElement(PsiElement element);
   }
 
-  public static String getSearchingForImplementations() {
+  public static @NlsContexts.ProgressTitle String getSearchingForImplementations() {
     return CodeInsightBundle.message("searching.for.implementations");
   }
 }

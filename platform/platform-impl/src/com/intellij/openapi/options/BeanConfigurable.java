@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.options;
 
 import com.intellij.ide.ui.search.BooleanOptionDescription;
@@ -12,9 +12,9 @@ import com.intellij.ui.IdeBorderFactory;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UI;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import kotlin.reflect.KMutableProperty0;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,7 +32,18 @@ import java.util.function.Function;
  */
 public abstract class BeanConfigurable<T> implements UnnamedConfigurable, ConfigurableWithOptionDescriptors {
   private final T myInstance;
-  private String myTitle;
+  private @NlsContexts.BorderTitle String myTitle;
+
+  private final List<BeanField> myFields = new ArrayList<>();
+
+  protected BeanConfigurable(@NotNull T beanInstance) {
+    myInstance = beanInstance;
+  }
+
+  protected BeanConfigurable(@NotNull T beanInstance, @NlsContexts.BorderTitle String title) {
+    this(beanInstance);
+    setTitle(title);
+  }
 
   private abstract static class BeanPropertyAccessor {
     abstract Object getBeanValue(Object instance);
@@ -141,7 +152,7 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
     BeanPropertyAccessor myAccessor;
     T myComponent;
 
-    private BeanField(final BeanPropertyAccessor accessor) {
+    private BeanField(@NotNull BeanPropertyAccessor accessor) {
       myAccessor = accessor;
     }
 
@@ -174,14 +185,14 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
   }
 
   private static final class CheckboxField extends BeanField<JCheckBox> {
-    private final String myTitle;
+    private final @NlsContexts.Checkbox String myTitle;
 
-    private CheckboxField(final String fieldName, final String title) {
+    private CheckboxField(final String fieldName, final @NlsContexts.Checkbox String title) {
       super(new BeanFieldAccessor(fieldName, boolean.class));
       myTitle = title;
     }
 
-    private CheckboxField(BeanPropertyAccessor accessor, String title) {
+    private CheckboxField(BeanPropertyAccessor accessor, @NlsContexts.Checkbox String title) {
       super(accessor);
       myTitle = title;
     }
@@ -215,23 +226,12 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
     }
   }
 
-  private final List<BeanField> myFields = new ArrayList<>();
-
-  protected BeanConfigurable(@NotNull T beanInstance) {
-    myInstance = beanInstance;
-  }
-
-  protected BeanConfigurable(@NotNull T beanInstance, String title) {
-    this(beanInstance);
-    setTitle(title);
-  }
-
   @Nullable
   public String getTitle() {
     return myTitle;
   }
 
-  protected void setTitle(String title) {
+  protected void setTitle(@NlsContexts.BorderTitle String title) {
     myTitle = title;
   }
 
@@ -244,7 +244,7 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
    * @deprecated use {@link #checkBox(String, Getter, Setter)} instead
    */
   @Deprecated
-  protected void checkBox(@NonNls String fieldName, String title) {
+  protected void checkBox(@NonNls String fieldName, @NlsContexts.Checkbox String title) {
     myFields.add(new CheckboxField(fieldName, title));
   }
 
@@ -270,7 +270,7 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
    * E.g. text from the edit box is queried and saved back to model bean.
    */
   protected <V> void component(@NotNull JComponent component, @NotNull Getter<? extends V> beanGetter, @NotNull Setter<? super V> beanSetter, @NotNull Getter<? extends V> componentGetter, @NotNull Setter<? super V> componentSetter) {
-    BeanField<JComponent> field = new BeanField<JComponent>(new BeanMethodAccessor<V>(beanGetter, beanSetter)) {
+    BeanField<JComponent> field = new BeanField<>(new BeanMethodAccessor<V>(beanGetter, beanSetter)) {
       @NotNull
       @Override
       JComponent createComponent() {
@@ -293,7 +293,7 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
   @NotNull
   @Override
   public List<OptionDescription> getOptionDescriptors(@NotNull String configurableId,
-                                                      @NotNull Function<? super String, String> nameConverter) {
+                                                      @NotNull Function<? super String, @Nls String> nameConverter) {
     List<CheckboxField> boxes = JBIterable.from(myFields).filter(CheckboxField.class).toList();
     Object instance = getInstance();
     return ContainerUtil.map(boxes, box -> new BooleanOptionDescription(nameConverter.apply(box.getTitle()), configurableId) {
@@ -315,7 +315,7 @@ public abstract class BeanConfigurable<T> implements UnnamedConfigurable, Config
     for (BeanField field: myFields) {
       panel.add(field.getComponent());
     }
-    BorderLayoutPanel result = UI.Panels.simplePanel().addToTop(panel);
+    BorderLayoutPanel result = JBUI.Panels.simplePanel().addToTop(panel);
     if (myTitle != null) {
       result.setBorder(IdeBorderFactory.createTitledBorder(myTitle));
     }

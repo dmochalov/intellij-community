@@ -3,7 +3,7 @@ package com.intellij.internal.statistic.actions;
 
 import com.intellij.ide.scratch.RootType;
 import com.intellij.ide.scratch.ScratchFileService;
-import com.intellij.internal.statistic.connect.StatisticsResult;
+import com.intellij.internal.statistic.eventLog.connection.*;
 import com.intellij.internal.statistic.eventLog.*;
 import com.intellij.internal.statistic.eventLog.filters.LogEventCompositeFilter;
 import com.intellij.internal.statistic.eventLog.filters.LogEventFilter;
@@ -116,7 +116,7 @@ public class SendEventLogAction extends AnAction {
     }
 
     @Override
-    public void onFailed(@Nullable LogEventRecordRequest request, @Nullable String content) {
+    public void onFailed(@Nullable LogEventRecordRequest request, int error, @Nullable String content) {
       if (request != null) {
         myFailed.add(request);
       }

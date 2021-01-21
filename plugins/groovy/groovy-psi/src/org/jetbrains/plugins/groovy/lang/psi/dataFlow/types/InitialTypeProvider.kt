@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.dataFlow.types
 
 import com.intellij.psi.PsiType
@@ -11,10 +11,10 @@ import org.jetbrains.plugins.groovy.lang.psi.controlFlow.VariableDescriptor
 import org.jetbrains.plugins.groovy.lang.psi.controlFlow.impl.ResolvedVariableDescriptor
 import org.jetbrains.plugins.groovy.lang.psi.controlFlow.impl.isNestedFlowProcessingAllowed
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.DFAType
+import org.jetbrains.plugins.groovy.lang.psi.util.isCompileStatic
 
 
-internal class InitialTypeProvider(private val start: GrControlFlowOwner,
-                                   private val initialTypes: Map<VariableDescriptor, DFAType>) {
+internal class InitialTypeProvider(private val start: GrControlFlowOwner, private val initialTypes: Map<VariableDescriptor, DFAType>) {
 
   private val parentFlowOwner by lazyPub {
     val parent = start.parent
@@ -26,16 +26,17 @@ internal class InitialTypeProvider(private val start: GrControlFlowOwner,
     if (flow != null) ControlFlowUtils.findNearestInstruction(start, flow.controlFlow) else null
   }
 
-  fun initialType(descriptor: VariableDescriptor): PsiType? {
+  fun initialType(descriptor: VariableDescriptor): DFAType? {
+    if (isCompileStatic(start)) return DFAType.create(null)
     if (isNestedFlowProcessingAllowed()) {
-      val typeFromInitialContext = initialTypes[descriptor]?.getResultType(start.manager)
+      val typeFromInitialContext = initialTypes[descriptor]
       if (typeFromInitialContext != null) return typeFromInitialContext
       val type = getTypeFromParentDFA(descriptor)
-      if (type != null) return type
+      if (type != null) return DFAType.create(type)
     }
     val resolvedDescriptor = descriptor as? ResolvedVariableDescriptor ?: return null
     val field = resolvedDescriptor.variable as? GrField ?: return null
-    return field.typeGroovy
+    return field.typeGroovy?.run(DFAType::create)
   }
 
   private fun getTypeFromParentDFA(descriptor: VariableDescriptor): PsiType? {

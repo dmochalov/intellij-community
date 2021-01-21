@@ -70,23 +70,6 @@ public class LibraryTest extends ModuleRootManagerTestCase {
     );
   }
 
-  public void testFindLibraryByNameAfterRename() {
-    LibraryTable table = getProjectLibraryTable();
-
-    Library a = createLibrary("a", null, null);
-    LibraryTable.ModifiableModel model = table.getModifiableModel();
-    assertSame(a, table.getLibraryByName("a"));
-    assertSame(a, model.getLibraryByName("a"));
-    Library.ModifiableModel libraryModel = a.getModifiableModel();
-    libraryModel.setName("b");
-    commit(libraryModel);
-
-    assertNull(table.getLibraryByName("a"));
-    assertSame(a, table.getLibraryByName("b"));
-    commit(model);
-    assertSame(a, table.getLibraryByName("b"));
-  }
-
   public void testModificationCount() {
     ProjectModelRule.ignoreTestUnderWorkspaceModel();
 
@@ -102,10 +85,6 @@ public class LibraryTest extends ModuleRootManagerTestCase {
     // module not marked as to save if project library modified, but module is not affected
     assertThat(ModuleRootManagerEx.getInstanceEx(myModule).getModificationCountForTests()).isEqualTo(moduleModificationCount);
     assertThat(table.getStateModificationCount()).isGreaterThan(projectLibraryModificationCount);
-  }
-
-  private static void commit(LibraryTable.ModifiableModel model) {
-    ApplicationManager.getApplication().runWriteAction(() -> model.commit());
   }
 
   public void testFindLibraryByNameAfterChainedRename() {
@@ -223,20 +202,6 @@ public class LibraryTest extends ModuleRootManagerTestCase {
     }
   }
 
-  public void testAddRemoveJarDirectory() {
-    LibraryTable table = getProjectLibraryTable();
-    Library library = WriteAction.compute(() -> table.createLibrary("jar-directory"));
-    Library.ModifiableModel model = library.getModifiableModel();
-    model.addJarDirectory("file://jar-directory", false, OrderRootType.CLASSES);
-    commit(model);
-    assertSameElements(library.getUrls(OrderRootType.CLASSES), "file://jar-directory");
-
-    model = library.getModifiableModel();
-    model.removeRoot("file://jar-directory", OrderRootType.CLASSES);
-    commit(model);
-    assertEmpty(library.getUrls(OrderRootType.CLASSES));
-  }
-
   public void testRootsMustRebuildAfterAddRemoveJarInsideJarDirectoryNonRecursive() {
     VirtualFile libDir = createChildDirectory(getOrCreateProjectBaseDir(), "myLib");
     LibraryTable table = getProjectLibraryTable();
@@ -274,6 +239,10 @@ public class LibraryTest extends ModuleRootManagerTestCase {
     UIUtil.dispatchAllInvocationEvents();
     aClass = JavaPsiFacade.getInstance(getProject()).findClass("l.InLib", GlobalSearchScope.allScope(getProject()));
     assertNotNull(aClass);
+
+    ModuleRootModificationUtil.updateModel(getModule(), m -> m.removeOrderEntry(m.findLibraryOrderEntry(library)));
+    aClass = JavaPsiFacade.getInstance(getProject()).findClass("l.InLib", GlobalSearchScope.allScope(getProject()));
+    assertNull(aClass);
   }
 
   public void testRootsMustRebuildAfterDeleteAndRestoreJar() throws IOException {

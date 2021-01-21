@@ -4,16 +4,34 @@ package com.intellij.psi.impl;
 import com.intellij.openapi.util.Key;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.PsiImmediateClassType;
-import com.intellij.util.containers.ContainerUtil;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 import java.util.Set;
 
-public class RecaptureTypeMapper extends PsiTypeMapper {
+/**
+ * Ensure that type equality doesn't fail on captured wildcards when only contexts are different.
+ * And the new context has origin which is equals to the initial context.
+ * <p/>
+ * Sample code usage:
+ * 
+ * <pre>
+ * try {
+ *  RecaptureTypeMapper.encode(expr);
+ *  copy or replace expr
+ *  psiSubstitutor = ...
+ *  new RecaptureTypeMapper().recapture(psiSubstitutor);
+ * }
+ * finally {
+ *   RecaptureTypeMapper.clear(expr);
+ * }
+ * </pre>
+ */
+public final class RecaptureTypeMapper extends PsiTypeMapper {
   public static final Key<PsiElement> SELF_REFERENCE = Key.create("SELF_REFERENCE");
-  private final Set<PsiClassType> myVisited = ContainerUtil.newIdentityTroveSet();
+  private final Set<PsiClassType> myVisited = new ReferenceOpenHashSet<>();
 
   @Override
   public PsiType visitType(@NotNull PsiType type) {

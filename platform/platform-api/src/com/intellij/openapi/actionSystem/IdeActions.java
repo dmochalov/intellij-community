@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.actionSystem;
 
 import org.jetbrains.annotations.NonNls;
@@ -51,6 +51,8 @@ public interface IdeActions {
   @NonNls String ACTION_EDITOR_NEXT_WORD_WITH_SELECTION = "EditorNextWordWithSelection";
   @NonNls String ACTION_EDITOR_PREVIOUS_WORD_WITH_SELECTION = "EditorPreviousWordWithSelection";
   @NonNls String ACTION_EDITOR_TAB = "EditorTab";
+  @NonNls String ACTION_EDITOR_INDENT_SELECTION = "EditorIndentSelection";
+  @NonNls String ACTION_EDITOR_UNINDENT_SELECTION = "EditorUnindentSelection";
   @NonNls String ACTION_EDITOR_EMACS_TAB = "EmacsStyleIndent";
   @NonNls String ACTION_EDITOR_ESCAPE = "EditorEscape";
   @NonNls String ACTION_EDITOR_JOIN_LINES = "EditorJoinLines";
@@ -63,9 +65,10 @@ public interface IdeActions {
   @NonNls String ACTION_EDITOR_CLONE_CARET_BELOW= "EditorCloneCaretBelow";
   @NonNls String ACTION_EDITOR_CLONE_CARET_ABOVE= "EditorCloneCaretAbove";
   @NonNls String ACTION_EDITOR_ADD_CARET_PER_SELECTED_LINE = "EditorAddCaretPerSelectedLine";
-  @NonNls String ACTION_EDITOR_TOGGLE_STICKY_SELECTION= "EditorToggleStickySelection";
-  @NonNls String ACTION_EDITOR_TOGGLE_OVERWRITE_MODE= "EditorToggleInsertState";
-  @NonNls String ACTION_EDITOR_TOGGLE_CASE= "EditorToggleCase";
+  @NonNls String ACTION_EDITOR_TOGGLE_STICKY_SELECTION = "EditorToggleStickySelection";
+  @NonNls String ACTION_EDITOR_TOGGLE_OVERWRITE_MODE = "EditorToggleInsertState";
+  @NonNls String ACTION_EDITOR_TOGGLE_CASE = "EditorToggleCase";
+  @NonNls String ACTION_EDITOR_TRANSPOSE = "EditorTranspose";
 
   @NonNls String ACTION_EDITOR_SHOW_PARAMETER_INFO = "ParameterInfo";
   @NonNls String ACTION_EDITOR_NEXT_PARAMETER = "NextParameter";
@@ -107,6 +110,7 @@ public interface IdeActions {
 
   @NonNls String GROUP_MAIN_MENU = "MainMenu";
   @NonNls String GROUP_MAIN_TOOLBAR = "MainToolBar";
+  @NonNls String GROUP_EXPERIMENTAL_TOOLBAR = "NewToolbarActions";
   @NonNls String GROUP_EDITOR_POPUP = "EditorPopupMenu";
   @NonNls String GROUP_BASIC_EDITOR_POPUP = "BasicEditorPopupMenu";
   @NonNls String GROUP_CONSOLE_EDITOR_POPUP = "ConsoleEditorPopupMenu";
@@ -229,6 +233,7 @@ public interface IdeActions {
   @NonNls String GROUP_EDITOR_BIDI_TEXT_DIRECTION = "EditorBidiTextDirection";
 
   @NonNls String ACTION_TOGGLE_LINE_BREAKPOINT = "ToggleLineBreakpoint";
+  @NonNls String ACTION_RUN_TO_CURSOR = "RunToCursor";
 
   @NonNls String ACTION_REFRESH = "Refresh";
 
@@ -243,14 +248,12 @@ public interface IdeActions {
 
   @NonNls String GROUP_RUN = "RunMenu";
   @NonNls String GROUP_RUNNER_ACTIONS = "RunnerActions";
+  @NonNls String STATE_WIDGET_PROCESSES_ACTION_GROUP = "StateWidgetProcessesActionGroup";
   @NonNls String ACTION_DEFAULT_RUNNER = "Run";
   @NonNls String ACTION_DEFAULT_DEBUGGER = "Debug";
   @NonNls String ACTION_EDIT_RUN_CONFIGURATIONS = "editRunConfigurations";
   @NonNls String ACTION_RERUN = "Rerun";
 
-  @NonNls String ACTION_VCS_EDIT_SOURCE = "Vcs.EditSourceAction";
-  @NonNls String ACTION_INCLUDE = "Vcs.IncludeAction";
-  @NonNls String ACTION_EXCLUDE = "Vcs.ExcludeAction";
   @NonNls String ACTION_STOP_PROGRAM = "Stop";
   @NonNls String ACTION_NEW_ELEMENT = "NewElement";
 
@@ -283,8 +286,13 @@ public interface IdeActions {
   @NonNls String MODULE_SETTINGS = "ModuleSettings";
 
   @NonNls String GROUP_WELCOME_SCREEN_QUICKSTART = "WelcomeScreen.QuickStart";
+  @NonNls String GROUP_WELCOME_SCREEN_QUICKSTART_EMPTY_STATE = "WelcomeScreen.QuickStart.EmptyState";
+  @NonNls String GROUP_WELCOME_SCREEN_QUICKSTART_PROJECTS_STATE = "WelcomeScreen.QuickStart.ProjectsState";
   @NonNls String GROUP_WELCOME_SCREEN_DOC = "WelcomeScreen.Documentation";
   @NonNls String GROUP_WELCOME_SCREEN_CONFIGURE = "WelcomeScreen.Configure";
+  @NonNls String GROUP_WELCOME_SCREEN_HELP = "WelcomeScreen.Help";
+  @NonNls String GROUP_WELCOME_SCREEN_OPTIONS = "WelcomeScreen.Options";
+  @NonNls String GROUP_WELCOME_SCREEN_LEARN_IDE = "WelcomeScreen.LearnIdeHelp";
   @NonNls String ACTION_KEYMAP_REFERENCE="Help.KeymapReference";
   @NonNls String ACTION_MOVE = "Move";
   @NonNls String ACTION_RENAME = "RenameElement";
@@ -332,6 +340,9 @@ public interface IdeActions {
   String ACTION_RECENT_FILES = "RecentFiles";
   String ACTION_SEARCH_EVERYWHERE = "SearchEverywhere";
   String ACTION_RUN_ANYTHING = "RunAnything";
+  @NonNls String ACTION_OPEN_IN_RIGHT_SPLIT = "OpenInRightSplit";
+  @NonNls String ACTION_OPEN_IN_NEW_WINDOW = "OpenElementInNewWindow";
+  @NonNls String ACTION_EDIT_SOURCE_IN_NEW_WINDOW = "EditSourceInNewWindow";
 
   String ACTION_MARK_ALL_NOTIFICATIONS_AS_READ = "MarkNotificationsAsRead";
   String ACTION_SWITCHER = "Switcher";

@@ -1,7 +1,11 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.util;
 
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -12,7 +16,6 @@ import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.JreHiDpiUtil;
 import com.intellij.ui.ScreenUtil;
 import com.intellij.ui.scale.JBUIScale;
-import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.ui.JBUI;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntMaps;
@@ -24,6 +27,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -34,8 +38,8 @@ import java.util.Map;
 public final class DimensionService extends SimpleModificationTracker implements PersistentStateComponent<Element> {
   private static final Logger LOG = Logger.getInstance(DimensionService.class);
 
-  private final Map<String, Point> myKeyToLocation = CollectionFactory.createSmallMemoryFootprintLinkedMap();
-  private final Map<String, Dimension> myKeToSize = CollectionFactory.createSmallMemoryFootprintLinkedMap();
+  private final Map<String, Point> myKeyToLocation = new LinkedHashMap<>();
+  private final Map<String, Dimension> myKeToSize = new LinkedHashMap<>();
   private final Object2IntMap<String> myKeyToExtendedState = new Object2IntOpenHashMap<>();
   @NonNls private static final String EXTENDED_STATE = "extendedState";
   @NonNls private static final String KEY = "key";
@@ -48,7 +52,7 @@ public final class DimensionService extends SimpleModificationTracker implements
   @NonNls private static final String ATTRIBUTE_HEIGHT = "height";
 
   public static DimensionService getInstance() {
-    return ServiceManager.getService(DimensionService.class);
+    return ApplicationManager.getApplication().getService(DimensionService.class);
   }
 
   /**

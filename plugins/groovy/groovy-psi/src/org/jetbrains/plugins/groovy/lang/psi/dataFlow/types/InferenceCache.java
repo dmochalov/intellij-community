@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.dataFlow.types;
 
 import com.intellij.openapi.util.Pair;
@@ -6,23 +6,20 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiType;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.TObjectIntHashMap;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import kotlin.Lazy;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.codeInspection.utils.ControlFlowUtils;
 import org.jetbrains.plugins.groovy.lang.psi.GrControlFlowOwner;
 import org.jetbrains.plugins.groovy.lang.psi.api.GrFunctionalExpression;
-import org.jetbrains.plugins.groovy.lang.psi.controlFlow.Instruction;
-import org.jetbrains.plugins.groovy.lang.psi.controlFlow.MixinTypeInstruction;
-import org.jetbrains.plugins.groovy.lang.psi.controlFlow.ReadWriteVariableInstruction;
-import org.jetbrains.plugins.groovy.lang.psi.controlFlow.VariableDescriptor;
+import org.jetbrains.plugins.groovy.lang.psi.controlFlow.*;
 import org.jetbrains.plugins.groovy.lang.psi.controlFlow.impl.FunctionalExpressionFlowUtil;
 import org.jetbrains.plugins.groovy.lang.psi.controlFlow.impl.ResolvedVariableDescriptor;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.DFAEngine;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.DFAType;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.reachingDefs.DefinitionMap;
-import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
+import org.jetbrains.plugins.groovy.lang.psi.util.CompileStaticUtil;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,13 +36,12 @@ import static org.jetbrains.plugins.groovy.lang.psi.dataFlow.types.TypeInference
 import static org.jetbrains.plugins.groovy.util.GraphKt.findNodesOutsideCycles;
 import static org.jetbrains.plugins.groovy.util.GraphKt.mapGraph;
 
-class InferenceCache {
-
-  private final GrControlFlowOwner myScope;
+final class InferenceCache {
+  private final @NotNull GrControlFlowOwner myScope;
   private final Instruction[] myFlow;
   private final Map<PsiElement, List<Instruction>> myFromByElements;
 
-  private final Lazy<TObjectIntHashMap<VariableDescriptor>> myVarIndexes;
+  private final Lazy<Object2IntMap<VariableDescriptor>> myVarIndexes;
   private final Lazy<List<DefinitionMap>> myDefinitionMaps;
 
   private final AtomicReference<List<TypeDfaState>> myVarTypes;
@@ -92,15 +88,21 @@ class InferenceCache {
     TypeDfaState cache = myVarTypes.get().get(instruction.num());
     if (!cache.containsVariable(descriptor)) {
       Predicate<Instruction> mixinPredicate = mixinOnly ? (e) -> e instanceof MixinTypeInstruction : (e) -> true;
-      DFAFlowInfo flowInfo = collectFlowInfo(definitionMaps, instruction, descriptor, initialState, mixinPredicate);
-      List<TypeDfaState> dfaResult = performTypeDfa(myScope, myFlow, flowInfo);
+      DFAFlowInfo flowInfo = collectFlowInfo(definitionMaps, instruction, descriptor, mixinPredicate);
+      List<TypeDfaState> dfaResult = performTypeDfa(myScope, myFlow, flowInfo, initialState);
       if (dfaResult == null) {
         myTooComplexInstructions.addAll(flowInfo.getInterestingInstructions());
       }
       else {
-        Set<Instruction> stored = flowInfo.getInterestingInstructions();
-        stored.add(instruction);
-        cacheDfaResult(dfaResult, stored);
+        if (TypeInferenceHelper.getCurrentContext().isInferenceResultsCachingAllowed()) {
+          Set<Instruction> stored = flowInfo.getInterestingInstructions();
+          stored.add(instruction);
+          cacheDfaResult(dfaResult, stored);
+        }
+        else {
+          DFAType dfaType = dfaResult.get(instruction.num()).getVariableType(descriptor);
+          return dfaType == null ? null : dfaType.getResultType(myScope.getManager());
+        }
       }
     }
     DFAType dfaType = getCachedInferredType(descriptor, instruction);
@@ -110,11 +112,27 @@ class InferenceCache {
   @Nullable
   private List<TypeDfaState> performTypeDfa(@NotNull GrControlFlowOwner owner,
                                             Instruction @NotNull [] flow,
-                                            @NotNull DFAFlowInfo flowInfo) {
-    final TypeDfaInstance dfaInstance =
-      new TypeDfaInstance(flow, flowInfo, this, owner.getManager(), new InitialTypeProvider(owner, flowInfo.getInitialTypes()));
-    final TypesSemilattice semilattice = new TypesSemilattice(owner.getManager());
+                                            @NotNull DFAFlowInfo flowInfo,
+                                            @NotNull Map<VariableDescriptor, DFAType> initialTypes) {
+    final TypeDfaInstance dfaInstance = new TypeDfaInstance(flow, flowInfo, this, owner.getManager());
+    final TypeDfaState initialState = computeInitialState(flowInfo, new InitialTypeProvider(owner, initialTypes));
+    final TypesSemilattice semilattice = new TypesSemilattice(owner.getManager(), initialState);
     return new DFAEngine<>(flow, dfaInstance, semilattice).performDFAWithTimeout();
+  }
+
+  private TypeDfaState computeInitialState(@NotNull DFAFlowInfo flowInfo, @NotNull InitialTypeProvider provider) {
+    TypeDfaState state = new TypeDfaState();
+    Set<VariableDescriptor> descriptors = ControlFlowBuilderUtil.getDescriptorsWithoutWrites(myFlow);
+    for (VariableDescriptor descriptor : descriptors) {
+      if (!flowInfo.getInterestingDescriptors().contains(descriptor)) {
+        continue;
+      }
+      DFAType initialType = provider.initialType(descriptor);
+      if (initialType != null) {
+        state.putType(descriptor, initialType);
+      }
+    }
+    return state;
   }
 
   @Nullable
@@ -125,13 +143,17 @@ class InferenceCache {
   private DFAFlowInfo collectFlowInfo(@NotNull List<DefinitionMap> definitionMaps,
                                       @NotNull Instruction instruction,
                                       @NotNull VariableDescriptor descriptor,
-                                      @NotNull Map<VariableDescriptor, DFAType> initialState,
                                       @NotNull Predicate<? super Instruction> predicate) {
     Map<Pair<Instruction, VariableDescriptor>, Collection<Pair<Instruction, VariableDescriptor>>> interesting = new LinkedHashMap<>();
     LinkedList<Pair<Instruction, VariableDescriptor>> queue = new LinkedList<>();
     queue.add(Pair.create(instruction, descriptor));
     Set<Instruction> dependentOnSharedVariables = new LinkedHashSet<>();
-    List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions = getClosureInstructionsWithForeigns();
+    List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions;
+    if (FunctionalExpressionFlowUtil.isNestedFlowProcessingAllowed()) {
+      closureInstructions = getClosureInstructionsWithForeigns();
+    } else {
+      closureInstructions = emptyList();
+    }
 
     while (!queue.isEmpty()) {
       Pair<Instruction, VariableDescriptor> pair = queue.removeFirst();
@@ -155,25 +177,25 @@ class InferenceCache {
     Set<VariableDescriptor> interestingDescriptors = interesting.keySet().stream()
       .map(it -> it.getSecond())
       .collect(Collectors.toSet());
-    return new DFAFlowInfo(initialState,
-                           interestingInstructions,
+    return new DFAFlowInfo(interestingInstructions,
                            acyclicInstructions,
                            interestingDescriptors,
                            dependentOnSharedVariables);
   }
 
   private List<Pair<Instruction, Set<? extends VariableDescriptor>>> getClosureInstructionsWithForeigns() {
-    if (PsiUtil.isCompileStatic(myScope)) {
+    if (CompileStaticUtil.isCompileStatic(myScope)) {
       return emptyList();
     }
     List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions = new ArrayList<>();
     for (Instruction closureInstruction : myFlow) {
       PsiElement closure = closureInstruction.getElement();
       if (closure instanceof GrFunctionalExpression) {
-        GrControlFlowOwner owner =
-          Objects.requireNonNull(FunctionalExpressionFlowUtil.getControlFlowOwner((GrFunctionalExpression)closure));
-        Set<ResolvedVariableDescriptor> foreignVariables =
-          ControlFlowUtils.getForeignVariableDescriptors(owner, ReadWriteVariableInstruction::isWrite);
+        GrControlFlowOwner owner = FunctionalExpressionFlowUtil.getControlFlowOwner((GrFunctionalExpression)closure);
+        if (owner == null) {
+          continue;
+        }
+        Set<ResolvedVariableDescriptor> foreignVariables = ControlFlowUtils.getOverwrittenForeignVariableDescriptors(owner);
         closureInstructions.add(Pair.create(closureInstruction, foreignVariables));
       }
     }
@@ -186,7 +208,7 @@ class InferenceCache {
                                                                       @NotNull Instruction instruction,
                                                                       @NotNull VariableDescriptor descriptor) {
     DefinitionMap definitionMap = definitionMaps.get(instruction.num());
-    int varIndex = myVarIndexes.getValue().get(descriptor);
+    int varIndex = myVarIndexes.getValue().getInt(descriptor);
     int[] definitions = definitionMap.getDefinitions(varIndex);
 
     LinkedHashSet<Pair<Instruction, VariableDescriptor>> pairs = new LinkedHashSet<>();
@@ -196,6 +218,9 @@ class InferenceCache {
       if (closureInstruction.first.num() > latestDefinition) break;
       if (closureInstruction.second.contains(descriptor)) {
         pairs.add(Pair.create(closureInstruction.first, descriptor));
+        if (closureInstruction.first instanceof ReadWriteVariableInstruction) {
+          pairs.add(Pair.create(closureInstruction.first, ((ReadWriteVariableInstruction)closureInstruction.first).getDescriptor()));
+        }
       }
     }
 

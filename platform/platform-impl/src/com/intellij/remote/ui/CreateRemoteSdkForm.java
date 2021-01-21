@@ -12,6 +12,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.remote.CredentialsType;
 import com.intellij.remote.RemoteSdkAdditionalData;
@@ -170,38 +172,44 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
   }
 
   private void installExtendedTypes(@Nullable Project project) {
-    List<CredentialsType<?>> types = CredentialsManager.getInstance().getAllTypes();
+    List<CredentialsType<?>> types = new ArrayList<>(CredentialsManager.getInstance().getAllTypes());
     types.sort(Comparator.comparing(CredentialsType::getWeight));
-    for (final CredentialsType<?> type : types) {
-      CredentialsEditorProvider editorProvider = ObjectUtils.tryCast(type, CredentialsEditorProvider.class);
-      if (editorProvider != null) {
-        final List<CredentialsLanguageContribution> contributions = getContributions();
-        if (!contributions.isEmpty()) {
-          for (CredentialsLanguageContribution contribution : contributions) {
-            if (contribution.getType() == type && editorProvider.isAvailable(contribution)) {
-              final CredentialsEditor<?> editor = editorProvider.createEditor(project, contribution, this);
+    for (CredentialsType<?> type : types) {
+      CredentialsEditorProvider editorProvider = type instanceof CredentialsEditorProvider ? (CredentialsEditorProvider)type : null;
+      if (editorProvider == null) {
+        continue;
+      }
 
-              trackEditorLabelsColumn(editor);
+      List<CredentialsLanguageContribution> contributions = getContributions();
+      if (contributions.isEmpty()) {
+        continue;
+      }
 
-              JBRadioButton typeButton = new JBRadioButton(editor.getName());
-              myTypeButtonGroup.add(typeButton);
-              myRadioPanel.add(typeButton);
+      for (CredentialsLanguageContribution contribution : contributions) {
+        if (contribution.getType() != type || !editorProvider.isAvailable(contribution)) {
+          continue;
+        }
 
-              final JPanel editorMainPanel = editor.getMainPanel();
-              myTypesPanel.add(editorMainPanel, type.getName());
+        final CredentialsEditor<?> editor = editorProvider.createEditor(project, contribution, this);
 
-              myCredentialsType2Handler.put(type,
-                                            new TypeHandlerEx(typeButton,
-                                                              editorMainPanel,
-                                                              editorProvider.getDefaultInterpreterPath(myBundleAccessor),
-                                                              type,
-                                                              editor));
-              // set initial connection type
-              if (myConnectionType == null) {
-                myConnectionType = type;
-              }
-            }
-          }
+        trackEditorLabelsColumn(editor);
+
+        JBRadioButton typeButton = new JBRadioButton(editor.getName());
+        myTypeButtonGroup.add(typeButton);
+        myRadioPanel.add(typeButton);
+
+        final JPanel editorMainPanel = editor.getMainPanel();
+        myTypesPanel.add(editorMainPanel, type.getName());
+
+        myCredentialsType2Handler.put(type,
+                                      new TypeHandlerEx(typeButton,
+                                                        editorMainPanel,
+                                                        editorProvider.getDefaultInterpreterPath(myBundleAccessor),
+                                                        type,
+                                                        editor));
+        // set initial connection type
+        if (myConnectionType == null) {
+          myConnectionType = type;
         }
       }
     }
@@ -220,7 +228,6 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
 
   private void radioSelected(boolean propagateEvent) {
     CredentialsType selectedType = getSelectedType();
-    saveSelectedRadio(selectedType);
 
     CardLayout layout = (CardLayout)myTypesPanel.getLayout();
     layout.show(myTypesPanel, selectedType.getName());
@@ -309,6 +316,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
     //  ArrayUtil.mergeArrays(cases, exCases.toArray(new CredentialsCase[exCases.size()]))
     //}
 
+    saveSelectedRadio(myConnectionType);
     myConnectionType.saveCredentials(
       sdkData,
       new CaseCollector() {
@@ -433,7 +441,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
     myHelpersPathField.setText(data.getHelpersPath());
   }
 
-  public void updateHelpersPath(String helpersPath) {
+  public void updateHelpersPath(@NlsSafe String helpersPath) {
     myHelpersPathField.setText(helpersPath);
   }
 
@@ -442,10 +450,11 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
     return myCredentialsType2Handler.get(connectionType).getRadioButton().isSelected(); // TODO: may encapsutate
   }
 
-  public String getValidationError() {
+  public @NlsContexts.DialogMessage String getValidationError() {
     return myStatusPanel.getError();
   }
 
+  @NlsContexts.DialogMessage
   @Nullable
   public String validateFinal() {
     return myCredentialsType2Handler.get(myConnectionType).validateFinal();
@@ -475,13 +484,13 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
 
     void onSelected();
 
-    @Nullable String getInterpreterPath();
+    @NlsSafe @Nullable String getInterpreterPath();
 
     void setInterpreterPath(@Nullable String interpreterPath);
 
     @Nullable ValidationInfo validate();
 
-    @Nullable String validateFinal();
+    @NlsContexts.DialogMessage @Nullable String validateFinal();
 
     boolean isBrowsingAvailable();
   }
@@ -490,7 +499,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
     @NotNull private final JBRadioButton myTypeButton;
     @NotNull private final JPanel myPanel;
 
-    private UnsupportedCredentialsTypeHandler(@Nullable String credentialsTypeName) {
+    private UnsupportedCredentialsTypeHandler(@NlsContexts.RadioButton @Nullable String credentialsTypeName) {
       myTypeButton = new JBRadioButton(credentialsTypeName);
       myPanel = new JPanel(new BorderLayout());
       String errorMessage = ExecutionBundle.message("remote.interpreter.cannot.load.interpreter.message", credentialsTypeName);
@@ -528,6 +537,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
       return null;
     }
 
+    @NlsContexts.DialogMessage
     @Nullable
     @Override
     public String validateFinal() {
@@ -602,6 +612,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
       return myEditor.validate();
     }
 
+    @NlsContexts.DialogMessage
     @Nullable
     @Override
     public String validateFinal() {
@@ -847,7 +858,7 @@ abstract public class CreateRemoteSdkForm<T extends RemoteSdkAdditionalData> ext
   }
 
   @TestOnly
-  public void setInterpreterPath(@NotNull String interpreterPath) {
+  public void setInterpreterPath(@NlsSafe @NotNull String interpreterPath) {
     myInterpreterPathField.setText(interpreterPath);
   }
 

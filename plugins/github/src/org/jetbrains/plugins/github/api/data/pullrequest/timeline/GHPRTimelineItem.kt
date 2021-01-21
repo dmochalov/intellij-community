@@ -3,6 +3,7 @@ package org.jetbrains.plugins.github.api.data.pullrequest.timeline
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.intellij.util.ui.codereview.timeline.TimelineItem
 import org.jetbrains.plugins.github.api.data.GHIssueComment
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestCommitShort
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestReview
@@ -69,7 +70,7 @@ CommentDeletedEvent
 
   JsonSubTypes.Type(name = "ReviewDismissedEvent", value = GHPRReviewDismissedEvent::class),
   JsonSubTypes.Type(name = "ReadyForReviewEvent", value = GHPRReadyForReviewEvent::class),
-  JsonSubTypes.Type(name = "ConvertToDraftEvent", value = GHPRConvertToDraftEvent::class),
+  /*JsonSubTypes.Type(name = "ConvertToDraftEvent", value = GHPRConvertToDraftEvent::class),*/
 
   JsonSubTypes.Type(name = "RenamedTitleEvent", value = GHPRRenamedTitleEvent::class),
 
@@ -93,11 +94,11 @@ CommentDeletedEvent
   JsonSubTypes.Type(name = "HeadRefForcePushedEvent", value = GHPRHeadRefForcePushedEvent::class),
   JsonSubTypes.Type(name = "HeadRefRestoredEvent", value = GHPRHeadRefRestoredEvent::class),
 
-  JsonSubTypes.Type(name = "CrossReferencedEvent", value = GHPRCrossReferencedEvent::class),
+  JsonSubTypes.Type(name = "CrossReferencedEvent", value = GHPRCrossReferencedEvent::class)/*,
   JsonSubTypes.Type(name = "ConnectedEvent", value = GHPRConnectedEvent::class),
-  JsonSubTypes.Type(name = "DisconnectedEvent", value = GHPRDisconnectedEvent::class)
+  JsonSubTypes.Type(name = "DisconnectedEvent", value = GHPRDisconnectedEvent::class)*/
 )
-interface GHPRTimelineItem {
+interface GHPRTimelineItem : TimelineItem {
   class Unknown(val __typename: String) : GHPRTimelineItem
 
   companion object {

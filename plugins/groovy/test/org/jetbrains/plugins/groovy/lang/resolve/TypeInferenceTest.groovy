@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.resolve
 
 import com.intellij.openapi.util.RecursionManager
@@ -361,6 +361,18 @@ def foo(Integer a) {
   }
 }
 ''', '[java.lang.Integer,java.lang.String]')
+  }
+
+  void 'test infer argument type from method 5 no recursion'() {
+    allowNestedContextOnce(testRootDisposable)
+    doTest '''\
+void usage(Collection<UnknownClass> x) {
+  while (unknownCondition) {
+    <caret>foo(x)
+  }
+}
+void foo(Collection<UnknownClass> list) {}
+''', 'void'
   }
 
   void testEmptyListOrListWithGenerics() {
@@ -882,7 +894,7 @@ def foo(List list) {
   while(true)
     lis<caret>t = [list]
 }
-''', 'java.util.List<java.util.List>')
+''', 'java.util.ArrayList<java.util.List>')
   }
 
   void testReturnNullWithGeneric() {
@@ -955,7 +967,7 @@ def foo() {
   }
 
   void testClassReference() {
-    doExprTest '[].class', "java.lang.Class<? extends java.util.List>"
+    doExprTest '[].class', "java.lang.Class<? extends java.util.ArrayList>"
     doExprTest '1.class', 'java.lang.Class<? extends java.lang.Integer>'
     doExprTest 'String.valueOf(1).class', 'java.lang.Class<? extends java.lang.String>'
     doExprTest '1.getClass()', 'java.lang.Class<? extends java.lang.Integer>'
@@ -975,10 +987,17 @@ def foo() {
   }
 
   void 'test list literal type'() {
-    doExprTest '[null]', 'java.util.List'
-    doExprTest '["foo", "bar"]', 'java.util.List<java.lang.String>'
-    doExprTest '["${foo}", "${bar}"]', 'java.util.List<groovy.lang.GString>'
-    doExprTest '[1, "a"]', 'java.util.List<java.io.Serializable>'
+    doExprTest '[null]', 'java.util.ArrayList'
+    doExprTest '["foo", "bar"]', 'java.util.ArrayList<java.lang.String>'
+    doExprTest '["${foo}", "${bar}"]', 'java.util.ArrayList<groovy.lang.GString>'
+    doExprTest '[1, "a"]', 'java.util.ArrayList<java.io.Serializable>'
+  }
+
+  void 'test list literal type @CS'() {
+    doCSExprTest '[null]', 'java.util.List'
+    doCSExprTest '["foo", "bar"]', 'java.util.List<java.lang.String>'
+    doCSExprTest '["${foo}", "${bar}"]', 'java.util.List<groovy.lang.GString>'
+    doCSExprTest '[1, "a"]', 'java.util.List<java.io.Serializable>'
   }
 
   void 'test map literal type'() {
@@ -994,8 +1013,8 @@ def foo() {
 
   void 'test recursive literal types'() {
     RecursionManager.disableMissedCacheAssertions(testRootDisposable)
-    doExprTest 'def foo() { [foo()] }\nfoo()', "java.util.List<java.util.List>"
-    doExprTest 'def foo() { [new Object(), foo()] }\nfoo()', "java.util.List<java.lang.Object>"
+    doExprTest 'def foo() { [foo()] }\nfoo()', "java.util.ArrayList<java.lang.Object>"
+    doExprTest 'def foo() { [new Object(), foo()] }\nfoo()', "java.util.ArrayList<java.lang.Object>"
     doExprTest 'def foo() { [someKey1: foo()] }\nfoo()', "java.util.LinkedHashMap<java.lang.String, java.util.LinkedHashMap>"
     doExprTest 'def foo() { [someKey0: new Object(), someKey1: foo()] }\nfoo()',
                "java.util.LinkedHashMap<java.lang.String, java.lang.Object>"
@@ -1008,8 +1027,8 @@ def foo() {
   }
 
   void 'test list with spread'() {
-    doExprTest 'def l = [1, 2]; [*l]', 'java.util.List<java.lang.Integer>'
-    doExprTest 'def l = [1, 2]; [*[*[*l]]]', 'java.util.List<java.lang.Integer>'
+    doExprTest 'def l = [1, 2]; [*l]', 'java.util.ArrayList<java.lang.Integer>'
+    doExprTest 'def l = [1, 2]; [*[*[*l]]]', 'java.util.ArrayList<java.lang.Integer>'
   }
 
   void 'test map spread dot access'() {
@@ -1040,7 +1059,7 @@ def bar() {
     def ll = func([[""]])
     l<caret>l
 }
-''', 'java.util.List<java.util.List<java.lang.String>>'
+''', 'java.util.ArrayList<java.util.ArrayList<java.lang.String>>'
   }
 
   void 'test generic tuple inference with type param 2'() {
@@ -1054,7 +1073,7 @@ def bar() {
     def ll = func([["", 1]])
     l<caret>l
 }
-''', 'java.util.List<java.util.List<java.io.Serializable>>'
+''', 'java.util.ArrayList<java.util.ArrayList<java.io.Serializable>>'
   }
 
   void 'test enum values() type'() {
@@ -1178,6 +1197,17 @@ while (u) {
   }
 }
 <caret>b
+''', null
+  }
+
+  void 'test no soe cyclic multi-assignment'() {
+    allowNestedContext(4, testRootDisposable)
+    doTest '''\
+def input = ""
+while (condition) {
+  def (name) = parseOption(input)
+  input = input.substring(<caret>name)
+}
 ''', null
   }
 
@@ -1414,7 +1444,7 @@ def method() {
         bar
         <caret>list
     }
-}''', "java.util.List"
+}''', "java.util.ArrayList"
   }
 
   void 'test use dfa results from conditional branch'() {
@@ -1920,5 +1950,64 @@ private void checkResult(String expected) {
   <caret>offset
 }
 ''', JAVA_LANG_INTEGER
+  }
+
+  void 'test cache consistency for closures in cycle'() {
+    doTest '''
+private void foo(String expected) {
+  def b = [1, 2, 3]
+  for (a in b) {
+    1.with {
+      b = a
+    }
+  } 
+  <caret>b
+}
+''', JAVA_IO_SERIALIZABLE
+  }
+
+  void 'test cache consistency for closures in cycle 2'() {
+    allowNestedContext(4, testRootDisposable)
+    doTest '''
+interface J {}
+interface R extends J {}
+interface I extends J {}
+class A implements I {}
+class B implements I {
+  Iterator<R> iterator() {}
+}
+
+def foo() {
+  def b = new B()
+  for (a in b) {
+    1.with {
+      if (true) {
+        b = new A()
+      }
+    }
+    <caret>b
+    b = a
+  }
+}
+''', "J"
+  }
+
+  void 'test initial type influences DFA'() {
+    doTest '''
+interface I {}
+class A implements I {}
+class B implements I {}
+
+class C {
+  def x = new B()
+  
+  def foo() {
+    if (true) {
+      x = new A()
+    }
+    <caret>x
+  }
+}
+''', "[I,groovy.lang.GroovyObject]"
   }
 }

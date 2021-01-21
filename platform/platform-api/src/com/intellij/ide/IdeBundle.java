@@ -9,17 +9,17 @@ import org.jetbrains.annotations.PropertyKey;
 import java.util.function.Supplier;
 
 public final class IdeBundle extends DynamicBundle {
-  public static @Nls String message(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
-    return INSTANCE.getMessage(key, params);
-  }
-
-  @NotNull
-  public static Supplier<@Nls String> messagePointer(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
-    return INSTANCE.getLazyMessage(key, params);
-  }
-
   public static final String BUNDLE = "messages.IdeBundle";
+
   private static final IdeBundle INSTANCE = new IdeBundle();
+
+  public static @Nls String message(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
+    return INSTANCE.containsKey(key) ? INSTANCE.getMessage(key, params) : IdeDeprecatedMessagesBundle.message(key, params);
+  }
+
+  public static @NotNull Supplier<@Nls String> messagePointer(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
+    return INSTANCE.containsKey(key) ? INSTANCE.getLazyMessage(key, params) : IdeDeprecatedMessagesBundle.messagePointer(key, params);
+  }
 
   private IdeBundle() {
     super(BUNDLE);

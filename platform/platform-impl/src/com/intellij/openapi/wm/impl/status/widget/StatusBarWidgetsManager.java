@@ -6,7 +6,6 @@ import com.intellij.ide.lightEdit.LightEditCompatible;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointListener;
 import com.intellij.openapi.extensions.PluginDescriptor;
@@ -32,7 +31,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
   public StatusBarWidgetsManager(@NotNull Project project) {
     myProject = project;
 
-    StatusBarWidgetFactory.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<StatusBarWidgetFactory>() {
+    StatusBarWidgetFactory.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull StatusBarWidgetFactory factory, @NotNull PluginDescriptor pluginDescriptor) {
         addWidgetFactory(factory);
@@ -45,7 +44,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
     }, true, this);
 
     //noinspection deprecation
-    StatusBarWidgetProvider.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<StatusBarWidgetProvider>() {
+    StatusBarWidgetProvider.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull StatusBarWidgetProvider provider, @NotNull PluginDescriptor pluginDescriptor) {
         addWidgetFactory(new StatusBarWidgetProviderToFactoryAdapter(myProject, provider));
@@ -88,7 +87,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
 
   public void updateWidget(@NotNull StatusBarWidgetFactory factory) {
     if (factory.isAvailable(myProject) &&
-        (!factory.isConfigurable() || ServiceManager.getService(StatusBarWidgetSettings.class).isEnabled(factory))) {
+        (!factory.isConfigurable() || ApplicationManager.getApplication().getService(StatusBarWidgetSettings.class).isEnabled(factory))) {
       enableWidget(factory);
     }
     else {

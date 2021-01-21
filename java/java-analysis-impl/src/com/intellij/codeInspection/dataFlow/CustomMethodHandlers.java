@@ -12,8 +12,7 @@ import com.intellij.codeInspection.dataFlow.value.DfaValueFactory;
 import com.intellij.codeInspection.dataFlow.value.RelationType;
 import com.intellij.codeInspection.util.OptionalUtil;
 import com.intellij.psi.*;
-import com.intellij.psi.util.CachedValueProvider;
-import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.*;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.ReflectionUtil;
 import com.siyeh.ig.callMatcher.CallMapper;
@@ -35,7 +34,7 @@ import static com.intellij.codeInspection.dataFlow.types.DfTypes.*;
 import static com.intellij.psi.CommonClassNames.*;
 import static com.siyeh.ig.callMatcher.CallMatcher.*;
 
-final class CustomMethodHandlers {
+public final class CustomMethodHandlers {
   private static final CallMatcher CONSTANT_CALLS = anyOf(
     exactInstanceCall(JAVA_LANG_STRING, "contains", "indexOf", "startsWith", "endsWith", "lastIndexOf", "length", "trim",
                  "substring", "equals", "equalsIgnoreCase", "charAt", "codePointAt", "compareTo", "replace"),
@@ -117,7 +116,7 @@ final class CustomMethodHandlers {
               (args, memState, factory, method) -> enumName(args.myQualifier, memState, method.getReturnType()))
     .register(staticCall(JAVA_UTIL_COLLECTIONS, "emptyList", "emptySet", "emptyMap").parameterCount(0),
               (args, memState, factory, method) -> getEmptyCollectionConstant(method))
-    .register(exactInstanceCall(JAVA_LANG_CLASS, "getName", "getSimpleName").parameterCount(0),
+    .register(exactInstanceCall(JAVA_LANG_CLASS, "getName", "getSimpleName", "getCanonicalName").parameterCount(0),
               (args, memState, factory, method) -> className(memState, args.myQualifier, method.getName(), method.getReturnType()))
     .register(anyOf(
       staticCall(JAVA_UTIL_COLLECTIONS, "singleton", "singletonList", "singletonMap"),
@@ -134,7 +133,8 @@ final class CustomMethodHandlers {
     .register(anyOf(
       instanceCall("java.util.Random", "nextInt").parameterTypes("int"),
       instanceCall("java.util.SplittableRandom", "nextInt").parameterTypes("int"),
-      instanceCall("java.util.SplittableRandom", "nextInt").parameterTypes("int", "int")), CustomMethodHandlers::randomNextInt);
+      instanceCall("java.util.SplittableRandom", "nextInt").parameterTypes("int", "int")), CustomMethodHandlers::randomNextInt)
+    .register(staticCall(JAVA_UTIL_ARRAYS, "copyOf"), CustomMethodHandlers::copyOfArray);
 
   public static CustomMethodHandler find(PsiMethod method) {
     CustomMethodHandler handler = null;
@@ -183,7 +183,7 @@ final class CustomMethodHandlers {
   }
 
   private static Method toJvmMethod(PsiMethod method) {
-    return CachedValuesManager.getCachedValue(method, new CachedValueProvider<Method>() {
+    return CachedValuesManager.getCachedValue(method, new CachedValueProvider<>() {
       @Override
       public @NotNull Result<Method> compute() {
         Method reflection = getMethod();
@@ -254,12 +254,19 @@ final class CustomMethodHandlers {
     return intRange(LongRangeSet.range(-1, range.max() - 1));
   }
 
+  private static @NotNull DfType copyOfArray(DfaCallArguments arguments, DfaMemoryState state, DfaValueFactory factory, PsiMethod method) {
+    if (arguments.myArguments.length < 2) return TOP;
+    DfType size = state.getDfType(arguments.myArguments[1]).meet(intRange(LongRangeSet.indexRange()));
+    if (size == BOTTOM) return FAIL;
+    return typedObject(method.getReturnType(), Nullability.NOT_NULL).meet(ARRAY_LENGTH.asDfType(size)).meet(LOCAL_OBJECT);
+  }
+
   private static @NotNull DfType collectionFactory(DfaCallArguments args,
                                                    DfaMemoryState memState, DfaValueFactory factory,
                                                    PsiMethod method) {
     PsiType type = method.getReturnType();
     if (!(type instanceof PsiClassType)) return TOP;
-    int factor = ((PsiClassType)type).rawType().equalsToText(JAVA_UTIL_MAP) ? 2 : 1;
+    int factor = PsiTypesUtil.classNameEquals(type, JAVA_UTIL_MAP) ? 2 : 1;
     DfType size;
     if (method.isVarArgs()) {
       size = memState.getDfType(ARRAY_LENGTH.createValue(factory, args.myArguments[0]));
@@ -383,7 +390,22 @@ final class CustomMethodHandlers {
     if (type != null) {
       PsiClass psiClass = type.resolve();
       if (psiClass != null) {
-        return constant(name.equals("getSimpleName") ? psiClass.getName() : psiClass.getQualifiedName(), stringType);
+        String result;
+        switch (name) {
+          case "getSimpleName":
+            result = psiClass instanceof PsiAnonymousClass ? "" : psiClass.getName();
+            break;
+          case "getName":
+            if (PsiUtil.isLocalOrAnonymousClass(psiClass)) {
+              return TOP;
+            }
+            result = ClassUtil.getJVMClassName(psiClass);
+            break;
+          default:
+            result = psiClass.getQualifiedName();
+            break;
+        }
+        return constant(result, stringType);
       }
     }
     return TOP;

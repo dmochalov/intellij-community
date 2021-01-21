@@ -49,15 +49,14 @@ public final class XmlPsiUtil {
                                            final boolean wideFlag,
                                            final PsiFile baseFile,
                                            boolean processIncludes) {
-    return new XmlElementProcessor(processor, baseFile).processXmlElements(element, deepFlag, wideFlag, processIncludes);
+    return new XmlElementProcessor(baseFile, processor).processXmlElements(element, deepFlag, wideFlag, processIncludes);
   }
 
   public static boolean processXmlElementChildren(final XmlElement element, final PsiElementProcessor<? super PsiElement> processor, final boolean deepFlag) {
-    final XmlPsiUtil.XmlElementProcessor p = new XmlPsiUtil.XmlElementProcessor(processor, element.getContainingFile());
+    final XmlPsiUtil.XmlElementProcessor p = new XmlPsiUtil.XmlElementProcessor(element.getContainingFile(), processor);
 
-    final boolean wideFlag = false;
     for (PsiElement child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-      if (!p.processElement(child, deepFlag, wideFlag, true) && !wideFlag) return false;
+      if (!p.processElement(child, deepFlag, false, true)) return false;
     }
 
     return true;
@@ -66,10 +65,10 @@ public final class XmlPsiUtil {
   @Nullable
   public static XmlElement findElement(@NotNull final XmlElement parent, @NotNull final IElementType.Predicate predicate){
     final Ref<XmlElement> result = new Ref<>();
-    parent.processElements(new PsiElementProcessor<PsiElement>(){
+    parent.processElements(new PsiElementProcessor<>() {
       @Override
-      public boolean execute(@NotNull PsiElement element){
-        if(element instanceof XmlElement && predicate.matches(element.getNode().getElementType())){
+      public boolean execute(@NotNull PsiElement element) {
+        if (element instanceof XmlElement && predicate.matches(element.getNode().getElementType())) {
           result.set((XmlElement)element);
           return false;
         }
@@ -85,7 +84,7 @@ public final class XmlPsiUtil {
     private final PsiFile targetFile;
     private final Set<String> visitedEntities = new HashSet<>();
 
-    XmlElementProcessor(PsiElementProcessor<? super PsiElement> _processor, PsiFile _targetFile) {
+    XmlElementProcessor(PsiFile _targetFile, @NotNull PsiElementProcessor<? super PsiElement> _processor) {
       processor = _processor;
       targetFile = _targetFile;
     }
@@ -146,7 +145,7 @@ public final class XmlPsiUtil {
           if (!processXmlElements(child, false, wideFlag, processIncludes)) return false;
         }
         else if (processIncludes && XmlIncludeHandler.isXInclude(child)) {
-          if (!processXmlElements(child, false, wideFlag, processIncludes)) return false;
+          if (!processXmlElements(child, false, wideFlag, true)) return false;
         }
         else if (!processor.execute(child)) return false;
       }
@@ -237,7 +236,7 @@ public final class XmlPsiUtil {
     if (value == null) {
       value = CachedValuesManager.getManager(entityDecl.getProject()).createCachedValue(() -> {
         final PsiElement res = entityDecl.parse(targetFile, type, entityRef);
-        if (res == null) return new CachedValueProvider.Result<>(res, targetFile);
+        if (res == null) return new CachedValueProvider.Result<>(null, targetFile);
         if (!entityDecl.isInternalReference()) XmlEntityCache.copyEntityCaches(res.getContainingFile(), targetFile);
         return new CachedValueProvider.Result<>(res, res.getUserData(XmlElement.DEPENDING_ELEMENT), entityDecl, targetFile, entityRef);
       }, false);

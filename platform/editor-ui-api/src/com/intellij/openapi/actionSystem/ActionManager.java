@@ -74,6 +74,7 @@ public abstract class ActionManager {
    * is not registered
    * @throws IllegalArgumentException if {@code action} is {@code null}
    */
+  @NonNls
   public abstract String getId(@NotNull AnAction action);
 
   /**
@@ -118,7 +119,7 @@ public abstract class ActionManager {
   /**
    * Returns the list of all registered action IDs with the specified prefix.
    */
-  public abstract @NotNull List<String> getActionIdList(@NotNull String idPrefix);
+  public abstract @NotNull List<@NonNls String> getActionIdList(@NotNull String idPrefix);
 
   /**
    * Checks if the specified action ID represents an action group and not an individual action.
@@ -177,13 +178,4 @@ public abstract class ActionManager {
 
   @Nullable
   public abstract KeyboardShortcut getKeyboardShortcut(@NonNls @NotNull String actionId);
-
-  /**
-   * @deprecated Don't use
-   */
-  @Deprecated
-  @NotNull
-  public String getComponentName() {
-    return "ActionManager";
-  }
 }

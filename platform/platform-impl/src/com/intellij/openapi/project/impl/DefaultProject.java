@@ -23,12 +23,11 @@ import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.serviceContainer.ComponentManagerImpl;
 import com.intellij.util.messages.MessageBus;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.SystemIndependent;
+import org.jetbrains.annotations.*;
 import org.picocontainer.PicoContainer;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author peter
@@ -43,6 +42,9 @@ final class DefaultProject extends UserDataHolderBase implements Project {
       DefaultProjectImpl project = new DefaultProjectImpl(DefaultProject.this);
       ProjectStoreFactory componentStoreFactory = ApplicationManager.getApplication().getService(ProjectStoreFactory.class);
       project.registerServiceInstance(IComponentStore.class, componentStoreFactory.createDefaultProjectStore(project), ComponentManagerImpl.getFakeCorePluginDescriptor());
+
+      Disposer.register(DefaultProject.this,this); // mark myDelegate as not disposed if someone cluelessly did Disposer.dispose(getDefaultProject())
+
       return project;
     }
 
@@ -53,14 +55,13 @@ final class DefaultProject extends UserDataHolderBase implements Project {
   };
 
   @Override
-  public <T> @NotNull T instantiateExtensionWithPicoContainerOnlyIfNeeded(@Nullable String name,
-                                                                          @Nullable PluginDescriptor pluginDescriptor) {
-    return getDelegate().instantiateExtensionWithPicoContainerOnlyIfNeeded(name, pluginDescriptor);
+  public <T> T instantiateClass(@NotNull Class<T> aClass, @Nullable PluginId pluginId) {
+    return getDelegate().instantiateClass(aClass, pluginId);
   }
 
   @Override
-  public <T> T instantiateClass(@NotNull Class<T> aClass, @Nullable PluginId pluginId) {
-    return getDelegate().instantiateClass(aClass, pluginId);
+  public <T> @NotNull T instantiateClass(@NotNull String className, @NotNull PluginDescriptor pluginDescriptor) {
+    return getDelegate().instantiateClass(className, pluginDescriptor);
   }
 
   @Override
@@ -71,6 +72,18 @@ final class DefaultProject extends UserDataHolderBase implements Project {
   @Override
   public @NotNull RuntimeException createError(@NotNull String message, @NotNull PluginId pluginId) {
     return getDelegate().createError(message, pluginId);
+  }
+
+  @Override
+  public @NotNull RuntimeException createError(@NotNull @NonNls String message,
+                                               @NotNull PluginId pluginId,
+                                               @Nullable Map<String, String> attachments) {
+    return getDelegate().createError(message, pluginId, attachments);
+  }
+
+  @Override
+  public <T> @NotNull Class<T> loadClass(@NotNull String className, @NotNull PluginDescriptor pluginDescriptor) throws ClassNotFoundException {
+    return getDelegate().loadClass(className, pluginDescriptor);
   }
 
   @Override
@@ -102,7 +115,15 @@ final class DefaultProject extends UserDataHolderBase implements Project {
 
   @Override
   public void dispose() {
+    if (!ApplicationManager.getApplication().isDisposed()) {
+      throw new IllegalStateException("Must not dispose default project");
+    }
     Disposer.dispose(myDelegate);
+  }
+
+  @TestOnly
+  void disposeDefaultProjectAndCleanupComponentsForDynamicPluginTests() {
+    ApplicationManager.getApplication().runWriteAction(() -> Disposer.dispose(myDelegate));
   }
 
   private @NotNull Project getDelegate() {

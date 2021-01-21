@@ -7,6 +7,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.FilePath;
@@ -17,7 +18,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.Navigatable;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcsUtil.VcsUtil;
-import gnu.trove.TObjectHashingStrategy;
+import it.unimi.dsi.fastutil.Hash;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,9 +34,9 @@ import static java.util.stream.Collectors.toList;
 public final class ChangesUtil {
   private static final Key<Boolean> INTERNAL_OPERATION_KEY = Key.create("internal vcs operation");
 
-  public static final TObjectHashingStrategy<FilePath> CASE_SENSITIVE_FILE_PATH_HASHING_STRATEGY = new TObjectHashingStrategy<FilePath>() {
+  public static final Hash.Strategy<FilePath> CASE_SENSITIVE_FILE_PATH_HASHING_STRATEGY = new Hash.Strategy<>() {
     @Override
-    public int computeHashCode(@Nullable FilePath path) {
+    public int hashCode(@Nullable FilePath path) {
       return path != null ? hash(path.getPath(), path.isDirectory()) : 0;
     }
 
@@ -84,25 +85,24 @@ public final class ChangesUtil {
   }
 
   public static @Nullable AbstractVcs getVcsForChange(@NotNull Change change, @NotNull Project project) {
-    AbstractVcs result = ChangeListManager.getInstance(project).getVcsFor(change);
-    return result == null ? ProjectLevelVcsManager.getInstance(project).getVcsFor(getFilePath(change)) : result;
+    return ProjectLevelVcsManager.getInstance(project).getVcsFor(getFilePath(change));
   }
 
   public static @NotNull Set<AbstractVcs> getAffectedVcses(@NotNull Collection<? extends Change> changes, @NotNull Project project) {
-    if (changes.isEmpty()) {
-      return Collections.emptySet();
-    }
-
-    ChangeListManager changeListManager = ChangeListManager.getInstance(project);
-    return ContainerUtil.map2SetNotNull(changes, change -> {
-      AbstractVcs result = changeListManager.getVcsFor(change);
-      return result == null ? ProjectLevelVcsManager.getInstance(project).getVcsFor(getFilePath(change)) : result;
-    });
+    ProjectLevelVcsManager vcsManager = ProjectLevelVcsManager.getInstance(project);
+    return ContainerUtil.map2SetNotNull(changes, change -> vcsManager.getVcsFor(getFilePath(change)));
   }
 
   @NotNull
   public static Set<AbstractVcs> getAffectedVcsesForFiles(@NotNull Collection<? extends VirtualFile> files, @NotNull Project project) {
-    return ContainerUtil.map2SetNotNull(files, file -> getVcsForFile(file, project));
+    ProjectLevelVcsManager vcsManager = ProjectLevelVcsManager.getInstance(project);
+    return ContainerUtil.map2SetNotNull(files, file -> vcsManager.getVcsFor(file));
+  }
+
+  @NotNull
+  public static Set<AbstractVcs> getAffectedVcsesForFilePaths(@NotNull Collection<? extends FilePath> files, @NotNull Project project) {
+    ProjectLevelVcsManager vcsManager = ProjectLevelVcsManager.getInstance(project);
+    return ContainerUtil.map2SetNotNull(files, file -> vcsManager.getVcsFor(file));
   }
 
   @Nullable
@@ -249,7 +249,7 @@ public final class ChangesUtil {
     });
   }
 
-  public static @Nullable String getProjectRelativePath(@NotNull Project project, @Nullable File fileName) {
+  public static @Nullable @NlsSafe String getProjectRelativePath(@NotNull Project project, @Nullable File fileName) {
     if (fileName == null) {
       return null;
     }

@@ -2,14 +2,13 @@
 package com.intellij.codeInsight;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Ref;
 import com.intellij.psi.*;
 import com.intellij.psi.util.*;
 import com.intellij.util.*;
 import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.THashMap;
-import gnu.trove.THashSet;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.*;
 
@@ -219,13 +218,31 @@ public class AnnotationUtil {
   @Nullable
   public static PsiAnnotation findAnnotationInHierarchy(@NotNull final PsiModifierListOwner listOwner,
                                                         @NotNull Set<String> annotationNames, boolean skipExternal) {
+    AnnotationAndOwner result = findAnnotationAndOwnerInHierarchy(listOwner, annotationNames, skipExternal);
+    return result == null ? null : result.annotation;
+  }
+  
+  static final class AnnotationAndOwner {
+    final @NotNull PsiModifierListOwner owner;
+    final @NotNull PsiAnnotation annotation;
+
+    AnnotationAndOwner(@NotNull PsiModifierListOwner owner, @NotNull PsiAnnotation annotation) {
+      this.owner = owner;
+      this.annotation = annotation;
+    }
+  }
+
+  @Nullable
+  static AnnotationAndOwner findAnnotationAndOwnerInHierarchy(@NotNull PsiModifierListOwner listOwner,
+                                                              @NotNull Set<String> annotationNames,
+                                                              boolean skipExternal) {
     PsiAnnotation directAnnotation = findAnnotation(listOwner, annotationNames, skipExternal);
-    if (directAnnotation != null) return directAnnotation;
+    if (directAnnotation != null) return new AnnotationAndOwner(listOwner, directAnnotation);
 
     for (PsiModifierListOwner superOwner : getSuperAnnotationOwners(listOwner)) {
       PsiAnnotation annotation = findAnnotation(superOwner, annotationNames, skipExternal);
       if (annotation != null) {
-        return annotation;
+        return new AnnotationAndOwner(superOwner, annotation);
       }
     }
     return null;
@@ -357,8 +374,12 @@ public class AnnotationUtil {
     if (BitUtil.isSet(flags, CHECK_HIERARCHY)) {
       if (listOwner instanceof PsiMethod) {
         PsiMethod method = (PsiMethod)listOwner;
-        if (processed == null) processed = new THashSet<>();
-        if (!processed.add(method)) return false;
+        if (processed == null) {
+          processed = new HashSet<>();
+        }
+        if (!processed.add(method)) {
+          return false;
+        }
         for (PsiMethod superMethod : method.findSuperMethods()) {
           if (isAnnotated(superMethod, annotationFQN, flags, processed)) {
             return true;
@@ -367,8 +388,12 @@ public class AnnotationUtil {
       }
       else if (listOwner instanceof PsiClass) {
         PsiClass clazz = (PsiClass)listOwner;
-        if (processed == null) processed = new THashSet<>();
-        if (!processed.add(clazz)) return false;
+        if (processed == null) {
+          processed = new HashSet<>();
+        }
+        if (!processed.add(clazz)) {
+          return false;
+        }
         for (PsiClass superClass : clazz.getSupers()) {
           if (isAnnotated(superClass, annotationFQN, flags, processed)) {
             return true;
@@ -476,7 +501,9 @@ public class AnnotationUtil {
     if (inHierarchy) {
       if (owner instanceof PsiClass) {
         for (PsiClass superClass : ((PsiClass)owner).getSupers()) {
-          if (visited == null) visited = new THashSet<>();
+          if (visited == null) {
+            visited = new HashSet<>();
+          }
           if (visited.add(superClass)) annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superClass, true, visited, withInferred));
         }
       }
@@ -490,9 +517,12 @@ public class AnnotationUtil {
           PsiResolveHelper resolveHelper = PsiResolveHelper.SERVICE.getInstance(aClass.getProject());
           for (final HierarchicalMethodSignature superSignature : superSignatures) {
             final PsiMethod superMethod = superSignature.getMethod();
-            if (visited == null) visited = new THashSet<>();
-            if (!visited.add(superMethod)) continue;
-            if (!resolveHelper.isAccessible(superMethod, owner, null)) continue;
+            if (visited == null) {
+              visited = new HashSet<>();
+            }
+            if (!visited.add(superMethod) || !resolveHelper.isAccessible(superMethod, owner, null)) {
+              continue;
+            }
             annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superMethod, true, visited, withInferred));
           }
         }
@@ -512,9 +542,12 @@ public class AnnotationUtil {
             PsiResolveHelper resolveHelper = PsiResolveHelper.SERVICE.getInstance(aClass.getProject());
             for (final HierarchicalMethodSignature superSignature : superSignatures) {
               final PsiMethod superMethod = superSignature.getMethod();
-              if (visited == null) visited = new THashSet<>();
-              if (!visited.add(superMethod)) continue;
-              if (!resolveHelper.isAccessible(superMethod, owner, null)) continue;
+              if (visited == null) {
+                visited = new HashSet<>();
+              }
+              if (!visited.add(superMethod) || !resolveHelper.isAccessible(superMethod, owner, null)) {
+                continue;
+              }
               PsiParameter[] superParameters = superMethod.getParameterList().getParameters();
               if (index < superParameters.length) {
                 annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superParameters[index], true, visited, withInferred));
@@ -545,7 +578,7 @@ public class AnnotationUtil {
   }
 
   @Nullable
-  public static String getStringAttributeValue(@NotNull PsiAnnotation anno, @Nullable final String attributeName) {
+  public static @NlsSafe String getStringAttributeValue(@NotNull PsiAnnotation anno, @Nullable final String attributeName) {
     PsiAnnotationMemberValue attrValue = anno.findAttributeValue(attributeName);
     return attrValue == null ? null : getStringAttributeValue(attrValue);
   }
@@ -616,8 +649,8 @@ public class AnnotationUtil {
     if (name == null || !name.equals(b.getQualifiedName())) {
       return false;
     }
-    final Map<String, PsiAnnotationMemberValue> valueMap1 = new THashMap<>(2);
-    final Map<String, PsiAnnotationMemberValue> valueMap2 = new THashMap<>(2);
+    final Map<String, PsiAnnotationMemberValue> valueMap1 = new HashMap<>(2);
+    final Map<String, PsiAnnotationMemberValue> valueMap2 = new HashMap<>(2);
     if (!fillValueMap(a.getParameterList(), valueMap1) || !fillValueMap(b.getParameterList(), valueMap2) ||
         valueMap1.size() != valueMap2.size()) {
       return false;
@@ -765,5 +798,33 @@ public class AnnotationUtil {
       return Arrays.asList(((PsiArrayInitializerMemberValue)attributeValue).getInitializers());
     }
     return ContainerUtil.createMaybeSingletonList(attributeValue);
+  }
+
+  /**
+   * @param annotation annotation
+   * @return type that relates to that annotation
+   */
+  public static @Nullable PsiType getRelatedType(PsiAnnotation annotation) {
+    PsiAnnotationOwner owner = annotation.getOwner();
+    if (owner instanceof PsiType) {
+      return (PsiType)owner;
+    }
+    PsiType type = null;
+    if (owner instanceof PsiModifierList) {
+      PsiElement parent = ((PsiModifierList)owner).getParent();
+      if (parent instanceof PsiVariable) {
+        type = ((PsiVariable)parent).getType();
+      }
+      if (parent instanceof PsiMethod) {
+        type = ((PsiMethod)parent).getReturnType();
+      }
+      if (type != null) {
+        if (AnnotationTargetUtil.isTypeAnnotation(annotation)) {
+          return type.getDeepComponentType();
+        }
+        return type;
+      }
+    }
+    return null;
   }
 }

@@ -41,10 +41,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.components.JBLayeredPane;
 import com.intellij.ui.mac.touchbar.TouchBarsManager;
 import com.intellij.util.IJSwingUtilities;
-import com.intellij.util.ui.GraphicsUtil;
-import com.intellij.util.ui.JBInsets;
-import com.intellij.util.ui.OwnerOptional;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -96,7 +93,8 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       }
       if (window == null) {
         for (ProjectFrameHelper frameHelper : windowManager.getProjectFrameHelpers()) {
-          if (frameHelper.getFrame().isActive()) {
+          IdeFrameImpl frame = frameHelper.getFrame();
+          if (frame != null && frame.isActive()) {
             window = frameHelper.getFrame();
             break;
           }
@@ -245,7 +243,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       });
     };
 
-    UIUtil.invokeLaterIfNeeded(disposer);
+    EdtInvocationManager.invokeLaterIfNeeded(disposer);
   }
 
   private boolean isProgressDialog() {
@@ -548,27 +546,13 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       UIUtil.setAutoRequestFocus(this, (owner!=null && owner.isActive()) || !ComponentUtil.isDisableAutoRequestFocus());
     }
 
-    /**
-     * @deprecated use {@link MyDialog#MyDialog(Window, DialogWrapper, Project, ActionCallback)}
-     */
-    @Deprecated
-    MyDialog(Window owner,
-             DialogWrapper dialogWrapper,
-             Project project,
-             @NotNull ActionCallback focused,
-             @NotNull ActionCallback typeAheadDone,
-             ActionCallback typeAheadCallback) {
-      this(owner, dialogWrapper, project, focused);
-    }
-
-
     @Override
     public JDialog getWindow() {
       return this;
     }
 
     @Override
-    public void putInfo(@NotNull Map<String, String> info) {
+    public void putInfo(@NotNull Map<? super String, ? super String> info) {
       info.put("dialog", getTitle());
     }
 
@@ -589,7 +573,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
         return ((DataProvider)wrapper).getData(dataId);
       }
       if (wrapper instanceof TypeSafeDataProvider) {
-        TypeSafeDataProviderAdapter adapter = new TypeSafeDataProviderAdapter((TypeSafeDataProvider)wrapper);
+        DataProvider adapter = new TypeSafeDataProviderAdapter((TypeSafeDataProvider)wrapper);
         return adapter.getData(dataId);
       }
       return null;

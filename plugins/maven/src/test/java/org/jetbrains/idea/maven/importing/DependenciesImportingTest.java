@@ -13,17 +13,16 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.registry.RegistryValue;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.MavenCustomRepositoryHelper;
 import org.jetbrains.idea.maven.MavenImportingTestCase;
 import org.jetbrains.idea.maven.project.MavenProject;
-import org.jetbrains.idea.maven.utils.MavenUtil;
 
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class DependenciesImportingTest extends MavenImportingTestCase {
   @Override
@@ -824,16 +823,10 @@ public class DependenciesImportingTest extends MavenImportingTestCase {
   }
 
   public void testDependencyWithEnvironmentENVProperty() {
-    if (ignore()) {
-      return;
-    }
-    if (MavenUtil.newModelEnabled(myProject)) {
-      throw new IllegalStateException("This test brokes all subsequent!");
-    }
     String envDir = FileUtil.toSystemIndependentName(System.getenv(getEnvVar()));
     envDir = StringUtil.trimEnd(envDir, "/");
 
-    importProject("<groupId>test</groupId>" +
+    createProjectPom("<groupId>test</groupId>" +
                   "<artifactId>project</artifactId>" +
                   "<version>1</version>" +
 
@@ -846,6 +839,7 @@ public class DependenciesImportingTest extends MavenImportingTestCase {
                   "    <systemPath>${env." + getEnvVar() + "}/lib/tools.jar</systemPath>" +
                   "  </dependency>" +
                   "</dependencies>");
+    importProjectWithErrors();
 
     assertModules("project");
     assertModuleLibDep("project",
@@ -2210,7 +2204,7 @@ public class DependenciesImportingTest extends MavenImportingTestCase {
                      "  </dependency>" +
 
                      "</dependencies>");
-    importProject();
+    importProjectWithErrors();
 
     WriteAction.runAndWait(() -> {
       ModifiableRootModel rootModel = ModuleRootManager.getInstance(getModule("m1")).getModifiableModel();
@@ -2338,11 +2332,15 @@ public class DependenciesImportingTest extends MavenImportingTestCase {
 
       importProject();
 
-      OrderEntry[] entries = ModuleRootManager.getInstance(getModule("project")).getOrderEntries();
-      List<String> strings = ContainerUtil.map(entries, Object::toString);
+      List<String> librariesDepNames = Arrays.stream(ModuleRootManager.getInstance(getModule("project"))
+        .getOrderEntries())
+        .filter(LibraryOrderEntry.class::isInstance)
+        .map(LibraryOrderEntry.class::cast)
+        .map(loe -> loe.getLibraryName())
+        .collect(Collectors.toList());
 
-      assertContain(strings, "project -> SomeLibrary", "project -> Maven: junit:junit:4.0");
-      assertDoesntContain(strings, "project -> Maven: AnotherLibrary");
+      assertContain(librariesDepNames, "SomeLibrary", "Maven: junit:junit:4.0");
+      assertDoesntContain(librariesDepNames, "Maven: AnotherLibrary");
 
     }
     finally {

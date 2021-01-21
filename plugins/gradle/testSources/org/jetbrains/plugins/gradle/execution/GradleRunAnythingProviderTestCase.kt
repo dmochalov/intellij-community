@@ -17,8 +17,8 @@ import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue
-import com.intellij.testFramework.PlatformTestUtil.waitWhileBusy
 import com.intellij.testFramework.fixtures.BuildViewTestFixture
 import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.util.TimeoutUtil
@@ -75,8 +75,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
   }
 
   private fun withVariantsFor(context: RunAnythingContext, command: String, action: (List<String>) -> Unit) {
-    val contextKey = RunAnythingProvider.EXECUTING_CONTEXT.name
-    val dataContext = SimpleDataContext.getSimpleContext(contextKey, context, myDataContext)
+    val dataContext = SimpleDataContext.getSimpleContext(RunAnythingProvider.EXECUTING_CONTEXT, context, myDataContext)
     val variants = provider.getValues(dataContext, "gradle $command")
     action(variants.map { StringUtil.trimStart(it, "gradle ") })
   }
@@ -111,7 +110,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
         }
       }
     )
-    val dataContext = SimpleDataContext.getSimpleContext(RunAnythingProvider.EXECUTING_CONTEXT.name, context, myDataContext)
+    val dataContext = SimpleDataContext.getSimpleContext(RunAnythingProvider.EXECUTING_CONTEXT, context, myDataContext)
     provider.execute(dataContext, "gradle $command")
 
     for (i in 0..5000) {
@@ -124,7 +123,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
     val tree = eventView!!.tree
     runInEdtAndWait {
       dispatchAllEventsInIdeEventQueue()
-      waitWhileBusy(tree)
+      PlatformTestUtil.waitWhileBusy(tree)
     }
 
     val buildNode = Ref<ExecutionNode>()
@@ -140,7 +139,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
       TimeoutUtil.sleep(5)
       runInEdtAndWait {
         dispatchAllEventsInIdeEventQueue()
-        waitWhileBusy(tree)
+        PlatformTestUtil.waitWhileBusy(tree)
       }
     }
     Assert.assertFalse(buildNode.get().isRunning)
@@ -176,6 +175,6 @@ fun BuildView.assertExecutionTree(expected: String): BuildView {
 }
 
 fun BuildView.assertExecutionTreeNode(nodeText: String, consoleTextChecker: (String?) -> Unit, assertSelected: Boolean = false): BuildView {
-  BuildViewTestFixture.assertExecutionTreeNode(this, nodeText, consoleTextChecker, assertSelected)
+  BuildViewTestFixture.assertExecutionTreeNode(this, nodeText, consoleTextChecker, null, assertSelected)
   return this
 }

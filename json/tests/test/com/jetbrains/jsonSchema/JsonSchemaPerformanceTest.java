@@ -28,7 +28,7 @@ public class JsonSchemaPerformanceTest extends JsonSchemaHeavyAbstractTest {
   }
 
   public void testSwaggerHighlighting() {
-    doPerformanceTest(20_000, "swagger");
+    doPerformanceTest(35_000, "swagger");
   }
 
   public void testTsLintSchema() {
@@ -57,7 +57,7 @@ public class JsonSchemaPerformanceTest extends JsonSchemaHeavyAbstractTest {
         myFixture.doHighlighting();
       }
     });
-    PlatformTestUtil.startPerformanceTest(getTestName(false), expectedMs, test).reattemptUntilJitSettlesDown().usesAllCPUCores().assertTiming();
+    PlatformTestUtil.startPerformanceTest(getTestName(false), expectedMs, test).usesAllCPUCores().assertTiming();
   }
 
 
@@ -84,6 +84,6 @@ public class JsonSchemaPerformanceTest extends JsonSchemaHeavyAbstractTest {
         WriteCommandAction.runWriteCommandAction(getProject(), (Runnable)() -> camelcase.getValue().replace(a.getValue()));
         myFixture.doHighlighting();
       }
-    }).reattemptUntilJitSettlesDown().assertTiming();
+    }).assertTiming();
   }
 }

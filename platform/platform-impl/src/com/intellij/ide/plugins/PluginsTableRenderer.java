@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.psi.codeStyle.NameUtil;
@@ -33,7 +34,6 @@ import java.util.Objects;
 * @author Konstantin Bulenkov
 */
 public class PluginsTableRenderer extends DefaultTableCellRenderer {
-  static final String N_A = "N/A";
   private static final InstalledPluginsState ourState = InstalledPluginsState.getInstance();
 
   protected SimpleColoredComponent myName;
@@ -106,7 +106,7 @@ public class PluginsTableRenderer extends DefaultTableCellRenderer {
                                                            SimpleTextAttributes.STYLE_PLAIN);
       Matcher matcher = NameUtil.buildMatcher("*" + query, NameUtil.MatchingCaseSensitivity.NONE);
 
-      String category = myPluginDescriptor.getCategory() == null ? null : StringUtil.toUpperCase(myPluginDescriptor.getCategory());
+      String category = myPluginDescriptor.getCategory() == null ? null : StringUtil.toUpperCase(myPluginDescriptor.getCategory()); //NON-NLS
       if (category != null) {
         if (query instanceof String) {
           SpeedSearchUtil.appendColoredFragmentForMatcher(category, myCategory, attr, matcher, UIUtil.getTableBackground(isSelected, hasFocus), true);
@@ -116,12 +116,12 @@ public class PluginsTableRenderer extends DefaultTableCellRenderer {
         }
       }
       else if (!myPluginsView) {
-        myCategory.append(N_A);
+        myCategory.append(IdeBundle.message("plugin.info.not.available"));
       }
 
       myStatus.setIcon(AllIcons.Nodes.Plugin);
       if (myPluginDescriptor.isBundled()) {
-        myCategory.append(" [Bundled]");
+        myCategory.append(" [Bundled]"); //NON-NLS
         myStatus.setIcon(AllIcons.Nodes.PluginJB);
       }
       String vendor = myPluginDescriptor.getVendor();
@@ -129,7 +129,7 @@ public class PluginsTableRenderer extends DefaultTableCellRenderer {
         myStatus.setIcon(AllIcons.Nodes.PluginJB);
       }
 
-      String downloads;
+      @NlsSafe String downloads;
       if (myPluginDescriptor instanceof PluginNode && (downloads = ((PluginNode)myPluginDescriptor).getDownloads()) != null) {
         if (downloads.length() > 3) {
           downloads = new DecimalFormat("#,###").format(Integer.parseInt(downloads));

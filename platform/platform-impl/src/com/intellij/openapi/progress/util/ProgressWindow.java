@@ -9,9 +9,9 @@ import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.application.impl.ModalityStateEx;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.progress.BlockingProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.TaskInfo;
+import com.intellij.openapi.progress.impl.BlockingProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.EmptyRunnable;
@@ -19,17 +19,18 @@ import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsContexts.ProgressDetails;
 import com.intellij.openapi.util.NlsContexts.ProgressText;
 import com.intellij.openapi.util.NlsContexts.ProgressTitle;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.ex.ProgressIndicatorEx;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.messages.Topic;
 import com.intellij.util.ui.EDT;
 import com.intellij.util.ui.TimerUtil;
 import com.intellij.util.ui.UIUtil;
-import org.jetbrains.annotations.CalledInAwt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,6 +38,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 public class ProgressWindow extends ProgressIndicatorBase implements BlockingProgressIndicator, Disposable {
   private static final Logger LOG = Logger.getInstance(ProgressWindow.class);
@@ -53,9 +55,9 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
 
   @Nullable protected final Project myProject;
   final boolean myShouldShowCancel;
-  String myCancelText;
+  @NlsContexts.Button String myCancelText;
 
-  private String myTitle;
+  @ProgressTitle private String myTitle;
 
   private boolean myStoppedAlready;
   protected boolean myBackgrounded;
@@ -67,7 +69,8 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     void progressWindowCreated(@NotNull ProgressWindow pw);
   }
 
-  public static final Topic<Listener> TOPIC = new Topic<>("progress window", Listener.class, Topic.BroadcastDirection.NONE);
+  @Topic.AppLevel
+  public static final Topic<Listener> TOPIC = new Topic<>(Listener.class, Topic.BroadcastDirection.NONE, true);
 
   public ProgressWindow(boolean shouldShowCancel, @Nullable Project project) {
     this(shouldShowCancel, false, project);
@@ -107,13 +110,13 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     ApplicationManager.getApplication().getMessageBus().syncPublisher(TOPIC).progressWindowCreated(this);
   }
 
-  @CalledInAwt
+  @RequiresEdt
   protected void initializeOnEdtIfNeeded() {
     EDT.assertIsEdt();
     initializeDialog();
   }
 
-  @CalledInAwt
+  @RequiresEdt
   private void initializeDialog() {
     Runnable initialization = myDialogInitialization;
     if (initialization == null) return;
@@ -165,7 +168,7 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     // for each of them. Solution is to postpone the tasks of showing progress dialog. Hence, it will not be shown at all
     // if the task is already finished when the time comes.
     Timer timer =
-      TimerUtil.createNamedTimer("Progress window timer", myDelayInMillis, e -> ApplicationManager.getApplication().invokeLater(() -> {
+      TimerUtil.createNamedTimer("Progress window timer", myDelayInMillis, __ -> ApplicationManager.getApplication().invokeLater(() -> {
         if (isRunning()) {
           showDialog();
         }
@@ -193,13 +196,18 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     }
   }
 
-  public void startBlocking() {
-    startBlocking(EmptyRunnable.getInstance());
+  /**
+   * @deprecated Do not use, it's too low level and dangerous. Instead, consider using run* methods in {@link com.intellij.openapi.progress.ProgressManager}
+   */
+  @Deprecated
+  public void startBlocking(@NotNull Runnable init) {
+    CompletableFuture<Object> future = new CompletableFuture<>();
+    Disposer.register(this, () -> future.complete(null));
+    startBlocking(init, future);
   }
 
   @Override
-  @CalledInAwt
-  public void startBlocking(@NotNull Runnable init) {
+  public void startBlocking(@NotNull Runnable init, @NotNull CompletableFuture<?> stopCondition) {
     EDT.assertIsEdt();
     synchronized (getLock()) {
       LOG.assertTrue(!isRunning());
@@ -211,7 +219,16 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
 
     try {
       ApplicationManagerEx.getApplicationEx().runUnlockingIntendedWrite(() -> {
-        pumpEventsForHierarchy();
+        initializeOnEdtIfNeeded();
+        // guarantee AWT event after the future is done will be pumped and loop exited
+        stopCondition.thenRun(() -> SwingUtilities.invokeLater(EmptyRunnable.INSTANCE));
+        IdeEventQueue.getInstance().pumpEventsForHierarchy(myDialog.myPanel, stopCondition, event -> {
+          if (isCancellationEvent(event)) {
+            cancel();
+            return true;
+          }
+          return false;
+        });
         return null;
       });
     }
@@ -220,17 +237,7 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     }
   }
 
-  public void pumpEventsForHierarchy() {
-    initializeOnEdtIfNeeded();
-    IdeEventQueue.getInstance().pumpEventsForHierarchy(myDialog.myPanel, event -> {
-      if (isCancellationEvent(event)) {
-        cancel();
-      }
-      return wasStarted() && !isRunning();
-    });
-  }
-
-  final boolean isCancellationEvent(@Nullable AWTEvent event) {
+  final boolean isCancellationEvent(@NotNull AWTEvent event) {
     return myShouldShowCancel &&
            event instanceof KeyEvent &&
            event.getID() == KeyEvent.KEY_PRESSED &&
@@ -240,6 +247,10 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
 
   protected void showDialog() {
     if (!isRunning() || isCanceled()) {
+      return;
+    }
+
+    if (ApplicationManagerEx.getApplicationEx().isExitInProgress() && Registry.is("ide.instant.shutdown", true)) {
       return;
     }
 
@@ -334,11 +345,12 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     }
   }
 
+  @ProgressTitle
   public String getTitle() {
     return myTitle;
   }
 
-  public void setCancelButtonText(@NotNull String text) {
+  public void setCancelButtonText(@NlsContexts.Button @NotNull String text) {
     if (myDialog != null) {
       myDialog.changeCancelButtonText(text);
     }
@@ -378,7 +390,7 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
     return getTitle() + " " + System.identityHashCode(this) + ": running="+isRunning()+"; canceled="+isCanceled();
   }
 
-  private class MyDelegate extends AbstractProgressIndicatorBase implements ProgressIndicatorEx {
+  private final class MyDelegate extends AbstractProgressIndicatorBase implements ProgressIndicatorEx {
     private long myLastUpdatedButtonTimestamp;
     @Override
     public void cancel() {

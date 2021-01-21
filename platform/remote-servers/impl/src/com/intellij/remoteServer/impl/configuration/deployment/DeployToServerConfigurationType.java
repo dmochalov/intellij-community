@@ -64,16 +64,6 @@ public final class DeployToServerConfigurationType extends ConfigurationTypeBase
     return result;
   }
 
-  /**
-   * Will be removed after 2017.3 (still cannot because Google Cloud Tools uses it)
-   *
-   * @deprecated use {@link #getFactoryForType(DeploymentSourceType)}
-   */
-  @Deprecated
-  public ConfigurationFactoryEx getFactory() {
-    return (ConfigurationFactoryEx)getFactoryForType(null);
-  }
-
   @NotNull
   public ServerType<?> getServerType() {
     ServerType<?> result = ServerType.EP_NAME.findFirstSafe(next -> myServerTypeId.equals(next.getId()));
@@ -119,7 +109,7 @@ public final class DeployToServerConfigurationType extends ConfigurationTypeBase
 
   public final class SingletonTypeConfigurationFactory extends DeployToServerConfigurationFactory {
     private final String mySourceTypeId;
-    private final String myPresentableName;
+    private final @Nls String myPresentableName;
 
     public SingletonTypeConfigurationFactory(@NotNull SingletonDeploymentSourceType sourceType) {
       mySourceTypeId = sourceType.getId();
@@ -153,6 +143,11 @@ public final class DeployToServerConfigurationType extends ConfigurationTypeBase
     @Nullable
     private DeploymentSourceType<?> getSourceTypeImpl() {
       return DeploymentSourceType.EP_NAME.findFirstSafe(next -> mySourceTypeId.equals(next.getId()));
+    }
+
+    @Override
+    public boolean isEditableInDumbMode() {
+      return getSourceTypeImpl().isEditableInDumbMode();
     }
   }
 }

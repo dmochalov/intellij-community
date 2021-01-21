@@ -21,14 +21,16 @@ import com.intellij.openapi.options.SchemeManagerFactory
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.showOkCancelDialog
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.serviceContainer.ComponentManagerImpl
 import com.intellij.serviceContainer.processAllImplementationClasses
 import com.intellij.util.ArrayUtil
 import com.intellij.util.ReflectionUtil
-import com.intellij.util.containers.CollectionFactory
 import com.intellij.util.containers.putValue
 import com.intellij.util.io.*
+import org.jetbrains.annotations.Nls
+import org.jetbrains.annotations.NonNls
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -108,6 +110,7 @@ open class ExportSettingsAction : AnAction(), DumbAware {
 
 fun exportSettings(exportableItems: Set<ExportableItem>,
                    out: OutputStream,
+                   exportableThirdPartyFiles: Map<FileSpec, Path> = mapOf(),
                    storageManager: StateStorageManagerImpl = getAppStorageManager()) {
   val filter = HashSet<String>()
   Compressor.Zip(out)
@@ -125,23 +128,31 @@ fun exportSettings(exportableItems: Set<ExportableItem>,
         }
       }
 
+      // dotSettings file for Rider backend
+      for ((fileSpec, path) in exportableThirdPartyFiles) {
+        LOG.assertTrue(!fileSpec.isDirectory, "fileSpec should not be directory")
+        LOG.assertTrue(path.isFile(), "path should be file")
+
+        zip.addFile(fileSpec.relativePath, Files.readAllBytes(path))
+      }
+
       exportInstalledPlugins(zip)
 
       zip.addFile(ImportSettingsFilenameFilter.SETTINGS_JAR_MARKER, ArrayUtil.EMPTY_BYTE_ARRAY)
     }
 }
 
-data class FileSpec(val relativePath: String, val isDirectory: Boolean = false)
+data class FileSpec(@NlsSafe val relativePath: String, val isDirectory: Boolean = false)
 
 data class ExportableItem(val fileSpec: FileSpec,
                           val presentableName: String,
-                          val componentName: String? = null,
+                          @NonNls val componentName: String? = null,
                           val roamingType: RoamingType = RoamingType.DEFAULT)
 
 data class LocalExportableItem(val file: Path, val presentableName: String, val roamingType: RoamingType = RoamingType.DEFAULT)
 
 fun exportInstalledPlugins(zip: Compressor) {
-  val plugins = PluginManagerCore.getPlugins().asSequence().filter { !it.isBundled && it.isEnabled }.map { it.pluginId }.toList()
+  val plugins = PluginManagerCore.getLoadedPlugins().asSequence().filter { !it.isBundled }.map { it.pluginId }.toList()
   if (plugins.isNotEmpty()) {
     val buffer = StringWriter()
     PluginManagerCore.writePluginsList(plugins, buffer)
@@ -187,7 +198,7 @@ fun getExportableComponentsMap(isComputePresentableNames: Boolean,
 
     val presentableName = if (isComputePresentableNames) getComponentPresentableName(stateAnnotation, aClass, pluginDescriptor) else ""
     val path = getRelativePath(storage, storageManager)
-    val fileSpec = FileSpec(path, looksLikeDirectory(path))
+    val fileSpec = FileSpec(path, looksLikeDirectory(storage))
     result.putValue(fileSpec, ExportableItem(fileSpec, presentableName, stateAnnotation.name, storage.roamingType))
 
     val additionalExportFile = getAdditionalExportFile(stateAnnotation)
@@ -208,6 +219,10 @@ fun getExportableComponentsMap(isComputePresentableNames: Boolean,
     }
   }
   return result
+}
+
+fun looksLikeDirectory(storage: Storage): Boolean {
+  return storage.stateSplitter.java != StateSplitterEx::class.java
 }
 
 private fun looksLikeDirectory(fileSpec: String) = !fileSpec.endsWith(PathManager.DEFAULT_EXT)
@@ -279,7 +294,7 @@ private fun getComponentPresentableName(state: State, aClass: Class<*>, pluginDe
   return trimDefaultName()
 }
 
-private fun messageOrDefault(classLoader: ClassLoader, bundleName: String, defaultName: String): String {
+private fun messageOrDefault(classLoader: ClassLoader, bundleName: String, @Nls defaultName: String): String {
   try {
     return AbstractBundle.messageOrDefault(
       DynamicBundle.INSTANCE.getResourceBundle(bundleName, classLoader), "exportable.$defaultName.presentable.name", defaultName)

@@ -1,13 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.compiled;
 
-import com.intellij.openapi.util.AtomicNotNullLazyValue;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.impl.ElementPresentationUtil;
-import com.intellij.psi.impl.cache.TypeInfo;
 import com.intellij.psi.impl.java.stubs.JavaStubElementTypes;
 import com.intellij.psi.impl.java.stubs.PsiParameterStub;
 import com.intellij.psi.impl.java.stubs.impl.PsiParameterStubImpl;
@@ -35,16 +33,9 @@ public class ClsParameterImpl extends ClsRepositoryPsiElement<PsiParameterStub> 
 
   public ClsParameterImpl(@NotNull PsiParameterStub stub) {
     super(stub);
-    myType = new AtomicNotNullLazyValue<PsiTypeElement>() {
-      @NotNull
-      @Override
-      protected PsiTypeElement compute() {
-        PsiParameterStub stub = getStub();
-        String typeText = TypeInfo.createTypeText(stub.getType(false));
-        assert typeText != null : stub;
-        return new ClsTypeElementImpl(ClsParameterImpl.this, typeText, ClsTypeElementImpl.VARIANCE_NONE);
-      }
-    };
+    myType = NotNullLazyValue.atomicLazy(() -> {
+      return new ClsTypeElementImpl(ClsParameterImpl.this, getStub().getType());
+    });
   }
 
   @Override

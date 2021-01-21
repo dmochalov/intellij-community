@@ -17,6 +17,7 @@ import com.intellij.util.BitUtil;
 import com.intellij.util.Consumer;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,13 +53,14 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
   private static final byte IN_BATCH_CHANGE_MASK = 8;
   static final byte CHANGED_MASK = 16;
   static final byte RENDERERS_CHANGED_MASK = 32;
-  static final byte FONT_STYLE_OR_COLOR_CHANGED_MASK = 64;
+  static final byte FONT_STYLE_CHANGED_MASK = 64;
+  static final byte FOREGROUND_COLOR_CHANGED_MASK = -128;
 
   @MagicConstant(intValues = {AFTER_END_OF_LINE_MASK, ERROR_STRIPE_IS_THIN_MASK, TARGET_AREA_IS_EXACT_MASK, IN_BATCH_CHANGE_MASK, 
-    CHANGED_MASK, RENDERERS_CHANGED_MASK, FONT_STYLE_OR_COLOR_CHANGED_MASK})
+    CHANGED_MASK, RENDERERS_CHANGED_MASK, FONT_STYLE_CHANGED_MASK, FOREGROUND_COLOR_CHANGED_MASK})
   private @interface FlagConstant {}
 
-  @MagicConstant(flags = {CHANGED_MASK, RENDERERS_CHANGED_MASK, FONT_STYLE_OR_COLOR_CHANGED_MASK})
+  @MagicConstant(flags = {CHANGED_MASK, RENDERERS_CHANGED_MASK, FONT_STYLE_CHANGED_MASK, FOREGROUND_COLOR_CHANGED_MASK})
   private @interface ChangeStatus {}
 
   RangeHighlighterImpl(@NotNull MarkupModelImpl model,
@@ -69,7 +71,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
                        @Nullable TextAttributesKey textAttributesKey,
                        boolean greedyToLeft,
                        boolean greedyToRight) {
-    super((DocumentEx)model.getDocument(), start, end, false, false);
+    super((DocumentEx)model.getDocument(), start, end, false, true);
     myTextAttributesKey = textAttributesKey;
     setFlag(TARGET_AREA_IS_EXACT_MASK, target == HighlighterTargetArea.EXACT_RANGE);
     myModel = model;
@@ -113,7 +115,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
   }
 
   @Override
-  public void setTextAttributes(@NotNull TextAttributes textAttributes) {
+  public void setTextAttributes(@Nullable TextAttributes textAttributes) {
     TextAttributes old = myForcedTextAttributes;
     if (old == textAttributes) return;
 
@@ -121,11 +123,11 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
 
     if (old == TextAttributes.ERASE_MARKER || textAttributes == TextAttributes.ERASE_MARKER ||
         old == null && myTextAttributesKey != null) {
-      fireChanged(false, true);
+      fireChanged(false, true, true);
     }
     else if (!Comparing.equal(old, textAttributes)) {
-      fireChanged(false, getFontStyle(old) != getFontStyle(textAttributes) ||
-                         !Comparing.equal(getForegroundColor(old), getForegroundColor(textAttributes)));
+      fireChanged(false, getFontStyle(old) != getFontStyle(textAttributes),
+                  !Comparing.equal(getForegroundColor(old), getForegroundColor(textAttributes)));
     }
   }
 
@@ -134,7 +136,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     TextAttributesKey old = myTextAttributesKey;
     myTextAttributesKey = textAttributesKey;
     if (!Comparing.equal(old, textAttributesKey)) {
-      fireChanged(false, myForcedTextAttributes == null);
+      fireChanged(false, myForcedTextAttributes == null, myForcedTextAttributes == null);
     }
   }
 
@@ -176,7 +178,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
       myModel.treeFor(this).updateRenderedFlags(this);
     }
     if (!Comparing.equal(old, renderer)) {
-      fireChanged(true, false);
+      fireChanged(true, false, false);
     }
   }
 
@@ -190,7 +192,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     CustomHighlighterRenderer old = myCustomRenderer;
     myCustomRenderer = renderer;
     if (!Comparing.equal(old, renderer)) {
-      fireChanged(true, false);
+      fireChanged(true, false, false);
     }
   }
 
@@ -208,7 +210,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
       myModel.treeFor(this).updateRenderedFlags(this);
     }
     if (!Comparing.equal(old, renderer)) {
-      fireChanged(true, false);
+      fireChanged(true, false, false);
     }
   }
 
@@ -227,7 +229,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     Color old = myErrorStripeColor;
     myErrorStripeColor = color;
     if (!Comparing.equal(old, color)) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -242,7 +244,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     Object old = myErrorStripeTooltip;
     myErrorStripeTooltip = tooltipObject;
     if (!Comparing.equal(old, tooltipObject)) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -257,7 +259,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     boolean old = isThinErrorStripeMark();
     setFlag(ERROR_STRIPE_IS_THIN_MASK, value);
     if (old != value) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -271,7 +273,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     Color old = myLineSeparatorColor;
     myLineSeparatorColor = color;
     if (!Comparing.equal(old, color)) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -285,14 +287,14 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     SeparatorPlacement old = mySeparatorPlacement;
     mySeparatorPlacement = placement;
     if (!Comparing.equal(old, placement)) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
   @Override
   public void setEditorFilter(@NotNull MarkupEditorFilter filter) {
     myFilter = filter;
-    fireChanged(false, false);
+    fireChanged(false, false, false);
   }
 
   @Override
@@ -311,7 +313,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     boolean old = isAfterEndOfLine();
     setFlag(AFTER_END_OF_LINE_MASK, afterEndOfLine);
     if (old != afterEndOfLine) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -320,7 +322,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     boolean old = isGreedyToLeft();
     super.setGreedyToLeft(greedy);
     if (old != greedy) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -329,7 +331,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     boolean old = isGreedyToRight();
     super.setGreedyToRight(greedy);
     if (old != greedy) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
@@ -338,18 +340,19 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     boolean old = isStickingToRight();
     super.setStickingToRight(value);
     if (old != value) {
-      fireChanged(false, false);
+      fireChanged(false, false, false);
     }
   }
 
-  private void fireChanged(boolean renderersChanged, boolean fontStyleOrColorChanged) {
+  private void fireChanged(boolean renderersChanged, boolean fontStyleChanged, boolean foregroundColorChanged) {
     if (isFlagSet(IN_BATCH_CHANGE_MASK)) {
       setFlag(CHANGED_MASK, true);
       if (renderersChanged) setFlag(RENDERERS_CHANGED_MASK, true);
-      if (fontStyleOrColorChanged) setFlag(FONT_STYLE_OR_COLOR_CHANGED_MASK, true);
+      if (fontStyleChanged) setFlag(FONT_STYLE_CHANGED_MASK, true);
+      if (foregroundColorChanged) setFlag(FOREGROUND_COLOR_CHANGED_MASK, true);
     }
     else {
-      myModel.fireAttributesChanged(this, renderersChanged, fontStyleOrColorChanged);
+      myModel.fireAttributesChanged(this, renderersChanged, fontStyleChanged, foregroundColorChanged);
     }
   }
 
@@ -392,7 +395,8 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     assert !isFlagSet(CHANGED_MASK);
     setFlag(IN_BATCH_CHANGE_MASK, true);
     setFlag(RENDERERS_CHANGED_MASK, false);
-    setFlag(FONT_STYLE_OR_COLOR_CHANGED_MASK, false);
+    setFlag(FONT_STYLE_CHANGED_MASK, false);
+    setFlag(FOREGROUND_COLOR_CHANGED_MASK, false);
     byte result = 0;
     try {
       change.consume(this);
@@ -402,11 +406,13 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
       if (isFlagSet(CHANGED_MASK)) {
         result |= CHANGED_MASK;
         if (isFlagSet(RENDERERS_CHANGED_MASK)) result |= RENDERERS_CHANGED_MASK;
-        if (isFlagSet(FONT_STYLE_OR_COLOR_CHANGED_MASK)) result |= FONT_STYLE_OR_COLOR_CHANGED_MASK;
+        if (isFlagSet(FONT_STYLE_CHANGED_MASK)) result |= FONT_STYLE_CHANGED_MASK;
+        if (isFlagSet(FOREGROUND_COLOR_CHANGED_MASK)) result |= FOREGROUND_COLOR_CHANGED_MASK;
       }
       setFlag(CHANGED_MASK, false);
       setFlag(RENDERERS_CHANGED_MASK, false);
-      setFlag(FONT_STYLE_OR_COLOR_CHANGED_MASK, false);
+      setFlag(FONT_STYLE_CHANGED_MASK, false);
+      setFlag(FOREGROUND_COLOR_CHANGED_MASK, false);
     }
     return result;
   }
@@ -420,7 +426,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
     LineSeparatorRenderer old = myLineSeparatorRenderer;
     myLineSeparatorRenderer = renderer;
     if (!Comparing.equal(old, renderer)) {
-      fireChanged(true, false);
+      fireChanged(true, false, false);
     }
   }
 
@@ -449,6 +455,7 @@ class RangeHighlighterImpl extends RangeMarkerImpl implements RangeHighlighterEx
   }
 
   @Override
+  @NonNls
   public String toString() {
     return "RangeHighlighter: ("+getStartOffset()+","+getEndOffset()+"); layer:"+getLayer()+"; tooltip: "+getErrorStripeTooltip() + (isValid() ? "" : "(invalid)");
   }

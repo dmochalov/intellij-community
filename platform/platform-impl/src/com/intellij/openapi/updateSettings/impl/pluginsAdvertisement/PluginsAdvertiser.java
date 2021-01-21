@@ -119,11 +119,11 @@ public final class PluginsAdvertiser {
     BrowserUtil.browse(IdeUrlTrackingParametersProvider.getInstance().augmentUrl("https://www.jetbrains.com/idea/download/"));
   }
 
-  static void enablePlugins(Project project, final Collection<IdeaPluginDescriptor> disabledPlugins) {
-    PluginManagerConfigurable.showPluginConfigurableAndEnable(project, disabledPlugins.toArray(new IdeaPluginDescriptor[0]));
+  static void enablePlugins(Project project, final Collection<PluginId> disabledPlugins) {
+    PluginManagerConfigurableService.getInstance().showPluginConfigurableAndEnable(project, disabledPlugins.toArray(PluginId.EMPTY_ARRAY));
   }
 
-  static @Nullable List<String> hasBundledPluginToInstall(Collection<? extends Plugin> plugins) {
+  static @Nullable List<String> hasBundledPluginToInstall(Collection<Plugin> plugins) {
     if (PlatformUtils.isIdeaUltimate()) {
       return null;
     }
@@ -162,7 +162,7 @@ public final class PluginsAdvertiser {
           List<PluginNode> marketplacePlugins =  MarketplaceRequests.getInstance().loadLastCompatiblePluginDescriptors(ids);
           myCustomPlugins = RepositoryHelper.loadPluginsFromCustomRepositories(indicator);
 
-          myRepositoryPlugins = UpdateChecker.mergePluginsFromRepositories(marketplacePlugins, myCustomPlugins);
+          myRepositoryPlugins = UpdateChecker.mergePluginsFromRepositories(marketplacePlugins, myCustomPlugins, true);
 
           for (IdeaPluginDescriptor descriptor : PluginManagerCore.getPlugins()) {
             if (!descriptor.isEnabled() && pluginIds.contains(descriptor.getPluginId()) && PluginManagerCore.isCompatible(descriptor)) {
@@ -188,14 +188,17 @@ public final class PluginsAdvertiser {
 
         PluginsAdvertiserDialog advertiserDialog =
           new PluginsAdvertiserDialog(null, myPlugins.toArray(new PluginDownloader[0]), myCustomPlugins);
+        advertiserDialog.setFinishFunction(result -> {
+          if (result) {
+            onSuccess.run();
+          }
+          return null;
+        });
         if (showDialog) {
-          if (advertiserDialog.showAndGet()) {
-            onSuccess.run();
-          }
-        } else {
-          if (advertiserDialog.doInstallPlugins()) {
-            onSuccess.run();
-          }
+          advertiserDialog.showAndGet();
+        }
+        else {
+          advertiserDialog.doInstallPlugins();
         }
       }
     });
@@ -219,7 +222,7 @@ public final class PluginsAdvertiser {
 
     public @Nullable Set<Plugin> find(@NotNull String extension) {
       PluginSet pluginSet = myExtensions.get(extension);
-      return pluginSet != null ? pluginSet.myPlugins : null;
+      return pluginSet == null ? null : pluginSet.myPlugins;
     }
   }
 
@@ -230,25 +233,17 @@ public final class PluginsAdvertiser {
     @SuppressWarnings("unused")
     public PluginSet() { }
 
-    public PluginSet(Set<? extends Plugin> plugins) {
+    public PluginSet(Set<Plugin> plugins) {
       myPlugins.addAll(plugins);
     }
   }
 
   @Tag("plugin")
-  public static class Plugin implements Comparable<Plugin> {
+  public static final class Plugin implements Comparable<Plugin> {
     public String myPluginId;
     public String myPluginName;
     public boolean myBundled;
     public boolean myFromCustomRepository;
-
-    /**
-     * @deprecated Please use {@link #Plugin(String, String, boolean)}
-     */
-    @Deprecated
-    public Plugin(PluginId pluginId, String pluginName, boolean bundled) {
-      this(pluginId.getIdString(), pluginName, bundled);
-    }
 
     public Plugin(String pluginId, String pluginName, boolean bundled) {
       myPluginId = pluginId;

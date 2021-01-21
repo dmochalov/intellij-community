@@ -79,7 +79,7 @@ class IdeaDecompiler : ClassFileDecompilers.Light() {
 
     override fun beforeFileOpened(source: FileEditorManager, file: VirtualFile) {
       if (myShowNotice && file.fileType === JavaClassFileType.INSTANCE) {
-        val decompiler = ClassFileDecompilers.getInstance().find(file)
+        val decompiler = ClassFileDecompilers.getInstance().find(file, ClassFileDecompilers.Light::class.java)
         if (decompiler is IdeaDecompiler) {
           TASK_KEY.set(file, ApplicationManager.getApplication().executeOnPooledThread(Callable { decompiler.decompile(file) }))
 
@@ -178,7 +178,7 @@ class IdeaDecompiler : ClassFileDecompilers.Light() {
         throw AssertionError(file.url, e)
       }
       else {
-        throw CannotDecompileException(e)
+        throw CannotDecompileException(file.url, e)
       }
     }
   }

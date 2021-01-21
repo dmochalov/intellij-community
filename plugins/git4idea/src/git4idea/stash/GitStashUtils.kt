@@ -14,7 +14,10 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.CollectConsumer
 import com.intellij.util.Consumer
 import com.intellij.vcs.log.Hash
+import com.intellij.vcs.log.impl.HashImpl
 import git4idea.GitCommit
+import git4idea.GitNotificationIdsHolder.Companion.STASH_LOCAL_CHANGES_DETECTED
+import git4idea.GitNotificationIdsHolder.Companion.UNSTASH_FAILED
 import git4idea.GitUtil
 import git4idea.commands.*
 import git4idea.config.GitConfigUtil
@@ -22,13 +25,14 @@ import git4idea.history.GitCommitRequirements
 import git4idea.history.GitCommitRequirements.DiffInMergeCommits.DIFF_TO_PARENTS
 import git4idea.history.GitCommitRequirements.DiffRenameLimit.NO_RENAMES
 import git4idea.history.GitLogUtil
+import git4idea.i18n.GitBundle
 import git4idea.merge.GitConflictResolver
 import git4idea.ui.StashInfo
 import git4idea.util.GitUntrackedFilesHelper
 import git4idea.util.LocalChangesWouldBeOverwrittenHelper
 import java.nio.charset.Charset
 
-private val LOG : Logger = Logger.getInstance("#git4idea.stash.GitStashUtils")
+private val LOG: Logger = Logger.getInstance("#git4idea.stash.GitStashUtils")
 
 /**
  * Unstash the given roots one by one, handling common error scenarios.
@@ -39,8 +43,8 @@ private val LOG : Logger = Logger.getInstance("#git4idea.stash.GitStashUtils")
 fun unstash(project: Project,
             rootAndRevisions: Map<VirtualFile, Hash?>,
             handlerProvider: (VirtualFile) -> GitLineHandler,
-            conflictResolver: GitConflictResolver) {
-  DvcsUtil.workingTreeChangeStarted(project, "Unstash").use {
+            conflictResolver: GitConflictResolver): Boolean {
+  DvcsUtil.workingTreeChangeStarted(project, GitBundle.message("activity.name.unstash")).use {
     for ((root, hash) in rootAndRevisions) {
       val handler = handlerProvider(root)
 
@@ -54,37 +58,43 @@ fun unstash(project: Project,
       val result = Git.getInstance().runCommand { handler }
 
       val changesInStash = hash?.run { loadChangesInStash(project, root, hash) }
-      GitUtil.refreshVfs(root, changesInStash)
+      GitUtil.refreshVfs(root, changesInStash?.flatten())
 
       if (conflictDetector.hasHappened()) {
         val conflictsResolved = conflictResolver.merge()
-        if (!conflictsResolved) return
+        if (!conflictsResolved) return false
       }
       else if (untrackedFilesDetector.wasMessageDetected()) {
-        GitUntrackedFilesHelper.notifyUntrackedFilesOverwrittenBy(project, root, untrackedFilesDetector.relativeFilePaths, "unstash", null)
-        return
+        GitUntrackedFilesHelper.notifyUntrackedFilesOverwrittenBy(project, root, untrackedFilesDetector.relativeFilePaths,
+                                                                  GitBundle.message("unstash.operation.name"), null)
+        return false
       }
       else if (localChangesDetector.wasMessageDetected()) {
-        LocalChangesWouldBeOverwrittenHelper.showErrorNotification(project, root, "unstash", localChangesDetector.relativeFilePaths)
-        return
+        LocalChangesWouldBeOverwrittenHelper.showErrorNotification(project, STASH_LOCAL_CHANGES_DETECTED, root,
+                                                                   GitBundle.message("unstash.operation.name"),
+                                                                   localChangesDetector.relativeFilePaths)
+        return false
       }
       else if (!result.success()) {
-        VcsNotifier.getInstance(project).notifyError("Unstash Failed", result.errorOutputAsHtmlString, true)
-        return
+        VcsNotifier.getInstance(project).notifyError(UNSTASH_FAILED, GitBundle.message("notification.title.unstash.failed"),
+                                                     result.errorOutputAsHtmlString, true)
+        return false
       }
     }
   }
+  return true
 }
 
-private fun loadChangesInStash(project: Project, root: VirtualFile, hash: Hash): Collection<Change>? {
+private fun loadChangesInStash(project: Project, root: VirtualFile, hash: Hash): List<Collection<Change>>? {
   return try {
     val consumer = CollectConsumer<GitCommit>()
     GitLogUtil.readFullDetailsForHashes(project, root, listOf(hash.asString()),
                                         GitCommitRequirements(false, NO_RENAMES, DIFF_TO_PARENTS), consumer)
-    return consumer.result.first().changes
+    val stashCommit = consumer.result.first()
+    return (0 until stashCommit.parents.size).map { stashCommit.getChanges(it) }
   }
   catch (e: Exception) {
-    LOG.warn("Couldn't load changes in root [$root] in stash resolved to [$hash]" , e)
+    LOG.warn("Couldn't load changes in root [$root] in stash resolved to [$hash]", e)
     null
   }
 }
@@ -102,23 +112,38 @@ fun loadStashStack(project: Project, root: VirtualFile): List<StashInfo> {
 
   val h = GitLineHandler(project, root, GitCommand.STASH.readLockingCommand())
   h.setSilent(true)
-  h.addParameters("list")
+  h.addParameters("list", "--pretty=format:%H:%gd:%s")
   h.charset = charset
   val output = Git.getInstance().runCommand(h)
   output.throwOnError()
 
   val result = mutableListOf<StashInfo>()
   for (line in output.output) {
-    val parts = line.split(':', limit = 3);
-    if (parts.size < 2) {
-      logger<GitUtil>().error("Can't parse stash record: ${line}")
-    }
-    else if (parts.size == 2) {
-      result.add(StashInfo(parts[0], null, parts[1].trim()))
-    }
-    else {
-      result.add(StashInfo(parts[0], parts[1].trim(), parts[2].trim()))
+    val parts = line.split(':', limit = 4)
+    when {
+      parts.size < 3 -> {
+        logger<GitUtil>().error("Can't parse stash record: ${line}")
+      }
+      parts.size == 3 -> {
+        result.add(StashInfo(root, HashImpl.build(parts[0]), parts[1], null, parts[2].trim()))
+      }
+      else -> {
+        result.add(StashInfo(root, HashImpl.build(parts[0]), parts[1], parts[2].trim(), parts[3].trim()))
+      }
     }
   }
   return result
+}
+
+fun createStashHandler(project: Project, root: VirtualFile, keepIndex: Boolean = false, message: String = ""): GitLineHandler {
+  val handler = GitLineHandler(project, root, GitCommand.STASH)
+  handler.addParameters("save")
+  if (keepIndex) {
+    handler.addParameters("--keep-index")
+  }
+  val msg = message.trim()
+  if (msg.isNotEmpty()) {
+    handler.addParameters(msg)
+  }
+  return handler
 }

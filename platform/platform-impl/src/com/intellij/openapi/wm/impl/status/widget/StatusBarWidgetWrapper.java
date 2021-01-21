@@ -2,7 +2,9 @@
 package com.intellij.openapi.wm.impl.status.widget;
 
 import com.intellij.ide.HelpTooltipManager;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.ListPopup;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
@@ -10,7 +12,7 @@ import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.openapi.wm.impl.status.TextPanel;
 import com.intellij.ui.ClickListener;
 import com.intellij.ui.awt.RelativePoint;
-import com.intellij.ui.popup.util.PopupState;
+import com.intellij.ui.popup.PopupState;
 import com.intellij.util.Consumer;
 import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
@@ -43,7 +45,7 @@ public interface StatusBarWidgetWrapper {
 
   void beforeUpdate();
 
-  default void setWidgetTooltip(JComponent widgetComponent, @Nullable String toolTipText, @Nullable String shortcutText) {
+  default void setWidgetTooltip(JComponent widgetComponent, @NlsContexts.Tooltip @Nullable String toolTipText, @Nullable String shortcutText) {
     widgetComponent.setToolTipText(toolTipText);
     if (Registry.is("ide.helptooltip.enabled")) {
       widgetComponent.putClientProperty(HelpTooltipManager.SHORTCUT_PROPERTY, shortcutText);
@@ -59,7 +61,7 @@ public interface StatusBarWidgetWrapper {
       setTextAlignment(Component.CENTER_ALIGNMENT);
       setBorder(StatusBarWidget.WidgetBorder.WIDE);
       new ClickListener() {
-        private final PopupState myPopupState = new PopupState();
+        private final PopupState<JBPopup> myPopupState = PopupState.forPopup();
 
         @Override
         public boolean onClick(@NotNull MouseEvent e, int clickCount) {
@@ -68,7 +70,7 @@ public interface StatusBarWidgetWrapper {
           if (popup == null) return false;
           final Dimension dimension = popup.getContent().getPreferredSize();
           final Point at = new Point(0, -dimension.height);
-          popup.addListener(myPopupState);
+          myPopupState.prepareToShow(popup);
           popup.show(new RelativePoint(e.getComponent(), at));
           return true;
         }

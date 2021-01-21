@@ -3,7 +3,6 @@ package com.siyeh.ig.fixes.style;
 
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.testFramework.builders.JavaModuleFixtureBuilder;
-import com.siyeh.InspectionGadgetsBundle;
 import com.siyeh.ig.IGQuickFixesTestCase;
 import com.siyeh.ig.style.CStyleArrayDeclarationInspection;
 
@@ -15,7 +14,7 @@ public class CStyleArrayDeclarationFixTest extends IGQuickFixesTestCase {
   @Override
   protected void tuneFixture(JavaModuleFixtureBuilder builder) throws Exception {
     super.tuneFixture(builder);
-    builder.setLanguageLevel(LanguageLevel.JDK_14_PREVIEW);
+    builder.setLanguageLevel(LanguageLevel.JDK_15_PREVIEW);
   }
 
   public void testMethod() { doTest(); }

@@ -17,6 +17,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiElement;
@@ -54,14 +55,6 @@ public final class HighlightUtils {
 
   /**
    * @deprecated Intention can be invoked on a non EDT thread with a mock editor, so usages highlighting in the selected editor is incorrect.
-   * Please use {@link #highlightElement(PsiElement, Editor)} instead.
-   */
-  public static void highlightElement(@NotNull PsiElement element, String statusBarText) {
-    highlightElements(Collections.singleton(element), statusBarText);
-  }
-
-  /**
-   * @deprecated Intention can be invoked on a non EDT thread with a mock editor, so usages highlighting in the selected editor is incorrect.
    * Please use {@link #highlightElements(Collection, Editor)} instead.
    */
   public static void highlightElements(@NotNull final Collection<? extends PsiElement> elementCollection) {
@@ -73,7 +66,7 @@ public final class HighlightUtils {
    * Please use {@link #highlightElements(Collection, String, Editor)} instead.
    */
   @Deprecated
-  public static void highlightElements(@NotNull final Collection<? extends PsiElement> elementCollection, String statusBarText) {
+  public static void highlightElements(@NotNull final Collection<? extends PsiElement> elementCollection, @NlsContexts.StatusBarText String statusBarText) {
     if (elementCollection.isEmpty()) {
       return;
     }
@@ -85,7 +78,7 @@ public final class HighlightUtils {
   }
 
   public static void highlightElements(@NotNull final Collection<? extends PsiElement> elementCollection,
-                                       String statusBarText,
+                                       @NlsContexts.StatusBarText String statusBarText,
                                        @Nullable Editor editor) {
     if (elementCollection.isEmpty()) {
       return;

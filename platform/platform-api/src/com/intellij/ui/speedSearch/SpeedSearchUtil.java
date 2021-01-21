@@ -15,14 +15,17 @@
  */
 package com.intellij.ui.speedSearch;
 
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
+import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.util.text.Matcher;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -45,6 +48,12 @@ public final class SpeedSearchUtil {
     // The bad thing is that SpeedSearch model is decoupled from UI presentation so we don't know the real matched text.
     // Our best guess is to get string from the ColoredComponent. We can only provide main-text-only option.
     Iterable<TextRange> ranges = speedSearch == null ? null : speedSearch.matchingFragments(coloredComponent.getCharSequence(mainTextOnly).toString());
+    applySpeedSearchHighlighting(coloredComponent, ranges, selected);
+  }
+
+  public static void applySpeedSearchHighlighting(@NotNull SimpleColoredComponent coloredComponent,
+                                                  Iterable<TextRange> ranges,
+                                                  boolean selected) {
     Iterator<TextRange> rangesIterator = ranges != null ? ranges.iterator() : null;
     if (rangesIterator == null || !rangesIterator.hasNext()) return;
     Color bg = UIUtil.getTreeBackground(selected, true);
@@ -81,7 +90,7 @@ public final class SpeedSearchUtil {
   }
 
   public static void appendFragmentsForSpeedSearch(@NotNull JComponent speedSearchEnabledComponent,
-                                                   @NotNull String text,
+                                                   @NotNull @NlsContexts.Label String text,
                                                    @NotNull SimpleTextAttributes attributes,
                                                    boolean selected,
                                                    @NotNull SimpleColoredComponent simpleColoredComponent) {
@@ -96,7 +105,7 @@ public final class SpeedSearchUtil {
     simpleColoredComponent.append(text, attributes);
   }
 
-  public static void appendColoredFragmentForMatcher(@NotNull String text,
+  public static void appendColoredFragmentForMatcher(@NotNull @NlsContexts.Label String text,
                                                      SimpleColoredComponent component,
                                                      @NotNull final SimpleTextAttributes attributes,
                                                      @Nullable Matcher matcher,
@@ -122,7 +131,7 @@ public final class SpeedSearchUtil {
   }
 
   public static void appendSpeedSearchColoredFragments(@NotNull SimpleColoredComponent simpleColoredComponent,
-                                                       @NotNull String text,
+                                                       @NotNull @NlsContexts.Label String text,
                                                        @NotNull Iterable<? extends TextRange> colored,
                                                        @NotNull SimpleTextAttributes attributes,
                                                        boolean selected) {
@@ -135,7 +144,7 @@ public final class SpeedSearchUtil {
   }
 
   public static void appendColoredFragments(final SimpleColoredComponent simpleColoredComponent,
-                                            final String text,
+                                            final @Nls String text,
                                             Iterable<? extends TextRange> colored,
                                             final SimpleTextAttributes plain, final SimpleTextAttributes highlighted) {
     final List<Pair<String, Integer>> searchTerms = new ArrayList<>();
@@ -155,6 +164,13 @@ public final class SpeedSearchUtil {
 
     if (lastOffset < text.length()) {
       simpleColoredComponent.append(text.substring(lastOffset), plain);
+    }
+  }
+
+  public static void applySpeedSearchHighlightingFiltered(JTree tree, Object value, ColoredTreeCellRenderer coloredTreeCellRenderer, boolean b, boolean selected) {
+    SpeedSearchSupply speedSearch = SpeedSearchSupply.getSupply(tree);
+    if (speedSearch != null && !speedSearch.isObjectFilteredOut(value)){
+      applySpeedSearchHighlighting(tree, coloredTreeCellRenderer, b, selected);
     }
   }
 }

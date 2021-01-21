@@ -34,6 +34,7 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 import static com.intellij.openapi.progress.ProgressManager.checkCanceled;
+import static com.intellij.openapi.project.ProjectUtil.isProjectOrWorkspaceFile;
 import static com.intellij.openapi.vfs.VFileProperty.SYMLINK;
 import static com.intellij.ui.tree.TreePathUtil.pathToCustomNode;
 import static java.util.Collections.emptyList;
@@ -53,7 +54,12 @@ public final class ProjectFileTreeModel extends BaseTreeModel<ProjectFileNode> i
         SmartHashSet<Node> nodes = fromRoot || filtered ? null : new SmartHashSet<>();
         root.children.forEach(child -> child.invalidateChildren(node -> {
           if (!updatedFiles.contains(node.file)) return true;
-          if (filtered) node.resetParentVisibility();
+          if (filtered) {
+            node.resetVisibility(); // because of moving within the same root
+            for (Node parent = node.parent; parent != null; parent = parent.parent) {
+              parent.visibility = null;
+            }
+          }
           if (nodes == null) return false;
           Node n = node.file.isDirectory() ? node : node.parent;
           if (n == null) return false;
@@ -75,6 +81,10 @@ public final class ProjectFileTreeModel extends BaseTreeModel<ProjectFileNode> i
         }
       }
     };
+  }
+
+  public @NotNull ProjectFileNodeUpdater getUpdater() {
+    return updater;
   }
 
   @NotNull
@@ -214,12 +224,6 @@ public final class ProjectFileTreeModel extends BaseTreeModel<ProjectFileNode> i
       children.forEach(Node::resetVisibility);
     }
 
-    final void resetParentVisibility() {
-      for (Node node = parent; node != null; node = node.parent) {
-        node.visibility = null;
-      }
-    }
-
     @SuppressWarnings("SameParameterValue")
     final <N> N findParent(Class<N> type) {
       for (Node node = this; node != null; node = node.parent) {
@@ -241,7 +245,7 @@ public final class ProjectFileTreeModel extends BaseTreeModel<ProjectFileNode> i
     }
 
     boolean isExcluded(@NotNull VirtualFile file) {
-      return !showExcludedFiles && ProjectFileIndex.getInstance(project).isExcluded(file);
+      return !showExcludedFiles && (ProjectFileIndex.getInstance(project).isExcluded(file) || isProjectOrWorkspaceFile(file));
     }
 
     @Override

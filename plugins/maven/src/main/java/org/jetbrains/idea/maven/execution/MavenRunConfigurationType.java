@@ -14,6 +14,7 @@ import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -84,19 +85,20 @@ public final class MavenRunConfigurationType implements ConfigurationType {
     return "MavenRunConfiguration";
   }
 
-  public static String generateName(Project project, MavenRunnerParameters runnerParameters) {
+  public static @NlsSafe String generateName(Project project, MavenRunnerParameters runnerParameters) {
     StringBuilder stringBuilder = new StringBuilder();
 
     final String name = getMavenProjectName(project, runnerParameters);
     if (!StringUtil.isEmptyOrSpaces(name)) {
       stringBuilder.append(name);
-      stringBuilder.append(" ");
     }
 
-    stringBuilder.append("[");
-    listGoals(stringBuilder, runnerParameters.getGoals());
-    stringBuilder.append("]");
-
+    List<String> goals = runnerParameters.getGoals();
+    if (!goals.isEmpty()) {
+      stringBuilder.append(" [");
+      listGoals(stringBuilder, goals);
+      stringBuilder.append("]");
+    }
     return stringBuilder.toString();
   }
 
@@ -177,7 +179,7 @@ public final class MavenRunConfigurationType implements ConfigurationType {
       runner.execute(environment);
     }
     catch (ExecutionException e) {
-      MavenUtil.showError(project, "Failed to execute Maven goal", e);
+      MavenUtil.showError(project, RunnerBundle.message("notification.title.failed.to.execute.maven.goal"), e);
     }
   }
 
@@ -259,6 +261,11 @@ public final class MavenRunConfigurationType implements ConfigurationType {
       if (providerID == CompileStepBeforeRun.ID || providerID == CompileStepBeforeRunNoErrorCheck.ID) {
         task.setEnabled(false);
       }
+    }
+
+    @Override
+    public boolean isEditableInDumbMode() {
+      return true;
     }
   }
 }

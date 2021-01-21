@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.intention;
 
 import com.intellij.codeInsight.daemon.QuickFixActionRegistrar;
@@ -6,7 +6,7 @@ import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.LocalQuickFixOnPsiElement;
 import com.intellij.lang.jvm.actions.JvmElementActionsFactory;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.pom.java.LanguageLevel;
@@ -24,7 +24,7 @@ import java.util.Set;
 
 public abstract class QuickFixFactory {
   public static QuickFixFactory getInstance() {
-    return ServiceManager.getService(QuickFixFactory.class);
+    return ApplicationManager.getApplication().getService(QuickFixFactory.class);
   }
 
   /**
@@ -463,7 +463,7 @@ public abstract class QuickFixFactory {
 
   @NotNull
   public abstract IntentionAction createWrapSwitchRuleStatementsIntoBlockFix(@NotNull PsiSwitchLabeledRuleStatement rule);
-  
+
   @NotNull
   public abstract IntentionAction createAddParameterListFix(@NotNull PsiMethod method);
 
@@ -485,4 +485,18 @@ public abstract class QuickFixFactory {
    */
   @NotNull
   public abstract IntentionAction createAddToPermitsListFix(@NotNull PsiClass subClass, @NotNull PsiClass superClass);
+
+  public abstract IntentionAction createMoveClassToPackageFix(@NotNull PsiClass classToMove, @NotNull String packageName);
+
+  /**
+   * Provides fixes to make class extend sealed class and
+   * possibly mark extending class with one of sealed subclass modifiers (final, sealed, non-sealed)
+   *
+   * @param subclassRef reference in permits list of a parent class
+   * @return
+   */
+  public abstract @NotNull List<IntentionAction> createExtendSealedClassFixes(@NotNull PsiJavaCodeReferenceElement subclassRef,
+                                                                            @NotNull PsiClass parentClass, @NotNull PsiClass subClass);
+
+  public abstract @NotNull IntentionAction createSealClassFromPermitsListFix(@NotNull PsiClass classFromPermitsList);
 }

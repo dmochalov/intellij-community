@@ -86,13 +86,6 @@ public class Alarm implements Disposable {
      * @see Application#executeOnPooledThread(Callable)
      */
     POOLED_THREAD,
-
-    /**
-     * @deprecated Use {@link #POOLED_THREAD} instead
-     */
-    @Deprecated
-    @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
-    OWN_THREAD
   }
 
   /**
@@ -115,7 +108,7 @@ public class Alarm implements Disposable {
 
   public Alarm(@NotNull ThreadToUse threadToUse, @Nullable Disposable parentDisposable) {
     myThreadToUse = threadToUse;
-    if (threadToUse == ThreadToUse.OWN_THREAD || threadToUse == ThreadToUse.SHARED_THREAD) {
+    if (threadToUse == ThreadToUse.SHARED_THREAD) {
       DeprecatedMethodException.report("Please use POOLED_THREAD instead");
     }
 
@@ -295,6 +288,8 @@ public class Alarm implements Disposable {
    */
   @TestOnly
   public void waitForAllExecuted(long timeout, @NotNull TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+    assert ApplicationManager.getApplication().isUnitTestMode();
+
     List<Request> requests;
     synchronized (LOCK) {
       requests = new ArrayList<>(myRequests);
@@ -306,7 +301,11 @@ public class Alarm implements Disposable {
         future = request.myFuture;
       }
       if (future != null) {
-        future.get(timeout, unit);
+        try {
+          future.get(timeout, unit);
+        }
+        catch (CancellationException ignored) {
+        }
       }
     }
   }
@@ -363,10 +362,12 @@ public class Alarm implements Disposable {
     private void runSafely(@Nullable Runnable task) {
       try {
         if (!myDisposed && task != null) {
-          if(ClientId.Companion.getPropagateAcrossThreads())
+          if (ClientId.Companion.getPropagateAcrossThreads()) {
             ClientId.withClientId(myClientId, () -> QueueProcessor.runSafely(task));
-          else
+          }
+          else {
             QueueProcessor.runSafely(task);
+          }
         }
       }
       finally {

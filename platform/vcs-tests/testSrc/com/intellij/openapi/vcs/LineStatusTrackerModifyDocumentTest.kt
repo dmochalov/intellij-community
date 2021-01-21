@@ -1,20 +1,7 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs
 
+import com.intellij.openapi.vcs.LineStatusTrackerTestUtil.parseInput
 import com.intellij.openapi.vcs.ex.Range
 
 class LineStatusTrackerModifyDocumentTest : BaseLineStatusTrackerTestCase() {
@@ -794,7 +781,7 @@ class LineStatusTrackerModifyDocumentTest : BaseLineStatusTrackerTestCase() {
       tracker.doFrozen(Runnable {
         assertNull(tracker.getRanges())
 
-        tracker.setBaseRevision(parseInput("X_X_X_Z_Z"))
+        simpleTracker.setBaseRevision(parseInput("X_X_X_Z_Z"))
 
         runCommandVerify {
           document.setText(parseInput("Y_X_X_X_X_Z_Z"))
@@ -810,7 +797,7 @@ class LineStatusTrackerModifyDocumentTest : BaseLineStatusTrackerTestCase() {
   fun testFreeze5() {
     test("__", "") {
       tracker.doFrozen(Runnable {
-        tracker.setBaseRevision(parseInput(" 23"))
+        simpleTracker.setBaseRevision(parseInput(" 23"))
       })
 
       assertRanges(Range(0, 3, 0, 1))
@@ -823,6 +810,55 @@ class LineStatusTrackerModifyDocumentTest : BaseLineStatusTrackerTestCase() {
       (7 th "X_").delete()
       assertTextContentIs("X_X_X_X_X_X_X_X")
       assertRangesEmpty()
+    }
+  }
+
+  fun testSuboptimalBaseRevisionUpdate() {
+    val javadoc = """
+      /**
+       * Javadoc
+       */_
+    """.trimIndent()
+
+    val methodBody = """
+      public static void main(String[] args) {
+          System.out.println("Hello");
+          System.out.println("World");
+      }_
+    """.trimIndent()
+
+    val suffix = """
+      tracker.doFrozen(Runnable {
+        simpleTracker.setBaseRevision(parseInput(" 23"))
+      })_
+    """.trimIndent()
+
+    test(javadoc + methodBody + "_" + suffix) {
+      (1 th "}_").insertAfter("_" + methodBody)
+      ("Javadoc").insertAfter(" with modification")
+
+      tracker.doFrozen(Runnable {
+        simpleTracker.setBaseRevision(parseInput(javadoc + methodBody + "_" + methodBody + "_" + suffix))
+      })
+
+      assertRanges(Range(1, 2, 1, 2))
+    }
+
+    testPartial(javadoc + methodBody + "_" + suffix) {
+      (1 th "}_").insertAfter("_" + methodBody)
+      ("Javadoc").insertAfter(" with modification")
+
+      createChangelist("Test")
+      range(1).moveTo("Test")
+
+      tracker.doFrozen(Runnable {
+        partialTracker.setBaseRevision(parseInput(javadoc + methodBody + "_" + methodBody + "_" + suffix))
+      })
+
+      // we could not merge misaligned compensating addition and deletion because they belong to different changelists
+      assertRanges(Range(1, 2, 1, 2),
+                   Range(3, 3, 3, 8),
+                   Range(7, 12, 12, 12))
     }
   }
 }

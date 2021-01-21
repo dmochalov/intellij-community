@@ -10,6 +10,8 @@ import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.util.ProgressWindow;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.AsyncFileListener;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -17,25 +19,20 @@ import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.ex.VirtualFileManagerEx;
 import com.intellij.openapi.vfs.impl.local.LocalFileSystemImpl;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
-import com.intellij.openapi.vfs.newvfs.persistent.RefreshWorker;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 final class RefreshSessionImpl extends RefreshSession {
   private static final Logger LOG = Logger.getInstance(RefreshSession.class);
 
-  private static final int REFRESH_SESSION_DURATION_REPORT_THRESHOLD_SECONDS =
-    SystemProperties.getIntProperty("refresh.session.duration.report.threshold.seconds", -1);
+  private static final long DURATION_REPORT_THRESHOLD_MS =
+    SystemProperties.getIntProperty("refresh.session.duration.report.threshold.seconds", -1) * 1_000L;
 
   private static final AtomicLong ID_COUNTER = new AtomicLong(0);
 
@@ -67,8 +64,8 @@ final class RefreshSessionImpl extends RefreshSession {
     return trace ? new Throwable() : null;
   }
 
-  RefreshSessionImpl(@NotNull List<? extends VFileEvent> events) {
-    this(false, false, null, ModalityState.defaultModalityState());
+  RefreshSessionImpl(boolean async, @NotNull List<? extends VFileEvent> events) {
+    this(async, false, null, ModalityState.defaultModalityState());
     myEvents.addAll(events);
   }
 
@@ -129,8 +126,14 @@ final class RefreshSessionImpl extends RefreshSession {
       }
 
       if (LOG.isTraceEnabled()) LOG.trace("scanning " + workQueue);
+
       long t = System.currentTimeMillis();
-      PerformanceWatcher.Snapshot snapshot = PerformanceWatcher.takeSnapshot();
+      PerformanceWatcher.Snapshot snapshot = null;
+      Map<String, Integer> types = null;
+      if (DURATION_REPORT_THRESHOLD_MS > 0) {
+        snapshot = PerformanceWatcher.takeSnapshot();
+        types = new HashMap<>();
+      }
 
       int count = 0;
       refresh: do {
@@ -151,6 +154,11 @@ final class RefreshSessionImpl extends RefreshSession {
           myWorker = worker;
           worker.scan();
           myEvents.addAll(worker.getEvents());
+
+          if (types != null) {
+            String type = !file.isDirectory() ? "file" : file.getFileSystem() instanceof ArchiveFileSystem ? "arc" : "dir";
+            types.put(type, types.getOrDefault(type, 0) + 1);
+          }
         }
 
         count++;
@@ -162,14 +170,10 @@ final class RefreshSessionImpl extends RefreshSession {
       if (LOG.isTraceEnabled()) {
         LOG.trace((myCancelled ? "cancelled, " : "done, ") + t + " ms, tries " + count + ", events " + myEvents);
       }
-      else if (REFRESH_SESSION_DURATION_REPORT_THRESHOLD_SECONDS > 0 && t > REFRESH_SESSION_DURATION_REPORT_THRESHOLD_SECONDS * 1000L) {
+      else if (snapshot != null && t > DURATION_REPORT_THRESHOLD_MS) {
         snapshot.logResponsivenessSinceCreation(String.format(
-          "Refresh session (queue size: %s, file types: %s, result: %s, tries: %s, events: %d)",
-          workQueue.size(),
-          workQueue.stream().collect(Collectors.groupingBy(f -> f.isDirectory() ? "dir" : String.valueOf(f.getExtension()), Collectors.counting())),
-          myCancelled ? "cancelled" : "done",
-          count,
-          myEvents.size()));
+          "Refresh session (queue size: %s, scanned: %s, result: %s, tries: %s, events: %d)",
+          workQueue.size(), types, myCancelled ? "cancelled" : "done", count, myEvents.size()));
       }
     }
 
@@ -193,7 +197,17 @@ final class RefreshSessionImpl extends RefreshSession {
         WriteAction.run(() -> {
           app.runWriteActionWithNonCancellableProgressInDispatchThread(IdeBundle.message("progress.title.file.system.synchronization"), null, null, indicator -> {
             indicator.setText(IdeBundle.message("progress.text.processing.detected.file.changes", events.size()));
+            int progressThresholdMillis = 5_000;
+            ((ProgressWindow) indicator).setDelayInMillis(progressThresholdMillis);
+            long start = System.currentTimeMillis();
+
             fireEventsInWriteAction(events, appliers);
+
+            long elapsed = System.currentTimeMillis() - start;
+            if (elapsed > progressThresholdMillis) {
+              LOG.warn("Long VFS change processing (" + elapsed + "ms, " + events.size() + " events): " +
+                       StringUtil.trimLog(events.toString(), 10_000));
+            }
           });
         });
       }

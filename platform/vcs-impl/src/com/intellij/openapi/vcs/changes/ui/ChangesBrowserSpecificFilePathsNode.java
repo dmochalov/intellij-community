@@ -3,15 +3,15 @@ package com.intellij.openapi.vcs.changes.ui;
 
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.FilePath;
+import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.ui.SimpleTextAttributes;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
-import java.util.List;
 
 import static com.intellij.util.containers.ContainerUtil.count;
 
-public class ChangesBrowserSpecificFilePathsNode<T> extends ChangesBrowserNode<T> {
+public abstract class ChangesBrowserSpecificFilePathsNode<T> extends ChangesBrowserNode<T> {
   protected final boolean myIsMany;
   @NotNull protected final Runnable myDialogShower;
   private final int myManyFileCount;
@@ -22,7 +22,7 @@ public class ChangesBrowserSpecificFilePathsNode<T> extends ChangesBrowserNode<T
     // if files presented in the same view recalculate number of dirs and files -> provide -1; otherwise use from model
     myManyDirectoryCount = count(files, it -> it.isDirectory());
     myManyFileCount = files.size() - myManyDirectoryCount;
-    myIsMany = files.size() > Registry.intValue("vcs.unversioned.files.max.intree", 1000);
+    myIsMany = isManyFiles(files);
     myDialogShower = shower;
   }
 
@@ -31,7 +31,7 @@ public class ChangesBrowserSpecificFilePathsNode<T> extends ChangesBrowserNode<T
     super.render(renderer, selected, expanded, hasFocus);
     if (isManyFiles()) {
       renderer.append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
-      renderer.append("browse", SimpleTextAttributes.LINK_ATTRIBUTES, myDialogShower);
+      renderer.append(VcsBundle.message("changes.browse"), SimpleTextAttributes.LINK_ATTRIBUTES, myDialogShower);
     }
   }
 
@@ -47,5 +47,9 @@ public class ChangesBrowserSpecificFilePathsNode<T> extends ChangesBrowserNode<T
 
   public boolean isManyFiles() {
     return myIsMany;
+  }
+
+  public static boolean isManyFiles(@NotNull Collection<?> files) {
+    return files.size() > Registry.intValue("vcs.unversioned.files.max.intree", 1000);
   }
 }

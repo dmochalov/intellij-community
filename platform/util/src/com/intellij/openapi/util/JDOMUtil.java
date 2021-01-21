@@ -4,6 +4,7 @@ package com.intellij.openapi.util;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.util.io.URLUtil;
 import com.intellij.util.text.CharArrayUtil;
@@ -13,10 +14,7 @@ import org.jdom.*;
 import org.jdom.filter.Filter;
 import org.jdom.output.Format;
 import org.jdom.output.XMLOutputter;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -33,10 +31,10 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 public final class JDOMUtil {
-  private static final String X = "x";
-  private static final String Y = "y";
-  private static final String WIDTH = "width";
-  private static final String HEIGHT = "height";
+  private static final @NonNls String X = "x";
+  private static final @NonNls String Y = "y";
+  private static final @NonNls String WIDTH = "width";
+  private static final @NonNls String HEIGHT = "height";
 
   //xpointer($1)
   public static final Pattern XPOINTER_PATTERN = Pattern.compile("xpointer\\((.*)\\)");
@@ -50,7 +48,8 @@ public final class JDOMUtil {
   private static volatile XMLInputFactory XML_INPUT_FACTORY;
 
   // do not use AtomicNotNullLazyValue to reduce class loading
-  private static XMLInputFactory getXmlInputFactory() {
+  @ApiStatus.Internal
+  public static XMLInputFactory getXmlInputFactory() {
     XMLInputFactory factory = XML_INPUT_FACTORY;
     if (factory != null) {
       return factory;
@@ -77,7 +76,8 @@ public final class JDOMUtil {
         }
       }
 
-      if (!SystemInfo.isIbmJvm) {
+      // avoid loading of SystemInfo class
+      if (Strings.indexOfIgnoreCase(System.getProperty("java.vm.vendor", ""), "IBM", 0) < 0) {
         try {
           factory.setProperty("http://java.sun.com/xml/stream/properties/report-cdata-event", true);
         }
@@ -178,7 +178,7 @@ public final class JDOMUtil {
     return result;
   }
 
-  private static void appendLegalized(@NotNull StringBuilder sb, char each) {
+  private static void appendLegalized(@NotNull @NonNls StringBuilder sb, char each) {
     if (each == '<' || each == '>') {
       sb.append(each == '<' ? "&lt;" : "&gt;");
     }
@@ -296,16 +296,6 @@ public final class JDOMUtil {
     }
   }
 
-  /**
-   * @deprecated Use {@link #load(CharSequence)}
-   * <p>
-   * Direct usage of element allows to get rid of {@link Document#getRootElement()} because only Element is required in mostly all cases.
-   */
-  @Deprecated
-  public static @NotNull Document loadDocument(@NotNull CharSequence seq) throws IOException, JDOMException {
-    return loadDocument(new CharSequenceReader(seq));
-  }
-
   public static @NotNull Element load(@NotNull CharSequence seq) throws IOException, JDOMException {
     return load(new CharSequenceReader(seq));
   }
@@ -403,16 +393,6 @@ public final class JDOMUtil {
 
   public static @NotNull Element load(@NotNull URL url) throws JDOMException, IOException {
     return load(URLUtil.openStream(url));
-  }
-
-  /**
-   * @deprecated Use {@link #load(URL)}
-   * <p>
-   * Direct usage of element allows to get rid of {@link Document#getRootElement()} because only Element is required in mostly all cases.
-   */
-  @Deprecated
-  public static @NotNull Document loadResourceDocument(@NotNull URL url) throws JDOMException, IOException {
-    return loadDocument(URLUtil.openResourceStream(url));
   }
 
   public static @NotNull Element loadResource(@NotNull URL url) throws JDOMException, IOException {
@@ -600,14 +580,17 @@ public final class JDOMUtil {
     return null;
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text) {
     return escapeText(text, false, false);
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text, boolean escapeSpaces, boolean escapeLineEnds) {
     return escapeText(text, false, escapeSpaces, escapeLineEnds);
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text, boolean escapeApostrophes, boolean escapeSpaces, boolean escapeLineEnds) {
     StringBuilder buffer = null;
     for (int i = 0; i < text.length(); i++) {

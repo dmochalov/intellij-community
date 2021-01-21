@@ -18,7 +18,6 @@ private val MODULE_FILE_STORAGE_ANNOTATION = FileStorageAnnotation(StoragePathMa
 @ApiStatus.Internal
 internal open class ModuleStoreImpl(module: Module) : ModuleStoreBase() {
   private val pathMacroManager = PathMacroManager.getInstance(module)
-
   override val project = module.project
 
   override val storageManager = ModuleStateStorageManager(TrackingPathMacroSubstitutorImpl(pathMacroManager), module)

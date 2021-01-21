@@ -30,6 +30,7 @@ import com.intellij.util.IconUtil;
 import com.intellij.util.Processor;
 import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -41,7 +42,6 @@ import java.util.function.Consumer;
 public class TopHitSEContributor implements SearchEverywhereContributor<Object> {
 
   public static final int TOP_HIT_ELEMENT_PRIORITY = 15000;
-  private final Collection<SearchTopHitProvider> myTopHitProviders = Arrays.asList(SearchTopHitProvider.EP_NAME.getExtensions());
 
   private final Project myProject;
   private final Component myContextComponent;
@@ -148,7 +148,7 @@ public class TopHitSEContributor implements SearchEverywhereContributor<Object> 
   }
 
   private void fillFromExtensions(@NotNull String pattern, Processor<Object> consumer) {
-    for (SearchTopHitProvider provider : myTopHitProviders) {
+    for (SearchTopHitProvider provider : SearchTopHitProvider.EP_NAME.getExtensions()) {
       boolean[] interrupted = {false};
       provider.consumeTopHits(pattern, o -> interrupted[0] = !consumer.process(o), myProject);
       if (interrupted[0]) {
@@ -251,7 +251,7 @@ public class TopHitSEContributor implements SearchEverywhereContributor<Object> 
           append(text, attrs);
         }
         else if (value instanceof OptionsTopHitProvider) {
-          append(SearchTopHitProvider.getTopHitAccelerator() + ((OptionsTopHitProvider)value).getId());
+          append(SearchTopHitProvider.getTopHitAccelerator() + ((OptionsTopHitProvider)value).getId()); //NON-NLS
         }
         else {
           ItemPresentation presentation = null;
@@ -263,6 +263,7 @@ public class TopHitSEContributor implements SearchEverywhereContributor<Object> 
           }
           if (presentation != null) {
             final String text = presentation.getPresentableText();
+            //noinspection HardCodedStringLiteral
             append(text == null ? value.toString() : text);
             Icon icon = presentation.getIcon(false);
             if (icon != null) setIcon(icon);
@@ -280,6 +281,7 @@ public class TopHitSEContributor implements SearchEverywhereContributor<Object> 
     return o instanceof OptionDescription;
   }
 
+  @Nls
   private static String getSettingText(OptionDescription value) {
     String hit = value.getHit();
     if (hit == null) {

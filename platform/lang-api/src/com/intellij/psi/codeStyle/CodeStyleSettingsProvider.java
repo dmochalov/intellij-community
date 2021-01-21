@@ -6,6 +6,7 @@ import com.intellij.lang.Language;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.options.ConfigurationException;
+import com.intellij.openapi.util.NlsContexts;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,10 +17,11 @@ import java.util.List;
 /**
  * @author peter
  */
-public abstract class CodeStyleSettingsProvider {
+public abstract class CodeStyleSettingsProvider implements CustomCodeStyleSettingsFactory, DisplayPrioritySortable {
   public static final ExtensionPointName<CodeStyleSettingsProvider> EXTENSION_POINT_NAME = ExtensionPointName.create("com.intellij.codeStyleSettingsProvider");
 
 
+  @Override
   @Nullable
   public CustomCodeStyleSettings createCustomSettings(CodeStyleSettings settings) {
     return null;
@@ -61,7 +63,7 @@ public abstract class CodeStyleSettingsProvider {
    * @return the display name of the configurable page.
    */
   @Nullable
-  public String getConfigurableDisplayName() {
+  public @NlsContexts.ConfigurableName String getConfigurableDisplayName() {
     Language lang = getLanguage();
     return lang == null ? null : lang.getDisplayName();
   }
@@ -70,6 +72,7 @@ public abstract class CodeStyleSettingsProvider {
     return true;
   }
 
+  @Override
   public DisplayPriority getPriority() {
     List<Language> primaryIdeLanguages = IdeLanguageCustomization.getInstance().getPrimaryIdeLanguages();
     return primaryIdeLanguages.contains(getLanguage()) ? DisplayPriority.KEY_LANGUAGE_SETTINGS : DisplayPriority.LANGUAGE_SETTINGS;

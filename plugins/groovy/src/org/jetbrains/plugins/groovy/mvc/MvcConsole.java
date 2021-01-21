@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.mvc;
 
 import com.intellij.execution.configurations.GeneralCommandLine;
@@ -17,7 +17,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
@@ -40,6 +39,7 @@ import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 
 import javax.swing.*;
 import java.awt.*;
@@ -79,7 +79,7 @@ public final class MvcConsole implements Disposable {
   }
 
   public static MvcConsole getInstance(@NotNull Project project) {
-    return ServiceManager.getService(project, MvcConsole.class);
+    return project.getService(MvcConsole.class);
   }
 
   public static boolean isUpdatingVfsByConsoleProcess(@NotNull Module module) {
@@ -121,7 +121,7 @@ public final class MvcConsole implements Disposable {
     myToolWindow.activate(r, focus);
   }
 
-  private static class MyProcessInConsole implements ConsoleProcessDescriptor {
+  private static final class MyProcessInConsole implements ConsoleProcessDescriptor {
     final Module module;
     final GeneralCommandLine commandLine;
     @Nullable final Runnable onDone;
@@ -269,7 +269,7 @@ public final class MvcConsole implements Disposable {
     }
     catch (final Exception e) {
       ApplicationManager.getApplication().invokeLater(() -> {
-        Messages.showErrorDialog(e.getMessage(), "Cannot Start Process");
+        Messages.showErrorDialog(e.getMessage(), GroovyBundle.message("mvc.console.cannot.start.process.error.title"));
 
         try {
           if (onDone != null && !module.isDisposed()) onDone.run();
@@ -287,7 +287,11 @@ public final class MvcConsole implements Disposable {
     final MvcFramework framework = MvcFramework.getInstance(module);
     myToolWindow.setIcon(framework == null ? JetgroovyIcons.Groovy.Groovy_13x13 : framework.getToolWindowIcon());
 
-    myContent.setDisplayName((framework == null ? "" : framework.getDisplayName() + ":") + "Executing...");
+    myContent.setDisplayName(
+      framework == null
+      ? GroovyBundle.message("mvc.console.executing.progress")
+      : GroovyBundle.message("mvc.console.0.executing.progress", framework.getDisplayName())
+    );
     myConsole.scrollToEnd();
     myConsole.attachToProcess(handler);
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -329,7 +333,11 @@ public final class MvcConsole implements Disposable {
     private OSProcessHandler myHandler = null;
 
     MyKillProcessAction() {
-      super("Kill process", "Kill process", AllIcons.Debugger.KillProcess);
+      super(
+        GroovyBundle.message("mvc.console.kill.process.action.text"),
+        GroovyBundle.message("mvc.console.kill.process.action.description"),
+        AllIcons.Debugger.KillProcess
+      );
     }
 
     public void setHandler(@Nullable OSProcessHandler handler) {

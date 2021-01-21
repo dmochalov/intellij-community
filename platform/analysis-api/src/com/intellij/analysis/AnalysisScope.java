@@ -160,7 +160,7 @@ public class AnalysisScope {
       public void visitFile(@NotNull PsiFile file) {
         if (mySearchInLibraries || !(file instanceof PsiCompiledElement)) {
           final VirtualFile virtualFile = file.getVirtualFile();
-          if (virtualFile != null && !isFilteredOut(virtualFile) && shouldHighlightFile(file)) {
+          if (virtualFile != null && !isFilteredOut(virtualFile)) {
             addTo.add(virtualFile);
           }
         }
@@ -453,7 +453,7 @@ public class AnalysisScope {
   }
 
   @NotNull
-  public String getDisplayName() {
+  public @Nls String getDisplayName() {
     switch (myType) {
       case CUSTOM:
         return myScope.getDisplayName();

@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.impl.ActionButton;
 import com.intellij.openapi.actionSystem.impl.ActionManagerImpl;
 import com.intellij.openapi.actionSystem.impl.MenuItemPresentationFactory;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.scale.JBUIScale;
@@ -26,6 +27,7 @@ import java.awt.*;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Area;
 
+@SuppressWarnings("ComponentNotRegistered")
 public final class SplitButtonAction extends ActionGroup implements CustomComponentAction {
   private final ActionGroup myActionGroup;
 
@@ -36,6 +38,10 @@ public final class SplitButtonAction extends ActionGroup implements CustomCompon
 
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {}
+
+  public @NotNull ActionGroup getActionGroup() {
+    return myActionGroup;
+  }
 
   @Override
   public void update(@NotNull AnActionEvent e) {
@@ -186,7 +192,7 @@ public final class SplitButtonAction extends ActionGroup implements CustomCompon
       HelpTooltip.hide(this);
 
       if (mousePressType == MousePressType.Popup) {
-        showPopupMenu(event, myActionGroup);
+        showGroupInPopupMenu(event, myActionGroup);
       }
       else if (selectedActionEnabled()) {
         AnActionEvent newEvent = AnActionEvent.createFromInputEvent(event.getInputEvent(), myPlace, event.getPresentation(), getDataContext());
@@ -195,30 +201,28 @@ public final class SplitButtonAction extends ActionGroup implements CustomCompon
     }
 
     @Override
-    protected void showPopupMenu(AnActionEvent event, ActionGroup actionGroup) {
+    protected void showGroupInPopupMenu(AnActionEvent event, ActionGroup actionGroup) {
       if (myPopupState.isRecentlyHidden()) return; // do not show new popup
       ActionManagerImpl am = (ActionManagerImpl) ActionManager.getInstance();
       ActionPopupMenu popupMenu = am.createActionPopupMenu(event.getPlace(), actionGroup, new MenuItemPresentationFactory() {
         @Override
-        protected void processPresentation(Presentation presentation) {
+        protected void processPresentation(@NotNull Presentation presentation) {
           super.processPresentation(presentation);
-          if (presentation != null &&
-              StringUtil.defaultIfEmpty(presentation.getText(), "").equals(myPresentation.getText()) &&
+          if (StringUtil.defaultIfEmpty(presentation.getText(), "").equals(myPresentation.getText()) &&
               StringUtil.defaultIfEmpty(presentation.getDescription(), "").equals(myPresentation.getDescription())) {
             presentation.setEnabled(selectedActionEnabled());
-            //presentation.putClientProperty(Toggleable.SELECTED_PROPERTY, myPresentation.getClientProperty(Toggleable.SELECTED_PROPERTY));
           }
         }
       });
       popupMenu.setTargetComponent(this);
 
       JPopupMenu menu = popupMenu.getComponent();
-      menu.addPopupMenuListener(myPopupState);
+      myPopupState.prepareToShow(menu);
       if (event.isFromActionToolbar()) {
         menu.show(this, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE.width + getInsets().left, getHeight());
       }
       else {
-        menu.show(this, getWidth(), 0);
+        JBPopupMenu.showAtRight(this, menu);
       }
 
       HelpTooltip.setMasterPopupOpenCondition(this, () -> !menu.isVisible());
@@ -249,11 +253,31 @@ public final class SplitButtonAction extends ActionGroup implements CustomCompon
       }
     }
 
+    /**
+     * Updates an action with following logic:<ol>
+     * <li>If selected action is available - current action available and mimics one.</li>
+     * <li>If any action in the group is enabled and visible in the context of the {@code event}, split button enabled and visible, but does
+     * nothing if pressed (can only expand).</li>
+     * </ol>
+     *
+     * @implNote last option can be improved and be customizable. For this class should be made non-final and protected fallback update
+     * method should be introduced. E.g. we want more sophisticated logic in profiler UI
+     */
     private void update(@NotNull AnActionEvent event) {
+      // trying selected item
       if (selectedAction != null) {
         selectedAction.update(event);
-        copyPresentation(event.getPresentation());
+        Presentation eventPresentation = event.getPresentation();
+        copyPresentation(eventPresentation);
+        if (eventPresentation.isEnabled()) {
+          return;
+        }
       }
+
+      // prevent button disappearing when isVisible = false
+      Presentation presentationBackup = event.getPresentation();
+      presentationBackup.setVisible(true);
+      event.getPresentation().copyFrom(presentationBackup);
     }
   }
 }

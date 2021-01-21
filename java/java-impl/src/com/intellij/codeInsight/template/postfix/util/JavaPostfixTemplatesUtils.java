@@ -68,7 +68,7 @@ public final class JavaPostfixTemplatesUtils {
     return selectorTopmost(Conditions.alwaysTrue());
   }
 
-  public static PostfixTemplateExpressionSelector selectorTopmost(Condition<PsiElement> additionalFilter) {
+  public static PostfixTemplateExpressionSelector selectorTopmost(Condition<? super PsiElement> additionalFilter) {
     return new PostfixTemplateExpressionSelectorBase(additionalFilter) {
       @Override
       protected List<PsiElement> getNonFilteredExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
@@ -89,7 +89,7 @@ public final class JavaPostfixTemplatesUtils {
   }
 
   @NotNull
-  public static PostfixTemplateExpressionSelector selectorAllExpressionsWithCurrentOffset(@Nullable Condition<PsiElement> additionalFilter) {
+  public static PostfixTemplateExpressionSelector selectorAllExpressionsWithCurrentOffset(@Nullable Condition<? super PsiElement> additionalFilter) {
     return new PostfixTemplateExpressionSelectorBase(additionalFilter) {
       @Override
       protected List<PsiElement> getNonFilteredExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
@@ -152,16 +152,6 @@ public final class JavaPostfixTemplatesUtils {
 
   public static final Condition<PsiElement> IS_NOT_PRIMITIVE =
     element -> element instanceof PsiExpression && isNotPrimitiveTypeExpression((PsiExpression)element);
-
-  /**
-   * @deprecated use {@link #isArray(PsiType)}
-   */
-  @Deprecated public static final Condition<PsiElement> IS_ARRAY = element -> {
-    if (!(element instanceof PsiExpression)) return false;
-
-    PsiType type = ((PsiExpression)element).getType();
-    return isArray(type);
-  };
 
   /**
    * @deprecated use {@link #isIterable(PsiType)} / {@link #isArray(PsiType)}

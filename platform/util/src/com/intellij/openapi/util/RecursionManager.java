@@ -5,10 +5,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.ExceptionUtil;
 import com.intellij.util.containers.ContainerUtil;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.*;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -153,6 +150,18 @@ public final class RecursionManager {
       }
 
     };
+  }
+
+  /**
+   * Clears the memoization cache for the current thread. This can be invoked when a side effect happens
+   * inside a {@link #doPreventingRecursion} call that may affect results of nested memoizing {@code doPreventingRecursion} calls,
+   * whose memoized results should not be reused on that point.<p></p>
+   *
+   * Please avoid this method at all cost and try to restructure your code to avoid side effects inside {@code doPreventingRecursion}.
+   */
+  @ApiStatus.Internal
+  public static void dropCurrentMemoizationCache() {
+    ourStack.get().intermediateCache.clear();
   }
 
   /**
@@ -350,7 +359,7 @@ public final class RecursionManager {
     }
   }
 
-  private static final String[] toleratedFrames = {
+  private static final @NonNls String[] toleratedFrames = {
     "com.intellij.psi.impl.source.xml.XmlAttributeImpl.getDescriptor(", // IDEA-228451
     "org.jetbrains.plugins.ruby.ruby.codeInsight.symbols.structure.util.SymbolHierarchy.getAncestorsCaching(", // RUBY-25487
     "com.intellij.lang.aspectj.psi.impl.PsiInterTypeReferenceImpl.", // IDEA-228779
@@ -359,12 +368,11 @@ public final class RecursionManager {
     // WEB-42912
     "com.intellij.lang.javascript.psi.resolve.JSEvaluatorComplexityTracker.doRunTask(",
     "com.intellij.lang.javascript.ecmascript6.types.JSTypeSignatureChooser.chooseOverload(",
-    "com.intellij.lang.javascript.psi.resolve.JSTypeEvaluator.getElementType(",
+    "com.intellij.lang.javascript.psi.resolve.JSEvaluationCache.getElementType(",
     "com.intellij.lang.ecmascript6.psi.impl.ES6ImportSpecifierImpl.multiResolve(",
     "com.intellij.lang.javascript.psi.types.JSTypeBaseImpl.substitute(",
 
     // IDEA-228814
-    "com.intellij.psi.infos.MethodCandidateInfo.getPertinentApplicabilityLevel(",
     "com.intellij.psi.ThreadLocalTypes.performWithTypes(",
 
     // IDEA-212671

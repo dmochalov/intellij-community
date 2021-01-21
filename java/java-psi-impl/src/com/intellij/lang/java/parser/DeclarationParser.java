@@ -72,7 +72,7 @@ public class DeclarationParser {
         return null;
       }
       final IElementType afterIdent = builder.lookAhead(2);
-      // No parser recovery for local records without < or ( to support for light stubs
+      // No parser recovery for local records without < or ( to support light stubs
       // (look at com.intellij.psi.impl.source.JavaLightStubBuilder.CodeBlockVisitor.visit)
       if (context == Context.CODE_BLOCK && afterIdent != JavaTokenType.LPARENTH && afterIdent != JavaTokenType.LT) {
         // skipping record kw and identifier
@@ -254,7 +254,7 @@ public class DeclarationParser {
   }
 
   @Nullable
-  public PsiBuilder.Marker parse(final PsiBuilder builder, final Context context) {
+  public PsiBuilder.Marker parse(final @NotNull PsiBuilder builder, final Context context) {
     IElementType tokenType = builder.getTokenType();
     if (tokenType == null) return null;
 
@@ -419,7 +419,7 @@ public class DeclarationParser {
     if (tokenType == JavaTokenType.IDENTIFIER && PsiKeyword.RECORD.equals(builder.getTokenText()) &&
         builder.lookAhead(1) == JavaTokenType.IDENTIFIER) {
       LanguageLevel level = getLanguageLevel(builder);
-      return level.isAtLeast(LanguageLevel.JDK_14_PREVIEW) && (level == LanguageLevel.JDK_X || level.isPreview());
+      return level.isAtLeast(LanguageLevel.JDK_15_PREVIEW);
     }
     return false;
   }

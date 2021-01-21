@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.xml.breadcrumbs;
 
 import com.intellij.ide.DataManager;
@@ -21,7 +21,6 @@ import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -83,7 +82,7 @@ final class BreadcrumbsConfigurable extends CompositeConfigurable<BreadcrumbsCon
 
       placement = new JLabel(message("label.breadcrumbs.placement"));
 
-      JPanel placementPanel = new JPanel(new HorizontalLayout(JBUIScale.scale(UIUtil.DEFAULT_HGAP)));
+      JPanel placementPanel = new JPanel(new HorizontalLayout(UIUtil.DEFAULT_HGAP));
       placementPanel.setBorder(JBUI.Borders.emptyLeft(24));
       placementPanel.add(placement);
       placementPanel.add(above);
@@ -91,12 +90,12 @@ final class BreadcrumbsConfigurable extends CompositeConfigurable<BreadcrumbsCon
 
       languages = new JLabel(message("label.breadcrumbs.languages"));
 
-      JPanel languagesPanel = new JPanel(new VerticalLayout(JBUIScale.scale(6)));
+      JPanel languagesPanel = new JPanel(new VerticalLayout(6));
       languagesPanel.setBorder(JBUI.Borders.empty(0, 24, 12, 0));
       languagesPanel.add(languages);
       languagesPanel.add(boxes);
 
-      component = new JPanel(new VerticalLayout(JBUIScale.scale(12), LEFT));
+      component = new JPanel(new VerticalLayout(12, LEFT));
       component.add(show);
       component.add(placementPanel);
       component.add(languagesPanel);
@@ -190,9 +189,8 @@ final class BreadcrumbsConfigurable extends CompositeConfigurable<BreadcrumbsCon
       myLanguage = language;
     }
 
-    @Nullable
     @Override
-    public JCheckBox createComponent() {
+    public @NotNull JCheckBox createComponent() {
       return new JCheckBox(myLanguage.getDisplayName());
     }
 

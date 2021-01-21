@@ -2,7 +2,6 @@
 package com.intellij.util.text;
 
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.CharFilter;
 import com.intellij.openapi.util.text.LineColumn;
@@ -853,26 +852,26 @@ public class StringUtilTest {
   @Test
   public void testFirstLastDontConvertCharSequenceToString() {
     CharSequence s = ByteArrayCharSequence.convertToBytesIfPossible("test");
-    assertTrue(s instanceof ByteArrayCharSequence || SystemInfoRt.IS_AT_LEAST_JAVA9 && s.getClass() == String.class);
+    assertTrue(s instanceof ByteArrayCharSequence || s.getClass() == String.class);
     CharSequence first = StringUtil.first(s, 1, false);
     assertTrue(String.valueOf(first.getClass()),
-               first instanceof CharSequenceSubSequence || SystemInfoRt.IS_AT_LEAST_JAVA9 && s.getClass() == String.class);
+               first instanceof CharSequenceSubSequence || s.getClass() == String.class);
     assertEquals("t", first.toString());
     CharSequence last = StringUtil.last(s, 1, false);
     assertTrue(String.valueOf(last.getClass()),
-               last instanceof CharSequenceSubSequence || SystemInfoRt.IS_AT_LEAST_JAVA9 && s.getClass() == String.class);
+               last instanceof CharSequenceSubSequence || s.getClass() == String.class);
     assertEquals("t", last.toString());
   }
 
   @Test
   public void testEnglishOrdinals() {
-    assertEquals("100th", StringUtil.formatOrdinal(100));
-    assertEquals("101st", StringUtil.formatOrdinal(101));
-    assertEquals("111th", StringUtil.formatOrdinal(111));
-    assertEquals("122nd", StringUtil.formatOrdinal(122));
+    assertEquals("100th", OrdinalFormat.formatEnglish(100));
+    assertEquals("101st", OrdinalFormat.formatEnglish(101));
+    assertEquals("111th", OrdinalFormat.formatEnglish(111));
+    assertEquals("122nd", OrdinalFormat.formatEnglish(122));
 
-    assertEquals("-3rd", StringUtil.formatOrdinal(-3));
-    assertEquals("-9223372036854775808th", StringUtil.formatOrdinal(Long.MIN_VALUE));
+    assertEquals("-3rd", OrdinalFormat.formatEnglish(-3));
+    assertEquals("-9223372036854775808th", OrdinalFormat.formatEnglish(Long.MIN_VALUE));
   }
 
   @Test

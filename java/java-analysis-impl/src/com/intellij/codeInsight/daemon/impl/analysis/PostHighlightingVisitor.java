@@ -9,6 +9,7 @@ import com.intellij.codeInsight.daemon.impl.*;
 import com.intellij.codeInsight.daemon.impl.quickfix.QuickFixAction;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.QuickFixFactory;
+import com.intellij.codeInsight.intention.impl.PriorityIntentionActionWrapper;
 import com.intellij.codeInspection.InspectionProfile;
 import com.intellij.codeInspection.SuppressionUtil;
 import com.intellij.codeInspection.deadCode.UnusedDeclarationInspectionBase;
@@ -28,6 +29,7 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.PomNamedTarget;
@@ -246,29 +248,30 @@ class PostHighlightingVisitor {
     if (variable instanceof PsiResourceVariable && PsiUtil.isIgnoredName(variable.getName())) return null;
     if (UnusedSymbolUtil.isImplicitUsage(myProject, variable)) return null;
 
+    String message = null;
+    IntentionAction fix = null;
     if (!myRefCountHolder.isReferenced(variable)) {
-      String message = JavaErrorBundle.message("local.variable.is.never.used", identifier.getText());
-      HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
-      IntentionAction fix = variable instanceof PsiResourceVariable ? QuickFixFactory.getInstance().createRenameToIgnoredFix(variable) : QuickFixFactory.getInstance().createRemoveUnusedVariableFix(variable);
-      QuickFixAction.registerQuickFixAction(highlightInfo, fix, myDeadCodeKey);
-      return highlightInfo;
+      message = JavaErrorBundle.message("local.variable.is.never.used", identifier.getText());
+      fix = variable instanceof PsiResourceVariable ? QuickFixFactory.getInstance().createRenameToIgnoredFix(variable) 
+                                                    : QuickFixFactory.getInstance().createRemoveUnusedVariableFix(variable);
     }
 
-    if (!myRefCountHolder.isReferencedForRead(variable) && !UnusedSymbolUtil.isImplicitRead(myProject, variable)) {
-      String message = JavaErrorBundle.message("local.variable.is.not.used.for.reading", identifier.getText());
-      HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
-      QuickFixAction.registerQuickFixAction(highlightInfo, QuickFixFactory.getInstance().createRemoveUnusedVariableFix(variable), myDeadCodeKey);
-      return highlightInfo;
+    else if (!myRefCountHolder.isReferencedForRead(variable) && !UnusedSymbolUtil.isImplicitRead(myProject, variable)) {
+      message = JavaErrorBundle.message("local.variable.is.not.used.for.reading", identifier.getText());
+      fix = QuickFixFactory.getInstance().createRemoveUnusedVariableFix(variable);
     }
 
-    if (!variable.hasInitializer() &&
+    else if (!variable.hasInitializer() &&
         !myRefCountHolder.isReferencedForWrite(variable) &&
         !UnusedSymbolUtil.isImplicitWrite(myProject, variable)) {
-      String message = JavaErrorBundle.message("local.variable.is.not.assigned", identifier.getText());
-      final HighlightInfo unusedSymbolInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
-      QuickFixAction
-        .registerQuickFixAction(unusedSymbolInfo, QuickFixFactory.getInstance().createAddVariableInitializerFix(variable), myDeadCodeKey);
-      return unusedSymbolInfo;
+      message = JavaErrorBundle.message("local.variable.is.not.assigned", identifier.getText());
+      fix = QuickFixFactory.getInstance().createAddVariableInitializerFix(variable);
+    }
+
+    if (message != null) {
+      final HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
+      QuickFixAction.registerQuickFixAction(highlightInfo, fix, myDeadCodeKey);
+      return highlightInfo;
     }
 
     return null;
@@ -308,7 +311,7 @@ class PostHighlightingVisitor {
       final boolean writeReferenced = myRefCountHolder.isReferencedForWrite(field);
       if (!writeReferenced && !UnusedSymbolUtil.isImplicitWrite(project, field)) {
         String message = JavaErrorBundle.message("private.field.is.not.assigned", identifier.getText());
-        final HighlightInfo info = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
+        final HighlightInfo info = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
 
         QuickFixAction.registerQuickFixAction(info, quickFixFactory.createCreateGetterOrSetterFix(false, true, field), myDeadCodeKey);
         if (!field.hasModifierProperty(PsiModifier.FINAL)) {
@@ -328,7 +331,7 @@ class PostHighlightingVisitor {
     else if (UnusedSymbolUtil.isFieldUnused(myProject, myFile, field, progress, helper)) {
       if (UnusedSymbolUtil.isImplicitWrite(myProject, field)) {
         String message = getNotUsedForReadingMessage(field, identifier);
-        HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
+        HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
         QuickFixAction.registerQuickFixAction(highlightInfo, QuickFixFactory.getInstance().createSafeDeleteFix(field), myDeadCodeKey);
         return highlightInfo;
       }
@@ -338,7 +341,7 @@ class PostHighlightingVisitor {
   }
 
   @NotNull
-  private static String getNotUsedForReadingMessage(@NotNull final PsiField field, @NotNull final PsiIdentifier identifier) {
+  private static @NlsContexts.DetailedDescription String getNotUsedForReadingMessage(@NotNull final PsiField field, @NotNull final PsiIdentifier identifier) {
     final String visibility = VisibilityUtil.getVisibilityStringToDisplay(field);
 
     final String message = JavaErrorBundle.message("field.is.not.used.for.reading", visibility, identifier.getText());
@@ -346,8 +349,8 @@ class PostHighlightingVisitor {
     return StringUtil.capitalize(message);
   }
 
-  private HighlightInfo suggestionsToMakeFieldUsed(@NotNull PsiField field, @NotNull PsiIdentifier identifier, @NotNull String message) {
-    HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
+  private HighlightInfo suggestionsToMakeFieldUsed(@NotNull PsiField field, @NotNull PsiIdentifier identifier, @NotNull @NlsContexts.DetailedDescription String message) {
+    HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
     SpecialAnnotationsUtilBase.createAddToSpecialAnnotationFixes(field, annoName -> {
       QuickFixAction
         .registerQuickFixAction(highlightInfo,
@@ -420,10 +423,16 @@ class PostHighlightingVisitor {
     if (!myRefCountHolder.isReferenced(parameter) && !UnusedSymbolUtil.isImplicitUsage(myProject, parameter)) {
       String message = JavaErrorBundle.message(parameter instanceof PsiPatternVariable ? 
                                                "pattern.variable.is.not.used" : "parameter.is.not.used", identifier.getText());
-      HighlightInfo info = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
+      HighlightInfo info = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
       if (declarationMethod != null) {
-        QuickFixAction.registerQuickFixAction(info, QuickFixFactory.getInstance().createAssignFieldFromParameterFix());
-        QuickFixAction.registerQuickFixAction(info, QuickFixFactory.getInstance().createCreateFieldFromParameterFix());
+        IntentionAction assignFix = QuickFixFactory.getInstance().createAssignFieldFromParameterFix();
+        IntentionAction createFieldFix = QuickFixFactory.getInstance().createCreateFieldFromParameterFix();
+        if (!declarationMethod.isConstructor()) {
+          assignFix = PriorityIntentionActionWrapper.lowPriority(assignFix);
+          createFieldFix = PriorityIntentionActionWrapper.lowPriority(createFieldFix);
+        }
+        QuickFixAction.registerQuickFixAction(info, assignFix);
+        QuickFixAction.registerQuickFixAction(info, createFieldFix);
       }
       return info;
     }
@@ -447,7 +456,7 @@ class PostHighlightingVisitor {
     int options = PsiFormatUtilBase.SHOW_TYPE | PsiFormatUtilBase.SHOW_FQ_CLASS_NAMES;
     String symbolName = HighlightMessageUtil.getSymbolName(method, PsiSubstitutor.EMPTY, options);
     String message = JavaErrorBundle.message(key, symbolName);
-    final HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
+    final HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
     QuickFixAction.registerQuickFixAction(highlightInfo, QuickFixFactory.getInstance().createSafeDeleteFix(method), myDeadCodeKey);
     SpecialAnnotationsUtilBase.createAddToSpecialAnnotationFixes(method, annoName -> {
       IntentionAction fix = QuickFixFactory.getInstance().createAddToDependencyInjectionAnnotationsFix(project, annoName);
@@ -498,7 +507,7 @@ class PostHighlightingVisitor {
                                                                @NotNull PsiElement identifier) {
     String symbolName = aClass.getName();
     String message = JavaErrorBundle.message(pattern, symbolName);
-    final HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, highlightInfoType);
+    final HighlightInfo highlightInfo = UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, highlightInfoType, UnusedDeclarationInspectionBase.SHORT_NAME);
     QuickFixAction.registerQuickFixAction(highlightInfo, QuickFixFactory.getInstance().createSafeDeleteFix(aClass), highlightDisplayKey);
     SpecialAnnotationsUtilBase.createAddToSpecialAnnotationFixes((PsiModifierListOwner)aClass, annoName -> {
       QuickFixAction
@@ -552,7 +561,8 @@ class PostHighlightingVisitor {
     VirtualFile file = PsiUtilCore.getVirtualFile(myFile);
     Set<String> imports = file != null ? file.getCopyableUserData(ImportsHighlightUtil.IMPORTS_FROM_TEMPLATE) : null;
     boolean predefinedImport = imports != null && imports.contains(importStatement.getText());
-    String description = !predefinedImport ? JavaAnalysisBundle.message("unused.import.statement") : "Unused import (specified in template)";
+    String description = !predefinedImport ? JavaAnalysisBundle.message("unused.import.statement") :
+                         JavaAnalysisBundle.message("text.unused.import.in.template");
     HighlightInfo info = HighlightInfo.newHighlightInfo(JavaHighlightInfoTypes.UNUSED_IMPORT)
         .range(importStatement)
         .descriptionAndTooltip(description)

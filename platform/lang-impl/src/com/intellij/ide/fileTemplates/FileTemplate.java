@@ -20,6 +20,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import org.apache.velocity.runtime.parser.ParseException;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -69,7 +70,7 @@ public interface FileTemplate extends Cloneable {
 
   boolean isDefault();
 
-  @NotNull
+  @NotNull @Nls
   String getDescription();
 
   @NotNull
@@ -84,6 +85,11 @@ public interface FileTemplate extends Cloneable {
   String getText(@NotNull Properties attributes) throws IOException;
 
   @NotNull
+  default String getFileName() { return ""; }
+
+  default void setFileName(@NotNull String fileName) {}
+
+  @NotNull
   String getExtension();
 
   void setExtension(@NotNull String extension);
@@ -95,6 +101,10 @@ public interface FileTemplate extends Cloneable {
   boolean isLiveTemplateEnabled();
 
   void setLiveTemplateEnabled(boolean value);
+
+  default FileTemplate @NotNull[] getChildren() { return EMPTY_ARRAY; }
+
+  default void setChildren(FileTemplate @NotNull[] children) {}
 
   @NotNull
   FileTemplate clone();

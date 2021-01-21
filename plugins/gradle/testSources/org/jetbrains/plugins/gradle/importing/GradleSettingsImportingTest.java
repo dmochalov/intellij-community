@@ -47,6 +47,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Created by Nikita.Skvortsov
  */
@@ -747,5 +749,24 @@ public class GradleSettingsImportingTest extends GradleSettingsImportingTestCase
         .addPostfix("}")
         .generate());
     assertSourcePackagePrefix("project.main", "src/main/java", "prefix.package.other");
+  }
+
+
+  @Test
+  public void testModuleTypesImport() throws Exception {
+    importProject(
+      new GradleBuildScriptBuilderEx()
+        .withGradleIdeaExtPluginIfCan(IDEA_EXT_PLUGIN_VERSION)
+        .withJavaPlugin()
+        .addPostfix(
+          "import org.jetbrains.gradle.ext.*",
+          "idea.module.settings {",
+          "    rootModuleType = 'EMPTY_MODULE'",
+          "    moduleType[sourceSets.main] = 'WEB_MODULE'",
+          "    }"
+        ).generate());
+    assertThat(getModule("project").getModuleTypeName()).isEqualTo("EMPTY_MODULE");
+    assertThat(getModule("project.main").getModuleTypeName()).isEqualTo("WEB_MODULE");
+    assertThat(getModule("project.test").getModuleTypeName()).isEqualTo("JAVA_MODULE");
   }
 }

@@ -8,7 +8,7 @@ import com.intellij.ide.IdeBundle;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
@@ -21,6 +21,8 @@ import com.intellij.openapi.roots.ui.configuration.actions.IconWithTextAction;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.TextComponentAccessor;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.impl.IdeBackgroundUtil;
 import com.intellij.ui.*;
@@ -87,7 +89,7 @@ public class BackgroundImageDialog extends DialogWrapper {
   private final SimpleEditorPreview myEditorPreview;
   private final JComponent myIdePreview;
 
-  public BackgroundImageDialog(@NotNull Project project, @Nullable String selectedPath) {
+  public BackgroundImageDialog(@NotNull Project project, @Nullable @NlsSafe String selectedPath) {
     super(project, true);
     myProject = project;
     setTitle(IdeBundle.message("dialog.title.background.image"));
@@ -148,7 +150,7 @@ public class BackgroundImageDialog extends DialogWrapper {
 
   @NotNull
   private static JComponent createFramePreview() {
-    EditorEmptyTextPainter painter = ServiceManager.getService(EditorEmptyTextPainter.class);
+    EditorEmptyTextPainter painter = ApplicationManager.getApplication().getService(EditorEmptyTextPainter.class);
     JBPanelWithEmptyText panel = new JBPanelWithEmptyText() {
       @Override
       protected void paintComponent(Graphics g) {
@@ -264,7 +266,7 @@ public class BackgroundImageDialog extends DialogWrapper {
     myAdjusting = false;
   }
 
-  private AnAction createToggleAction(String target, String text) {
+  private AnAction createToggleAction(String target, @NlsActions.ActionText String text) {
     class A extends IconWithTextAction implements DumbAware, Toggleable {
       @Override
       public void update(@NotNull AnActionEvent e) {
@@ -305,7 +307,7 @@ public class BackgroundImageDialog extends DialogWrapper {
     updatePreview();
   }
 
-  public void setSelectedPath(String path) {
+  public void setSelectedPath(@NlsSafe String path) {
     if (StringUtil.isEmptyOrSpaces(path)) {
       getComboEditor().setText("");
     }

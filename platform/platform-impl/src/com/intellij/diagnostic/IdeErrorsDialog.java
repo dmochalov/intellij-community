@@ -11,6 +11,7 @@ import com.intellij.ide.plugins.*;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.idea.ActionsBundle;
 import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
@@ -24,8 +25,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFrame;
 import com.intellij.openapi.wm.WindowManager;
@@ -38,7 +41,6 @@ import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.BooleanFunction;
 import com.intellij.util.ExceptionUtil;
 import com.intellij.util.text.DateFormatUtil;
-import com.intellij.util.ui.JBDimension;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NonNls;
@@ -62,6 +64,7 @@ import java.util.zip.CRC32;
 
 import static com.intellij.openapi.util.Pair.pair;
 import static java.awt.GridBagConstraints.*;
+import static java.util.Objects.requireNonNullElse;
 
 public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListener, DataProvider {
   private static final Logger LOG = Logger.getInstance(IdeErrorsDialog.class);
@@ -98,7 +101,8 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
     super(project, true);
     myMessagePool = messagePool;
     myProject = project;
-    myAssigneeVisible = ApplicationManager.getApplication().isInternal() || PluginManagerCore.isPluginInstalled(PluginId.getId(EA_PLUGIN_ID));
+    myAssigneeVisible = (ApplicationManager.getApplication().isInternal() || PluginManagerCore.isPluginInstalled(PluginId.getId(EA_PLUGIN_ID))) &&
+                        Registry.is("ea.enable.developers.list", true);
 
     setTitle(DiagnosticBundle.message("error.list.title"));
     setModal(false);
@@ -201,13 +205,9 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
     JPanel controls = new JPanel(new BorderLayout());
     controls.add(actionToolbar("IdeErrorsBack", new BackAction()), BorderLayout.WEST);
     controls.add(actionToolbar("IdeErrorsForward", new ForwardAction()), BorderLayout.EAST);
-    Dimension controlsDimension = new JBDimension(56, 24);
-    controls.setMaximumSize(controlsDimension);
-    controls.setPreferredSize(controlsDimension);
-    controls.setMinimumSize(controlsDimension);
 
     JPanel panel = new JPanel(new GridBagLayout());
-    panel.add(controls, new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0, NORTH, NONE, JBUI.emptyInsets(), 0, 0));
+    panel.add(controls, new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0, NORTH, NONE, JBUI.insets(3, 0), 0, 0));
     panel.add(myCountLabel, new GridBagConstraints(1, 0, 1, 1, 0.0, 0.0, NORTH, HORIZONTAL, JBUI.insets(3, 10), 0, 2));
     panel.add(myInfoLabel, new GridBagConstraints(2, 0, 1, 1, 1.0, 0.0, NORTHWEST, HORIZONTAL, JBUI.insets(3, 0), 0, 0));
     panel.add(myDetailsLabel, new GridBagConstraints(3, 0, 1, 1, 0.0, 0.0, NORTHEAST, NONE, JBUI.insets(3, 0), 0, 0));
@@ -219,6 +219,7 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
     ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(id, new DefaultActionGroup(action), true);
     toolbar.setLayoutPolicy(ActionToolbar.NOWRAP_LAYOUT_POLICY);
     toolbar.getComponent().setBorder(JBUI.Borders.empty());
+    ((ActionToolbarImpl)toolbar).setForceMinimumSize(true);
     return toolbar.getComponent();
   }
 
@@ -274,7 +275,7 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
 
     if (myAssigneeVisible) {
       myAssigneeCombo = new ComboBox<>();
-      myAssigneeCombo.setRenderer(SimpleListCellRenderer.create("<none>", Developer::getDisplayText));
+      myAssigneeCombo.setRenderer(SimpleListCellRenderer.create(DiagnosticBundle.message("errors.dialog.assignee.none"), Developer::getDisplayText));
       myAssigneeCombo.setPrototypeDisplayValue(new Developer(0, StringUtil.repeatSymbol('-', 30)));
       myAssigneeCombo.addItemListener(e -> {
         if (e.getStateChange() == ItemEvent.SELECTED) {
@@ -288,6 +289,7 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
       myAssigneePanel.add(myAssigneeCombo);
     }
 
+    //noinspection HardCodedStringLiteral,DialogTitleCapitalization
     myCredentialsLabel = ComponentsKt.htmlComponent("height sample", null, null, null, false, e -> {
       if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
         ErrorReportSubmitter submitter = selectedCluster().submitter;
@@ -468,13 +470,13 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
         .append(DiagnosticBundle.message("error.list.disable.plugin")).append("</a>");
     }
 
-    if (message.isSubmitted()) {
+    if (message.isSubmitting()) {
+      info.append(' ').append(DiagnosticBundle.message("error.list.message.submitting"));
+    }
+    else if (message.getSubmissionInfo() != null) {
       info.append(' ').append("<span style=\"white-space: nowrap;\">");
       appendSubmissionInformation(message.getSubmissionInfo(), info);
       info.append("</span>");
-    }
-    else if (message.isSubmitting()) {
-      info.append(' ').append(DiagnosticBundle.message("error.list.message.submitting"));
     }
 
     myInfoLabel.setText(info.toString());
@@ -614,7 +616,7 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
     Container parentComponent = getRootPane();
     if (dialogClosed) {
       IdeFrame frame = ComponentUtil.getParentOfType((Class<? extends IdeFrame>)IdeFrame.class, (Component)parentComponent);
-      parentComponent = frame != null ? frame.getComponent() : WindowManager.getInstance().findVisibleFrame();
+      parentComponent = requireNonNullElse(frame != null ? frame.getComponent() : WindowManager.getInstance().findVisibleFrame(), parentComponent);
     }
 
     boolean accepted = submitter.submit(events, message.getAdditionalInfo(), parentComponent, reportInfo -> {
@@ -642,7 +644,6 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
     String message;
     if (pluginsToDisable.size() == 1) {
       IdeaPluginDescriptor plugin = pluginsToDisable.iterator().next();
-      //noinspection HardCodedStringLiteral
       message = "<html>" +
                 DiagnosticBundle.message("error.dialog.disable.prompt", plugin.getName()) + "<br/>" +
                 DiagnosticBundle.message(hasDependents ? "error.dialog.disable.prompt.deps" : "error.dialog.disable.prompt.lone") + "<br/><br/>" +
@@ -650,7 +651,6 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
                 "</html>";
     }
     else {
-      //noinspection HardCodedStringLiteral
       message = "<html>" +
                 DiagnosticBundle.message("error.dialog.disable.prompt.multiple") + "<br/>" +
                 DiagnosticBundle.message(hasDependents ? "error.dialog.disable.prompt.deps.multiple" : "error.dialog.disable.prompt.lone.multiple") + "<br/><br/>" +
@@ -787,7 +787,7 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
   private static class AttachmentsList extends CheckBoxList<String> {
     private boolean myEditable = true;
 
-    private void addItem(String item, boolean selected) {
+    private void addItem(@NlsContexts.Checkbox String item, boolean selected) {
       addItem(item, item + "  ", selected);
     }
 
@@ -950,7 +950,9 @@ public class IdeErrorsDialog extends DialogWrapper implements MessagePoolListene
 
   public static void appendSubmissionInformation(@NotNull SubmittedReportInfo info, @NotNull StringBuilder out) {
     if (info.getStatus() == SubmittedReportInfo.SubmissionStatus.FAILED) {
-      out.append(DiagnosticBundle.message("error.list.message.submission.failed"));
+      String details = info.getLinkText();
+      out.append(details != null ? DiagnosticBundle.message("error.list.message.submission.failed.details", details)
+                                 : DiagnosticBundle.message("error.list.message.submission.failed"));
     }
     else if (info.getURL() != null && info.getLinkText() != null) {
       out.append(DiagnosticBundle.message("error.list.message.submitted.as.link", info.getURL(), info.getLinkText()));

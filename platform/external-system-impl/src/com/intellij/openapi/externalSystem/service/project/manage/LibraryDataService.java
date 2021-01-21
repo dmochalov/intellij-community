@@ -186,7 +186,7 @@ public final class LibraryDataService extends AbstractProjectDataService<Library
     final LibraryTable.ModifiableModel librariesModel = modelsProvider.getModifiableProjectLibrariesModel();
     final Map<String, Library> namesToLibs = new HashMap<>();
     final Set<Library> potentialOrphans = new HashSet<>();
-    RootPolicy<Void> excludeUsedLibraries = new RootPolicy<Void>() {
+    RootPolicy<Void> excludeUsedLibraries = new RootPolicy<>() {
       @Override
       public Void visitLibraryOrderEntry(@NotNull LibraryOrderEntry ideDependency, Void value) {
         if (ideDependency.isModuleLevel()) {
@@ -276,7 +276,7 @@ public final class LibraryDataService extends AbstractProjectDataService<Library
     for (Map.Entry<OrderRootType, Set<String>> entry: toAdd.entrySet()) {
       Map<OrderRootType, Collection<File>> roots = new HashMap<>();
       roots.put(entry.getKey(), ContainerUtil.map(entry.getValue(), PATH_TO_FILE));
-      registerPaths(externalLibrary.isUnresolved(), roots, excludedPaths, libraryModel, externalLibrary.getInternalName());
+      registerPaths(false, roots, excludedPaths, libraryModel, externalLibrary.getInternalName());
     }
   }
 }

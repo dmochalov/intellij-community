@@ -2,7 +2,7 @@
 package com.intellij.internal.statistic.eventLog;
 
 import com.intellij.internal.statistic.eventLog.uploader.EventLogUploadException.EventLogUploadErrorType;
-import com.intellij.internal.statistic.service.fus.EventLogMetadataUpdateError;
+import com.intellij.internal.statistic.eventLog.connection.metadata.EventLogMetadataUpdateError;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.ApiStatus;
@@ -13,7 +13,7 @@ import java.util.List;
 
 @ApiStatus.Internal
 public final class EventLogSystemLogger {
-  private static final String GROUP = "event.log";
+  public static final String GROUP = "event.log";
 
   public static void logMetadataLoad(@NotNull String recorderId, @Nullable String version) {
     final FeatureUsageData data = new FeatureUsageData().addVersionByString(version);
@@ -50,11 +50,14 @@ public final class EventLogSystemLogger {
                                   int succeed,
                                   int failed,
                                   boolean external,
-                                  @NotNull List<String> successfullySentFiles) {
+                                  @NotNull List<String> successfullySentFiles,
+                                  @NotNull List<Integer> errors) {
     final FeatureUsageData data = new FeatureUsageData().
       addData("total", total).
       addData("send", succeed + failed).
+      addData("succeed", succeed).
       addData("failed", failed).
+      addData("errors", ContainerUtil.map(errors, error -> String.valueOf(error))).
       addData("external", external).
       addData("paths", ContainerUtil.map(successfullySentFiles, path -> EventLogConfiguration.INSTANCE.anonymize(path)));
     logEvent(recorderId, "logs.send", data);

@@ -33,6 +33,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static git4idea.GitNotificationIdsHolder.TAG_NOT_CREATED;
+import static git4idea.GitNotificationIdsHolder.TAG_CREATED;
+
 public class GitTagDialog extends DialogWrapper {
 
   private static final Logger LOG = Logger.getInstance(GitTagDialog.class);
@@ -110,8 +113,10 @@ public class GitTagDialog extends DialogWrapper {
         }
       }
       catch (IOException ex) {
-        myNotifier.notifyError(GitBundle.message("git.tag.could.not.create.tag"),
-                               GitBundle.message("tag.error.creating.message.file.message", ex.toString()));
+        myNotifier.notifyError(TAG_NOT_CREATED,
+                               GitBundle.message("git.tag.could.not.create.tag"),
+                               GitBundle.message("tag.error.creating.message.file.message", ex.toString())
+        );
         return;
       }
     }
@@ -138,11 +143,16 @@ public class GitTagDialog extends DialogWrapper {
 
       GitCommandResult result = myGit.runCommand(h);
       if (result.success()) {
-        myNotifier.notifySuccess(myTagNameTextField.getText(),
-                                 GitBundle.message("git.tag.created.tag.successfully", myTagNameTextField.getText()));
+        myNotifier.notifySuccess(TAG_CREATED,
+                                 myTagNameTextField.getText(),
+                                 GitBundle.message("git.tag.created.tag.successfully", myTagNameTextField.getText())
+        );
       }
       else {
-        myNotifier.notifyError(GitBundle.message("git.tag.could.not.create.tag"), result.getErrorOutputAsHtmlString(), true);
+        myNotifier.notifyError(TAG_NOT_CREATED,
+                               GitBundle.message("git.tag.could.not.create.tag"),
+                               result.getErrorOutputAsHtmlString(),
+                               true);
       }
 
       GitRepository repository = GitUtil.getRepositoryManager(myProject).getRepositoryForRoot(getGitRoot());

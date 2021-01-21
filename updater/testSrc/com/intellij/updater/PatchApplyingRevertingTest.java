@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-import static com.intellij.openapi.util.io.IoTestUtil.assumeSymLinkCreationIsSupported;
+import static com.intellij.openapi.util.io.IoTestUtil.assumeNioSymLinkCreationIsSupported;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.*;
 import static org.junit.Assume.assumeFalse;
@@ -227,6 +227,28 @@ public abstract class PatchApplyingRevertingTest extends PatchTestCase {
   }
 
   @Test
+  public void testApplyingWithAbsentOptionalDirectory() throws Exception {
+    Files.createDirectory(myOlderDir.toPath().resolve("opt"));
+    Files.write(myOlderDir.toPath().resolve("opt/file.txt"), "previous content".getBytes(StandardCharsets.UTF_8));
+    Files.createDirectory(myNewerDir.toPath().resolve("opt"));
+    Files.write(myNewerDir.toPath().resolve("opt/file.txt"), "new content".getBytes(StandardCharsets.UTF_8));
+    Files.write(myNewerDir.toPath().resolve("opt/another.txt"), "content".getBytes(StandardCharsets.UTF_8));
+
+    myPatchSpec.setOptionalFiles(Collections.singletonList("opt/file.txt"));
+    createPatch();
+
+    FileUtil.delete(myOlderDir.toPath().resolve("opt"));
+
+    PatchFileCreator.PreparationResult preparationResult = PatchFileCreator.prepareAndValidate(myFile, myOlderDir, TEST_UI);
+    assertThat(preparationResult.validationResults).isEmpty();
+    assertAppliedAndReverted(preparationResult, expected -> {
+      expected.remove("opt/");
+      expected.remove("opt/file.txt");
+      expected.remove("opt/another.txt");
+    });
+  }
+
+  @Test
   public void testRevertingWithAbsentFileToDelete() throws Exception {
     createPatch();
 
@@ -331,6 +353,22 @@ public abstract class PatchApplyingRevertingTest extends PatchTestCase {
       new ValidationResult(ValidationResult.Kind.ERROR,
                            "lib/boot.jar",
                            ValidationResult.Action.VALIDATE,
+                           ValidationResult.MODIFIED_MESSAGE,
+                           ValidationResult.Option.NONE));
+  }
+
+  @Test
+  public void testApplyWhenCommonFileChangesStrictFile() throws Exception {
+    myPatchSpec.setStrictFiles(Collections.singletonList("lib/annotations.jar"));
+    createPatch();
+
+    FileUtil.copy(new File(myOlderDir, "lib/bootstrap.jar"), new File(myOlderDir, "lib/annotations.jar"));
+
+    PatchFileCreator.PreparationResult preparationResult = PatchFileCreator.prepareAndValidate(myFile, myOlderDir, TEST_UI);
+    assertThat(preparationResult.validationResults).containsExactly(
+      new ValidationResult(ValidationResult.Kind.ERROR,
+                           "lib/annotations.jar",
+                           ValidationResult.Action.UPDATE,
                            ValidationResult.MODIFIED_MESSAGE,
                            ValidationResult.Option.NONE));
   }
@@ -480,38 +518,38 @@ public abstract class PatchApplyingRevertingTest extends PatchTestCase {
 
   @Test
   public void testSymlinkAdded() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
-    Utils.createLink("Readme.txt", new File(myNewerDir, "Readme.link"));
+    Files.createSymbolicLink(new File(myNewerDir, "Readme.link").toPath(), Paths.get("Readme.txt"));
 
     assertAppliedAndReverted();
   }
 
   @Test
   public void testSymlinkRemoved() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
-    Utils.createLink("Readme.txt", new File(myOlderDir, "Readme.link"));
+    Files.createSymbolicLink(new File(myOlderDir, "Readme.link").toPath(), Paths.get("Readme.txt"));
 
     assertAppliedAndReverted();
   }
 
   @Test
   public void testSymlinkRenamed() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
-    Utils.createLink("Readme.txt", new File(myOlderDir, "Readme.link"));
-    Utils.createLink("Readme.txt", new File(myNewerDir, "Readme.lnk"));
+    Files.createSymbolicLink(new File(myOlderDir, "Readme.link").toPath(), Paths.get("Readme.txt"));
+    Files.createSymbolicLink(new File(myNewerDir, "Readme.lnk").toPath(), Paths.get("Readme.txt"));
 
     assertAppliedAndReverted();
   }
 
   @Test
   public void testSymlinkRetargeted() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
-    Utils.createLink("Readme.txt", new File(myOlderDir, "Readme.link"));
-    Utils.createLink("./Readme.txt", new File(myNewerDir, "Readme.link"));
+    Files.createSymbolicLink(new File(myOlderDir, "Readme.link").toPath(), Paths.get("Readme.txt"));
+    Files.createSymbolicLink(new File(myNewerDir, "Readme.link").toPath(), Paths.get("./Readme.txt"));
 
     assertAppliedAndReverted();
   }
@@ -561,7 +599,7 @@ public abstract class PatchApplyingRevertingTest extends PatchTestCase {
 
   @Test
   public void multipleDirectorySymlinks() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
     resetNewerDir();
 
@@ -593,7 +631,7 @@ public abstract class PatchApplyingRevertingTest extends PatchTestCase {
 
   @Test
   public void symlinksToFilesAndDirectories() throws Exception {
-    assumeSymLinkCreationIsSupported();
+    assumeNioSymLinkCreationIsSupported();
 
     resetNewerDir();
 

@@ -5,6 +5,7 @@ import com.intellij.ide.TypePresentationService;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Iconable;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.Function;
@@ -19,9 +20,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentMap;
 
@@ -62,24 +61,6 @@ public abstract class ElementPresentationManager {
   public abstract <T> Object @NotNull [] createVariants(Collection<? extends T> elements, Function<? super T, String> namer, int iconFlags);
 
 
-  private static final List<Function<Object, String>> ourNameProviders = new ArrayList<>();
-  private static final List<Function<Object, String>> ourDocumentationProviders = new ArrayList<>();
-
-  /**
-   * @deprecated use {@link com.intellij.ide.presentation.Presentation#provider()}
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
-  public static void registerNameProvider(Function<Object, String> function) { ourNameProviders.add(function); }
-
-  /**
-   * @deprecated use {@link Documentation}
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
-  public static void registerDocumentationProvider(Function<Object, String> function) { ourDocumentationProviders.add(function); }
-
-
   public static <T>NullableFunction<T, String> NAMER() {
     return o -> getElementName(o);
   }
@@ -92,12 +73,6 @@ public abstract class ElementPresentationManager {
 
   @Nullable
   public static String getElementName(@NotNull Object element) {
-    for (final Function<Object, String> function : ourNameProviders) {
-      final String s = function.fun(element);
-      if (s != null) {
-        return s;
-      }
-    }
     Object o = invokeNameValueMethod(element);
     if (o == null || o instanceof String) return (String)o;
     if (o instanceof GenericValue) {
@@ -114,14 +89,14 @@ public abstract class ElementPresentationManager {
     return null;
   }
 
+
+  /**
+   * @deprecated always return {@code null}
+   */
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated
   @Nullable
   public static String getDocumentationForElement(Object element) {
-    for (final Function<Object, String> function : ourDocumentationProviders) {
-      final String s = function.fun(element);
-      if (s != null) {
-        return s;
-      }
-    }
     return null;
   }
 
@@ -130,6 +105,7 @@ public abstract class ElementPresentationManager {
     return ourNameValueMethods.get(element.getClass()).map(method -> DomReflectionUtil.invokeMethod(method, element)).orElse(null);
   }
 
+  @NlsSafe
   public static String getTypeNameForObject(Object o) {
     final Object firstImpl = ModelMergerUtil.getFirstImplementation(o);
     o = firstImpl != null ? firstImpl : o;

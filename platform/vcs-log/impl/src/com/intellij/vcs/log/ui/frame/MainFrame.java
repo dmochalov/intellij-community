@@ -5,16 +5,21 @@ import com.google.common.primitives.Ints;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.openapi.actionSystem.ex.CustomComponentAction;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.util.ProgressWindow;
+import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.vcs.VcsDataKeys;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.ui.components.panels.Wrapper;
+import com.intellij.ui.switcher.QuickActionProvider;
 import com.intellij.util.Consumer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
@@ -50,19 +55,17 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import java.awt.*;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
 
 import static com.intellij.openapi.vfs.VfsUtilCore.toVirtualFileArray;
 import static com.intellij.util.ObjectUtils.notNull;
 import static com.intellij.util.containers.ContainerUtil.getFirstItem;
 
 public class MainFrame extends JPanel implements DataProvider, Disposable {
-  private static final String DIFF_SPLITTER_PROPORTION = "vcs.log.diff.splitter.proportion"; // NON-NLS
-  private static final String DETAILS_SPLITTER_PROPORTION = "vcs.log.details.splitter.proportion"; // NON-NLS
-  private static final String CHANGES_SPLITTER_PROPORTION = "vcs.log.changes.splitter.proportion"; // NON-NLS
+  @NonNls private static final String DIFF_SPLITTER_PROPORTION = "vcs.log.diff.splitter.proportion";
+  @NonNls private static final String DETAILS_SPLITTER_PROPORTION = "vcs.log.details.splitter.proportion";
+  @NonNls private static final String CHANGES_SPLITTER_PROPORTION = "vcs.log.changes.splitter.proportion";
 
   @NotNull private final VcsLogData myLogData;
   @NotNull private final MainVcsLogUiProperties myUiProperties;
@@ -102,7 +105,7 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
     myDetailsPanel = new VcsLogCommitDetailsListPanel(logData, logUi.getColorManager(), this) {
       @Override
       protected void navigate(@NotNull CommitId commit) {
-        logUi.jumpToCommit(commit.getHash(), commit.getRoot());
+        logUi.getVcsLog().jumpToCommit(commit.getHash(), commit.getRoot());
       }
     };
 
@@ -153,10 +156,10 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
 
     setLayout(new BorderLayout());
     if (withDiffPreview) {
-      myDiffPreview = new FrameDiffPreview<VcsLogChangeProcessor>(createDiffPreview(false, myChangesBrowser),
-                                                                  myUiProperties, myChangesBrowserSplitter, DIFF_SPLITTER_PROPORTION,
-                                                                  myUiProperties.get(MainVcsLogUiProperties.DIFF_PREVIEW_VERTICAL_SPLIT),
-                                                                  0.7f) {
+      myDiffPreview = new FrameDiffPreview<>(createDiffPreview(false, myChangesBrowser),
+                                             myUiProperties, myChangesBrowserSplitter, DIFF_SPLITTER_PROPORTION,
+                                             myUiProperties.get(MainVcsLogUiProperties.DIFF_PREVIEW_VERTICAL_SPLIT),
+                                             0.7f) {
         @Override
         public void updatePreview(boolean state) {
           getPreviewDiff().updatePreview(state);
@@ -182,7 +185,7 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
     return processor;
   }
 
-  public void setExplanationHtml(@Nullable String text) {
+  public void setExplanationHtml(@Nullable @NlsContexts.LinkLabel String text) {
     myNotificationLabel.setText(text);
     myNotificationLabel.setVisible(text != null);
   }
@@ -272,6 +275,29 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
       Collection<VirtualFile> roots = getSelectedRoots();
       if (roots.size() != 1) return null;
       return myLogData.getLogProvider(Objects.requireNonNull(getFirstItem(roots))).getDiffHandler();
+    }
+    else if (QuickActionProvider.KEY.is(dataId)) {
+      return new QuickActionProvider() {
+        @Override
+        public @NotNull List<AnAction> getActions(boolean originalProvider) {
+          AnAction textFilterAction = EmptyAction.wrap(ActionManager.getInstance().getAction(VcsLogActionPlaces.VCS_LOG_FOCUS_TEXT_FILTER));
+          textFilterAction.getTemplatePresentation().setText(VcsLogBundle.message("vcs.log.text.filter.action.text"));
+          List<AnAction> actions = new ArrayList<>();
+          actions.add(textFilterAction);
+          actions.addAll(SimpleToolWindowPanel.collectActions(myToolbar));
+          return actions;
+        }
+
+        @Override
+        public JComponent getComponent() {
+          return MainFrame.this;
+        }
+
+        @Override
+        public @NlsActions.ActionText @Nullable String getName() {
+          return null;
+        }
+      };
     }
     return null;
   }

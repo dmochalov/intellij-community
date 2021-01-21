@@ -17,15 +17,16 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.util.SmartList
 import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.throwIfNotEmpty
+import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.TestOnly
 import java.nio.file.Path
 import java.nio.file.Paths
 
-const val ROOT_CONFIG = "\$ROOT_CONFIG$"
+@NonNls const val ROOT_CONFIG = "\$ROOT_CONFIG$"
 
 internal typealias FileChangeSubscriber = (schemeManager: SchemeManagerImpl<*, *>) -> Unit
 
-sealed class SchemeManagerFactoryBase : SchemeManagerFactory(), com.intellij.openapi.components.SettingsSavingComponent {
+sealed class SchemeManagerFactoryBase : SchemeManagerFactory(), SettingsSavingComponent {
   private val managers = ContainerUtil.createLockFreeCopyOnWriteList<SchemeManagerImpl<Scheme, Scheme>>()
 
   protected open val componentManager: ComponentManager? = null
@@ -88,14 +89,16 @@ sealed class SchemeManagerFactoryBase : SchemeManagerFactory(), com.intellij.ope
     }
   }
 
-  final override fun save() {
+  final override suspend fun save() {
     val errors = SmartList<Throwable>()
-    for (registeredManager in managers) {
-      try {
-        registeredManager.save(errors)
-      }
-      catch (e: Throwable) {
-        errors.add(e)
+    withEdtContext(componentManager) {
+      for (registeredManager in managers) {
+        try {
+          registeredManager.save(errors)
+        }
+        catch (e: Throwable) {
+          errors.add(e)
+        }
       }
     }
     throwIfNotEmpty(errors)

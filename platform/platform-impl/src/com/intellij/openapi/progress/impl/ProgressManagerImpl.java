@@ -8,6 +8,7 @@ import com.intellij.openapi.progress.*;
 import com.intellij.openapi.progress.util.PingProgress;
 import com.intellij.openapi.progress.util.ProgressIndicatorBase;
 import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
+import com.intellij.openapi.progress.util.ProgressWindow;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.UserDataHolder;
 import com.intellij.openapi.wm.WindowManager;
@@ -52,7 +53,7 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
   @Override
   public void executeProcessUnderProgress(@NotNull Runnable process, ProgressIndicator progress) throws ProcessCanceledException {
     CheckCanceledHook hook = progress instanceof PingProgress && ApplicationManager.getApplication().isDispatchThread()
-                             ? p -> { ((PingProgress)progress).interact(); return true; } 
+                             ? p -> { ((PingProgress)progress).interact(); return true; }
                              : null;
     if (hook != null) {
       addCheckCanceledHook(hook);
@@ -104,6 +105,21 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
   }
 
   @Override
+  protected @NotNull TaskRunnable createTaskRunnable(@NotNull Task task,
+                                                     @NotNull ProgressIndicator indicator,
+                                                     @Nullable Runnable continuation) {
+    try {
+      return super.createTaskRunnable(task, indicator, continuation);
+    }
+    finally {
+      if (indicator instanceof ProgressWindow) {
+        ApplicationManager.getApplication().getMessageBus().syncPublisher(ProgressManagerListener.TOPIC)
+          .onTaskRunnableCreated(task, indicator, continuation);
+      }
+    }
+  }
+
+  @Override
   @NotNull
   public Future<?> runProcessWithProgressAsynchronously(@NotNull Task.Backgroundable task) {
     CompletableFuture<ProgressIndicator> progressIndicator = CompletableFuture.supplyAsync(
@@ -127,6 +143,17 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
       if (window == null || notificationInfo.isShowWhenFocused()) {
         systemNotify(notificationInfo);
       }
+    }
+  }
+
+  @Override
+  protected void finishTask(@NotNull Task task, boolean canceled, @Nullable Throwable error) {
+    try {
+      super.finishTask(task, canceled, error);
+    }
+    finally {
+      ApplicationManager.getApplication().getMessageBus().syncPublisher(ProgressManagerListener.TOPIC)
+        .onTaskFinished(task, canceled, error);
     }
   }
 

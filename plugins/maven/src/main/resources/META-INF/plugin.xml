@@ -35,6 +35,10 @@
     <extensionPoint name="executionEnvironmentProvider"
                     interface="org.jetbrains.idea.maven.execution.build.MavenExecutionEnvironmentProvider" dynamic="true"/>
     <extensionPoint name="artifactBuilder" interface="org.jetbrains.idea.maven.execution.build.MavenArtifactBuilder" dynamic="true"/>
+    <extensionPoint name="targetConfigurationExtension" interface="org.jetbrains.idea.maven.execution.target.TargetConfigurationMavenExtension" dynamic="true"/>
+    <extensionPoint name="log.parser" interface="org.jetbrains.idea.maven.externalSystemIntegration.output.MavenLoggedEventParser" dynamic="true"/>
+    <extensionPoint name="mavenServerSupportFactory" interface="org.jetbrains.idea.maven.server.MavenRemoteProcessSupportFactory" dynamic="true"/>
+    <extensionPoint name="remotePathTransformerFactory" interface="org.jetbrains.idea.maven.server.RemotePathTransformerFactory" dynamic="true"/>
   </extensionPoints>
 
   <depends>com.intellij.properties</depends>
@@ -43,6 +47,7 @@
   <depends>org.jetbrains.idea.maven.model</depends>
   <depends optional="true" config-file="groovy-support.xml">org.intellij.groovy</depends>
   <depends optional="true" config-file="errorProne-compiler-support.xml">Error-prone plugin</depends>
+  <depends optional="true" config-file="maven-dependency-update-integration.xml">com.intellij.externalSystem.dependencyUpdater</depends>
 
   <extensions defaultExtensionNs="com.intellij">
     <pathMacroContributor implementation="org.jetbrains.idea.maven.utils.MavenPathMacroContributor"/>
@@ -63,13 +68,18 @@
 
     <applicationService serviceImplementation="org.jetbrains.idea.maven.server.MavenServerManager"/>
     <applicationService serviceImplementation="org.jetbrains.idea.maven.server.MavenWrapperMapping"/>
-    <applicationService serviceImplementation="org.jetbrains.idea.maven.indices.MavenIndicesManager"/>
 
+    <projectService serviceImplementation="org.jetbrains.idea.maven.server.MavenDistributionsCache"/>
+    <projectService serviceImplementation="org.jetbrains.idea.maven.indices.MavenIndicesManager"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.project.MavenProjectsManager" preload="true"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.indices.MavenProjectIndicesManager" preload="true"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.navigator.MavenProjectsNavigator" preload="true"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.tasks.MavenTasksManager" preload="true"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.tasks.MavenShortcutsManager" preload="true"/>
+
+    <compiler.task execute="BEFORE" implementation="org.jetbrains.idea.maven.project.MavenResourceConfigurationGeneratorCompileTask"/>
+    <compiler.task execute="BEFORE" implementation="org.jetbrains.idea.maven.tasks.MavenTasksManager$MavenBeforeCompileTask"/>
+    <compiler.task execute="AFTER" implementation="org.jetbrains.idea.maven.tasks.MavenTasksManager$MavenAfterCompileTask"/>
 
     <projectConfigurable groupId="build.tools" groupWeight="120" instance="org.jetbrains.idea.maven.utils.MavenSettings" id="MavenSettings"
                          bundle="messages.MavenProjectBundle"
@@ -97,12 +107,13 @@
     <configurationType implementation="org.jetbrains.idea.maven.execution.MavenRunConfigurationType"/>
     <runConfigurationProducer implementation="org.jetbrains.idea.maven.execution.MavenConfigurationProducer"/>
     <orderEnumerationHandlerFactory implementation="org.jetbrains.idea.maven.execution.MavenOrderEnumeratorHandler$FactoryImpl"/>
+    <executionTargetLanguageRuntimeType implementation="org.jetbrains.idea.maven.execution.target.MavenRuntimeType" />
 
     <junitPatcher implementation="org.jetbrains.idea.maven.execution.MavenJUnitPatcher"/>
 
     <programRunner implementation="org.jetbrains.idea.maven.execution.build.DelegateBuildRunner" id="mavenDelegateBuildRunner"/>
 
-    <compileServer.plugin classpath="maven-jps-plugin.jar"/>
+    <compileServer.plugin classpath="maven-jps.jar"/>
 
     <languageInjector implementation="org.jetbrains.idea.maven.plugins.api.MavenPluginConfigurationLanguageInjector"/>
 
@@ -252,7 +263,7 @@
     <registryKey key="maven.print.import.stacktraces" defaultValue="false"
                  description="Print maven server stacktraces in log"/>
 
-    <registryKey key="maven.always.remove.bad.entries" defaultValue="false" description="Delete invalid maven Entries"/>
+    <registryKey key="maven.always.remove.bad.entries" defaultValue="true" description="Delete invalid maven Entries"/>
 
     <registryKey key="maven.new.project.model" defaultValue="false" description="Maven new project model"
                  restartRequired="true"/>
@@ -274,7 +285,11 @@
     </intentionAction>
 
     <module.workingDirectoryProvider implementation="org.jetbrains.idea.maven.project.MavenWorkingDirectoryProvider"/>
-    <notificationAllowlist groupIds="Maven: non-managed pom.xml"/>
+    <notificationGroup id="Maven" displayType="BALLOON"/>
+    <toolWindowAllowlist id="Maven"/>
+    <compiler.buildIssueContributor implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.quickfixes.JpsReleaseVersion5QuickFix" />
+
+    <toolWindowExtractor implementation="org.jetbrains.idea.maven.navigator.MavenToolWindowViewModelExtractor" />
   </extensions>
 
   <extensions defaultExtensionNs="com.intellij.properties">
@@ -415,6 +430,8 @@
       <param name="delimiters/delimiter" disableReferences="true"/>
     </pluginDescriptor>
 
+    <mavenServerSupportFactory implementation="org.jetbrains.idea.maven.server.wsl.WslMavenRemoteProcessSupportFactory"/>
+    <remotePathTransformerFactory implementation="org.jetbrains.idea.maven.server.wsl.WslRemotePathTransformFactory"/>
     <importer implementation="org.jetbrains.idea.maven.importing.MavenCompilerImporter"/>
     <importer implementation="org.jetbrains.idea.maven.importing.MavenCompilerAnnotationProcessorPathsImporter"/>
     <importer implementation="org.jetbrains.idea.maven.importing.ExternalAnnotationsImporter"/>
@@ -424,6 +441,12 @@
     <compiler implementation="org.jetbrains.idea.maven.importing.MavenCompilerEclipseExtension"/>
     <executionEnvironmentProvider
       implementation="org.jetbrains.idea.maven.execution.MavenApplicationConfigurationExecutionEnvironmentProvider"/>
+
+    <log.parser implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.parsers.MavenBadConfigEventParser"/>
+    <log.parser implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.parsers.JavaBuildErrorNotification"/>
+    <log.parser implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.parsers.KotlinBuildErrorNotification"/>
+    <log.parser implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.parsers.WarningNotifier"/>
+    <log.parser implementation="org.jetbrains.idea.maven.externalSystemIntegration.output.quickfixes.SourceOptionQuickFix"/>
   </extensions>
   <extensions defaultExtensionNs="org.jetbrains.idea.reposearch">
     <provider implementation="org.jetbrains.idea.maven.onlinecompletion.MavenCompletionProviderFactory"/>
@@ -648,6 +671,7 @@
       <reference ref="Maven.BaseProjectMenu"/>
     </group>
 
+    <action id="Maven.ShowConnectors" class="org.jetbrains.idea.maven.server.ui.ShowMavenConnectorsAction"/>
     <action id="Maven.GenerateGroup" class="org.jetbrains.idea.maven.dom.generate.MavenGenerateDomActionGroup">
       <add-to-group group-id="GenerateGroup" anchor="first"/>
     </action>

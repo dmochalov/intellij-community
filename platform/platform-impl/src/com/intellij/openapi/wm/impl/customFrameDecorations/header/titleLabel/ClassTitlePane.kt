@@ -5,19 +5,20 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.displayUrlRelativeToProject
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.newvfs.VfsPresentationUtil
 import com.intellij.openapi.wm.impl.FrameTitleBuilder
 import com.intellij.openapi.wm.impl.PlatformFrameTitleBuilder
 import java.awt.Component
 
-class ClassTitlePane : ClippingTitle() {
+internal class ClassTitlePane : ClippingTitle() {
   var fullPath: Boolean = true
   var project: Project? = null
   var classPath: String = ""
 
   fun updatePath(c: Component) {
     longText = project?.let {
-      if(it.isDisposed) {
+      if(Disposer.isDisposed(it)) {
         classPath = ""
         return@let ""
       }

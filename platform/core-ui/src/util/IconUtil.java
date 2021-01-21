@@ -18,10 +18,7 @@ import com.intellij.ui.icons.CompositeIcon;
 import com.intellij.ui.icons.CopyableIcon;
 import com.intellij.ui.scale.*;
 import com.intellij.util.ui.*;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -31,6 +28,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.RGBImageFilter;
 import java.lang.ref.WeakReference;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static com.intellij.ui.scale.ScaleType.OBJ_SCALE;
@@ -42,6 +40,7 @@ import static com.intellij.ui.scale.ScaleType.USR_SCALE;
  */
 @ApiStatus.NonExtendable
 public class IconUtil {
+  public static final Key<Integer> ICON_FLAG_IGNORE_MASK = new Key<>("ICON_FLAG_IGNORE_MASK");
   private static final Key<Boolean> PROJECT_WAS_EVER_INITIALIZED = Key.create("iconDeferrer:projectWasEverInitialized");
 
   private static boolean wasEverInitialized(@NotNull Project project) {
@@ -65,14 +64,17 @@ public class IconUtil {
       return icon;
     }
 
-    Image image = toImage(icon);
-    if (image == null) return icon;
+    Image image = IconLoader.toImage(icon, null);
+    if (image == null) {
+      return icon;
+    }
 
     double scale = 1f;
     if (image instanceof JBHiDPIScaledImage) {
       scale = ((JBHiDPIScaledImage)image).getScale();
       image = ((JBHiDPIScaledImage)image).getDelegate();
     }
+
     BufferedImage bi = ImageUtil.toBufferedImage(image);
     final Graphics2D g = bi.createGraphics();
 
@@ -135,8 +137,9 @@ public class IconUtil {
     };
   }
 
-  private static final NullableFunction<FileIconKey, Icon> ICON_NULLABLE_FUNCTION = key ->
-    computeFileIcon(key.getFile(), key.getFlags(), key.getProject());
+  private static final Function<FileIconKey, Icon> ICON_NULLABLE_FUNCTION = key -> {
+    return computeFileIcon(key.getFile(), key.getFlags(), key.getProject());
+  };
 
   /**
    * @return a deferred icon for the file, taking into account {@link FileIconProvider} and {@link FileIconPatcher} extensions.
@@ -170,7 +173,7 @@ public class IconUtil {
       icon = new LayeredIcon(icon, PlatformIcons.LOCKED_ICON);
     }
 
-    Iconable.LastComputedIcon.put(file, icon, flags);
+    LastComputedIconCache.put(file, icon, flags);
 
     return icon;
   }
@@ -178,8 +181,8 @@ public class IconUtil {
   @Iconable.IconFlags
   private static int filterFileIconFlags(@NotNull VirtualFile file, @Iconable.IconFlags int flags) {
     UserDataHolder fileTypeDataHolder = ObjectUtils.tryCast(file.getFileType(), UserDataHolder.class);
-    int fileTypeFlagIgnoreMask = Iconable.ICON_FLAG_IGNORE_MASK.get(fileTypeDataHolder, 0);
-    int flagIgnoreMask = Iconable.ICON_FLAG_IGNORE_MASK.get(file, fileTypeFlagIgnoreMask);
+    int fileTypeFlagIgnoreMask = ICON_FLAG_IGNORE_MASK.get(fileTypeDataHolder, 0);
+    int flagIgnoreMask = ICON_FLAG_IGNORE_MASK.get(file, fileTypeFlagIgnoreMask);
     //noinspection MagicConstant
     return flags & ~flagIgnoreMask;
   }
@@ -188,10 +191,10 @@ public class IconUtil {
    * @return a deferred icon for the file, taking into account {@link FileIconProvider} and {@link FileIconPatcher} extensions.
    * Use {@link #computeFileIcon} where possible (e.g. in background threads) to get a non-deferred icon.
    */
-  public static Icon getIcon(@NotNull VirtualFile file, @Iconable.IconFlags int flags, @Nullable Project project) {
-    Icon lastIcon = Iconable.LastComputedIcon.get(file, flags);
+  public static @NotNull Icon getIcon(@NotNull VirtualFile file, @Iconable.IconFlags int flags, @Nullable Project project) {
+    Icon lastIcon = LastComputedIconCache.get(file, flags);
     Icon base = lastIcon != null ? lastIcon : computeBaseFileIcon(file);
-    return IconDeferrer.getInstance().defer(base, new FileIconKey(file, project, flags), ICON_NULLABLE_FUNCTION);
+    return IconManager.getInstance().createDeferredIcon(base, new FileIconKey(file, project, flags), ICON_NULLABLE_FUNCTION);
   }
 
   /**
@@ -207,7 +210,7 @@ public class IconUtil {
     }
     FileType fileType = vFile.getFileType();
     if (vFile.isDirectory() && !(fileType instanceof DirectoryFileType)) {
-      return IconWithToolTip.tooltipOnlyIfComposite(PlatformIcons.FOLDER_ICON);
+      return IconManager.getInstance().tooltipOnlyIfComposite(PlatformIcons.FOLDER_ICON);
     }
     icon = fileType.getIcon();
     return icon != null ? icon : getEmptyIcon(false);
@@ -224,7 +227,7 @@ public class IconUtil {
 
   @NotNull
   public static Icon getEmptyIcon(boolean showVisibility) {
-    RowIcon baseIcon = new RowIcon(2);
+    com.intellij.ui.icons.RowIcon baseIcon = new RowIcon(2);
     baseIcon.setIcon(EmptyIcon.create(PlatformIcons.CLASS_ICON), 0);
     if (showVisibility) {
       baseIcon.setIcon(EmptyIcon.create(PlatformIcons.PUBLIC_ICON), 1);
@@ -232,12 +235,39 @@ public class IconUtil {
     return baseIcon;
   }
 
+  @NotNull
   public static Image toImage(@NotNull Icon icon) {
     return toImage(icon, null);
   }
 
-  public static Image toImage(@NotNull Icon icon, @Nullable ScaleContext ctx) {
-    return IconLoader.toImage(icon, ctx);
+  @NotNull
+  public static Image toImage(@NotNull Icon icon, @Nullable ScaleContext context) {
+    Image image = IconLoader.toImage(icon, context);
+    if (image == null) {
+      //noinspection UndesirableClassUsage
+      image = new BufferedImage(1, 0, BufferedImage.TYPE_INT_ARGB);
+    }
+    return image;
+  }
+
+  @NotNull
+  public static BufferedImage toBufferedImage(@NotNull Icon icon) {
+    return toBufferedImage(icon, false);
+  }
+
+  @NotNull
+  public static BufferedImage toBufferedImage(@NotNull Icon icon, boolean inUserScale) {
+    return toBufferedImage(icon, null, inUserScale);
+  }
+
+  @NotNull
+  public static BufferedImage toBufferedImage(@NotNull Icon icon, @Nullable ScaleContext context, boolean inUserScale) {
+    Image image = IconLoader.toImage(icon, context);
+    if (image == null) {
+      //noinspection UndesirableClassUsage
+      image = new BufferedImage(1, 0, BufferedImage.TYPE_INT_ARGB);
+    }
+    return ImageUtil.toBufferedImage(image, inUserScale);
   }
 
   @NotNull
@@ -300,9 +330,12 @@ public class IconUtil {
     return AllIcons.ToolbarDecorator.AddLink;
   }
 
-  @NotNull
-  public static Icon getAnalyzeIcon() {
-    return IconLoader.getIcon(getToolbarDecoratorIconsFolder() + "analyze.png");
+  /**
+   * @deprecated This icon is not used by platform anymore.
+   */
+  @Deprecated
+  public static @NotNull Icon getAnalyzeIcon() {
+    return IconLoader.getIcon(getToolbarDecoratorIconsFolder() + "analyze.png", IconUtil.class);
   }
 
   public static void paintInCenterOf(@NotNull Component c, @NotNull Graphics g, @NotNull Icon icon) {
@@ -312,8 +345,8 @@ public class IconUtil {
   }
 
   @NotNull
-  private static String getToolbarDecoratorIconsFolder() {
-    return "/toolbarDecorator/" + (SystemInfo.isMac ? "mac/" : "");
+  private static @NonNls String getToolbarDecoratorIconsFolder() {
+    return "/toolbarDecorator/" + (SystemInfoRt.isMac ? "mac/" : "");
   }
 
   /**
@@ -336,6 +369,40 @@ public class IconUtil {
   @NotNull
   public static Icon toSize(@Nullable Icon icon, int width, int height) {
     return new IconSizeWrapper(icon, width, height);
+  }
+
+  public static void paintSelectionAwareIcon(@NotNull Icon icon, @Nullable JComponent component, @NotNull Graphics g, int x, int y, boolean selected) {
+    if (selected) {
+      SVGLoader.paintIconWithSelection(icon, component, g, x, y);
+    } else {
+      icon.paintIcon(component, g, x, y);
+    }
+  }
+
+  /**
+   * Use only for icons under selection
+   */
+  @Nullable
+  @ApiStatus.Internal
+  @Contract("null -> null; !null -> !null")
+  public static Icon wrapToSelectionAwareIcon(@Nullable Icon iconUnderSelection) {
+    if (iconUnderSelection == null) return null;
+    return new Icon() {
+      @Override
+      public void paintIcon(Component c, Graphics g, int x, int y) {
+        SVGLoader.paintIconWithSelection(iconUnderSelection, c, g, x, y);
+      }
+
+      @Override
+      public int getIconWidth() {
+        return iconUnderSelection.getIconWidth();
+      }
+
+      @Override
+      public int getIconHeight() {
+        return iconUnderSelection.getIconHeight();
+      }
+    };
   }
 
   public static class IconSizeWrapper implements Icon {
@@ -434,22 +501,11 @@ public class IconUtil {
   @Deprecated
   @NotNull
   public static Icon scale(@NotNull final Icon source, double _scale) {
-    final double scale = MathUtil.clamp(_scale, .1, 32);
+    final double scale = clampScale(_scale);
     return new Icon() {
       @Override
       public void paintIcon(Component c, Graphics g, int x, int y) {
-        Graphics2D g2d = (Graphics2D)g.create();
-        try {
-          g2d.translate(x, y);
-          AffineTransform transform = AffineTransform.getScaleInstance(scale, scale);
-          transform.preConcatenate(g2d.getTransform());
-          g2d.setTransform(transform);
-          g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-          source.paintIcon(c, g2d, 0, 0);
-        }
-        finally {
-          g2d.dispose();
-        }
+        paintScaled(c, g, x, y, scale, source);
       }
 
       @Override
@@ -460,6 +516,47 @@ public class IconUtil {
       @Override
       public int getIconHeight() {
         return (int)(source.getIconHeight() * scale);
+      }
+    };
+  }
+
+  private static double clampScale(double _scale) {
+    return MathUtil.clamp(_scale, .1, 32);
+  }
+
+  private static void paintScaled(@Nullable Component c, @NotNull Graphics g, int x, int y, double scale, @NotNull Icon source) {
+    Graphics2D g2d = (Graphics2D)g.create();
+    try {
+      g2d.translate(x, y);
+      AffineTransform transform = AffineTransform.getScaleInstance(scale, scale);
+      transform.preConcatenate(g2d.getTransform());
+      g2d.setTransform(transform);
+      g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+      source.paintIcon(c, g2d, 0, 0);
+    }
+    finally {
+      g2d.dispose();
+    }
+  }
+
+
+  public static @NotNull Icon resizeSquared(@NotNull Icon source, int size) {
+    JBValue sizeValue = JBUI.uiIntValue("ResizedIcon", size);
+    return new Icon() {
+      @Override
+      public void paintIcon(Component c, Graphics g, int x, int y) {
+        double scale = clampScale((double)sizeValue.get() / (double)source.getIconWidth());
+        paintScaled(c, g, x, y, scale, source);
+      }
+
+      @Override
+      public int getIconWidth() {
+        return sizeValue.get();
+      }
+
+      @Override
+      public int getIconHeight() {
+        return sizeValue.get();
       }
     };
   }
@@ -510,11 +607,44 @@ public class IconUtil {
    */
   @NotNull
   public static Icon scale(@NotNull Icon icon, @Nullable Component ancestor, float scale) {
-    if (icon instanceof ScalableIcon) {
-      if (icon instanceof ScaleContextAware) {
-        ((ScaleContextAware)icon).updateScaleContext(ancestor != null ? ScaleContext.create(ancestor) : null);
+    ScaleContext ctx;
+    if (ancestor == null && icon instanceof ScaleContextAware) {
+      // In this case the icon's context should be preserved, except the OBJ_SCALE.
+      UserScaleContext usrCtx = ((ScaleContextAware)icon).getScaleContext();
+      ctx = ScaleContext.create(usrCtx);
+    } else {
+      ctx = ScaleContext.create(ancestor);
+    }
+    ctx.update(OBJ_SCALE.of(scale));
+    return scale(icon, ctx);
+  }
+
+  /**
+   * Returns a scaled icon instance.
+   * <p>
+   * The passed {@code ctx} is applied to the icon and the {@link ScaleType#OBJ_SCALE} is used to scale it.
+   *
+   * @see #scale(Icon, Component, float)
+   * @param icon the icon to scale
+   * @param ctx the scale context to apply
+   * @param scale the scale factor
+   * @return the scaled icon
+   */
+  @NotNull
+  public static Icon scale(@NotNull Icon icon, @NotNull ScaleContext ctx) {
+    double scale = ctx.getScale(OBJ_SCALE);
+    if (icon instanceof CopyableIcon) {
+      icon = ((CopyableIcon)icon).deepCopy();
+      if (icon instanceof ScalableIcon) {
+        if (icon instanceof ScaleContextAware) {
+          ctx = ctx.copy();
+          // Reset OBJ_SCALE in the context to preserve ScalableIcon.scale(float) implementation
+          // from accumulation of the scales: OBJ_SCALE * scale.
+          ctx.update(OBJ_SCALE.of(1.0));
+          ((ScaleContextAware)icon).updateScaleContext(ctx);
+        }
+        return ((ScalableIcon)icon).scale((float)scale);
       }
-      return ((ScalableIcon)icon).scale(scale);
     }
     return scale(icon, scale);
   }

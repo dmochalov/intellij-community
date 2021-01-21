@@ -28,7 +28,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-internal const val ASKED_ADD_EXTERNAL_FILES_PROPERTY = "ASKED_ADD_EXTERNAL_FILES"
+internal const val ASKED_ADD_EXTERNAL_FILES_PROPERTY = "ASKED_ADD_EXTERNAL_FILES" //NON-NLS
 
 private val LOG = logger<ExternallyAddedFilesProcessorImpl>()
 
@@ -118,7 +118,7 @@ internal class ExternallyAddedFilesProcessorImpl(project: Project,
     }
   }
 
-  override val notificationDisplayId: String = "externally.added.files.notification"
+  override val notificationDisplayId: String = VcsNotificationIdsHolder.EXTERNALLY_ADDED_FILES
   override val askedBeforeProperty = ASKED_ADD_EXTERNAL_FILES_PROPERTY
   override val doForCurrentProjectProperty: String? = null
 

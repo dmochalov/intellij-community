@@ -12,8 +12,10 @@ import com.intellij.lang.xhtml.XHTMLLanguage;
 import com.intellij.lang.xml.XMLLanguage;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.XmlTypedHandlersAdditionalSupport;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.registry.RegistryValue;
@@ -55,14 +57,18 @@ public final class HtmlUtil {
   @NonNls private static final String CHARSET_PREFIX = CHARSET + "=";
   @NonNls public static final String HTML5_DATA_ATTR_PREFIX = "data-";
 
-  public static final String SCRIPT_TAG_NAME = "script";
-  public static final String STYLE_TAG_NAME = "style";
-  public static final String TEMPLATE_TAG_NAME = "template";
+  @NlsSafe public static final String SCRIPT_TAG_NAME = "script";
+  @NlsSafe public static final String STYLE_TAG_NAME = "style";
+  @NlsSafe public static final String TEMPLATE_TAG_NAME = "template";
+  @NlsSafe public static final String TEXTAREA_TAG_NAME = "textarea";
+  @NlsSafe public static final String TITLE_TAG_NAME = "title";
 
-  public static final String STYLE_ATTRIBUTE_NAME = STYLE_TAG_NAME;
-  public static final String SRC_ATTRIBUTE_NAME = "src";
-  public static final String ID_ATTRIBUTE_NAME = "id";
-  public static final String CLASS_ATTRIBUTE_NAME = "class";
+  @NlsSafe public static final String STYLE_ATTRIBUTE_NAME = STYLE_TAG_NAME;
+  @NlsSafe public static final String SRC_ATTRIBUTE_NAME = "src";
+  @NlsSafe public static final String ID_ATTRIBUTE_NAME = "id";
+  @NlsSafe public static final String CLASS_ATTRIBUTE_NAME = "class";
+  @NlsSafe public static final String TYPE_ATTRIBUTE_NAME = "type";
+  @NlsSafe public static final String LANGUAGE_ATTRIBUTE_NAME = "language";
 
   @NonNls public static final String MATH_ML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
   @NonNls public static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -78,43 +84,37 @@ public final class HtmlUtil {
   }
 
   private static final Set<String> EMPTY_TAGS_MAP = new HashSet<>();
-  @NonNls private static final String[] OPTIONAL_END_TAGS = {
+  private static final Set<String> OPTIONAL_END_TAGS_MAP = ContainerUtil.set(
     //"html",
     "head",
     //"body",
     "p", "li", "dd", "dt", "thead", "tfoot", "tbody", "colgroup", "tr", "th", "td", "option", "embed", "noembed",
     "caption"
-  };
-  private static final Set<String> OPTIONAL_END_TAGS_MAP = new HashSet<>();
+  );
 
-  @NonNls private static final String[] BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "dir", "menu", "pre",
-    "dl", "div", "center", "noscript", "noframes", "blockquote", "form", "isindex", "hr", "table", "fieldset", "address",
-    // nonexplicitly specified
-    "map",
-    // flow elements
-    "body", "object", "applet", "ins", "del", "dd", "li", "button", "th", "td", "iframe", "comment"
-  };
+  private static final Set<String> BLOCK_TAGS_MAP =
+    ContainerUtil.set("p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "dir", "menu", "pre",
+                      "dl", "div", "center", "noscript", "noframes", "blockquote", "form", "isindex", "hr", "table", "fieldset", "address",
+                      // nonexplicitly specified
+                      "map",
+                      // flow elements
+                      "body", "object", "applet", "ins", "del", "dd", "li", "button", "th", "td", "iframe", "comment");
 
   // flow elements are block or inline, so they should not close <p> for example
-  @NonNls private static final String[] POSSIBLY_INLINE_TAGS =
-    {"a", "abbr", "acronym", "applet", "b", "basefont", "bdo", "big", "br", "button",
-      "cite", "code", "del", "dfn", "em", "font", "i", "iframe", "img", "input", "ins",
-      "kbd", "label", "map", "object", "q", "s", "samp", "select", "small", "span", "strike",
-      "strong", "sub", "sup", "textarea", "tt", "u", "var"};
+  private static final Set<String> POSSIBLY_INLINE_TAGS_MAP =
+    ContainerUtil.set("a", "abbr", "acronym", "applet", "b", "basefont", "bdo", "big", "br", "button",
+                      "cite", "code", "del", "dfn", "em", "font", "i", "iframe", "img", "input", "ins",
+                      "kbd", "label", "map", "object", "q", "s", "samp", "select", "small", "span", "strike",
+                      "strong", "sub", "sup", "textarea", "tt", "u", "var");
 
-  private static final Set<String> BLOCK_TAGS_MAP = new HashSet<>();
+  private static final Set<String> INLINE_ELEMENTS_CONTAINER_MAP = ContainerUtil.set("p", "h1", "h2", "h3", "h4", "h5", "h6", "pre");
 
-  @NonNls private static final String[] INLINE_ELEMENTS_CONTAINER = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "pre"};
-  private static final Set<String> INLINE_ELEMENTS_CONTAINER_MAP = new HashSet<>();
-
-  private static final Set<String> POSSIBLY_INLINE_TAGS_MAP = new HashSet<>();
-
-  @NonNls private static final String[] HTML5_TAGS = {
-    "article", "aside", "audio", "canvas", "command", "datalist", "details", "embed", "figcaption", "figure", "footer", "header",
-    "keygen", "mark", "meter", "nav", "output", "progress", "rp", "rt", "ruby", "section", "source", "summary", "time", "video", "wbr",
-    "main"
-  };
-  private static final Set<String> HTML5_TAGS_SET = new HashSet<>();
+  private static final Set<String> HTML5_TAGS_SET = ContainerUtil.set("article", "aside", "audio", "canvas", "command", "datalist",
+                                                                      "details", "embed", "figcaption", "figure", "footer", "header",
+                                                                      "keygen", "mark", "meter", "nav", "output", "progress", "rp", "rt",
+                                                                      "ruby", "section", "source", "summary", "time", "video", "wbr",
+                                                                      "main"
+  );
   private static final Map<String, Set<String>> AUTO_CLOSE_BY_MAP = new HashMap<>();
 
   static {
@@ -123,11 +123,6 @@ public final class HtmlUtil {
       if (control.endTag == HTMLControls.TagState.FORBIDDEN) EMPTY_TAGS_MAP.add(tagName);
       AUTO_CLOSE_BY_MAP.put(tagName, new HashSet<>(control.autoClosedBy));
     }
-    ContainerUtil.addAll(OPTIONAL_END_TAGS_MAP, OPTIONAL_END_TAGS);
-    ContainerUtil.addAll(BLOCK_TAGS_MAP, BLOCK_TAGS);
-    ContainerUtil.addAll(INLINE_ELEMENTS_CONTAINER_MAP, INLINE_ELEMENTS_CONTAINER);
-    ContainerUtil.addAll(POSSIBLY_INLINE_TAGS_MAP, POSSIBLY_INLINE_TAGS);
-    ContainerUtil.addAll(HTML5_TAGS_SET, HTML5_TAGS);
   }
 
   public static boolean isSingleHtmlTag(@NotNull XmlTag tag, boolean lowerCase) {
@@ -471,14 +466,15 @@ public final class HtmlUtil {
 
   public static boolean tagHasHtml5Schema(@NotNull XmlTag context) {
     XmlElementDescriptor descriptor = context.getDescriptor();
-    if (descriptor != null) {
-      XmlNSDescriptor nsDescriptor = descriptor.getNSDescriptor();
-      XmlFile descriptorFile = nsDescriptor != null ? nsDescriptor.getDescriptorFile() : null;
-      String descriptorPath = descriptorFile != null ? descriptorFile.getVirtualFile().getPath() : null;
-      return Objects.equals(Html5SchemaProvider.getHtml5SchemaLocation(), descriptorPath) ||
-             Objects.equals(Html5SchemaProvider.getXhtml5SchemaLocation(), descriptorPath);
-    }
-    return false;
+    XmlNSDescriptor nsDescriptor = descriptor != null ? descriptor.getNSDescriptor() : null;
+    return isHtml5Schema(nsDescriptor);
+  }
+
+  public static boolean isHtml5Schema(@Nullable XmlNSDescriptor nsDescriptor) {
+    XmlFile descriptorFile = nsDescriptor != null ? nsDescriptor.getDescriptorFile() : null;
+    String descriptorPath = descriptorFile != null ? descriptorFile.getVirtualFile().getPath() : null;
+    return Objects.equals(Html5SchemaProvider.getHtml5SchemaLocation(), descriptorPath) ||
+           Objects.equals(Html5SchemaProvider.getXhtml5SchemaLocation(), descriptorPath);
   }
 
   private static class TerminateException extends RuntimeException {
@@ -606,14 +602,7 @@ public final class HtmlUtil {
   }
 
   public static boolean supportsXmlTypedHandlers(@NotNull PsiFile file) {
-    Language language = file.getLanguage();
-    while (language != null) {
-      if ("JavaScript".equals(language.getID())) return true;
-      if ("Dart".equals(language.getID())) return true;
-      language = language.getBaseLanguage();
-    }
-
-    return false;
+    return XmlTypedHandlersAdditionalSupport.supportsTypedHandlers(file);
   }
 
   public static boolean hasHtmlPrefix(@NotNull String url) {
@@ -696,7 +685,7 @@ public final class HtmlUtil {
   }
 
   @Contract("!null -> !null")
-  public static String getTagPresentation(@Nullable XmlTag tag) {
+  public static @NlsSafe String getTagPresentation(@Nullable XmlTag tag) {
     if (tag == null) return null;
     StringBuilder builder = new StringBuilder(tag.getLocalName());
     String idValue = getAttributeValue(tag, ID_ATTRIBUTE_NAME);

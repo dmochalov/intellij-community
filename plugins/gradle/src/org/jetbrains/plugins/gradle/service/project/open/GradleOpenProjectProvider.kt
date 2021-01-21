@@ -2,14 +2,12 @@
 package org.jetbrains.plugins.gradle.service.project.open
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.invokeLater
-import com.intellij.openapi.externalSystem.autolink.UnlinkedProjectNotificationAware
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.DataNode
-import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.model.internal.InternalExternalProjectInfo
 import com.intellij.openapi.externalSystem.model.project.ProjectData
+import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode.IN_BACKGROUND_ASYNC
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode.MODAL_SYNC
 import com.intellij.openapi.externalSystem.service.project.ExternalProjectRefreshCallback
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager
@@ -20,6 +18,7 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vfs.VirtualFile
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings
 import org.jetbrains.plugins.gradle.settings.GradleSettings
@@ -53,17 +52,22 @@ internal class GradleOpenProjectProvider : AbstractOpenProjectProvider() {
 
   private fun attachGradleProjectAndRefresh(settings: ExternalProjectSettings, project: Project) {
     val externalProjectPath = settings.externalProjectPath
+    ExternalSystemApiUtil.getSettings(project, SYSTEM_ID).linkProject(settings)
+    if (Registry.`is`("external.system.auto.import.disabled")) return
+    ExternalSystemUtil.refreshProject(
+      externalProjectPath,
+      ImportSpecBuilder(project, SYSTEM_ID)
+        .usePreviewMode()
+        .use(MODAL_SYNC)
+    )
     ExternalProjectsManagerImpl.getInstance(project).runWhenInitialized {
       ExternalSystemUtil.ensureToolWindowInitialized(project, SYSTEM_ID)
+      ExternalSystemUtil.refreshProject(
+        externalProjectPath,
+        ImportSpecBuilder(project, SYSTEM_ID)
+          .callback(createFinalImportCallback(project, externalProjectPath))
+      )
     }
-    ExternalSystemApiUtil.getSettings(project, SYSTEM_ID).linkProject(settings)
-    ExternalSystemUtil.refreshProject(externalProjectPath,
-                                      ImportSpecBuilder(project, SYSTEM_ID)
-                                        .usePreviewMode()
-                                        .use(MODAL_SYNC))
-    ExternalSystemUtil.refreshProject(externalProjectPath,
-                                      ImportSpecBuilder(project, SYSTEM_ID)
-                                        .callback(createFinalImportCallback(project, externalProjectPath)))
   }
 
   private fun createFinalImportCallback(project: Project, externalProjectPath: String): ExternalProjectRefreshCallback {

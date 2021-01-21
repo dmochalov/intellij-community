@@ -416,6 +416,10 @@ public final class HardcodedContracts {
           .skip(1)
           .takeWhile(e -> !(e instanceof PsiStatement) && !(e instanceof PsiMember))
           .filter(PsiMethodCallExpression.class)
+          .takeWhile(c -> {
+            String name = c.getMethodExpression().getReferenceName();
+            return name != null && (name.startsWith("is") || name.equals("describedAs") || name.equals("as"));
+          })
           .filterMap(c -> constraintFromAssertJMatcher(type, c))
           .toList();
       }
@@ -439,9 +443,15 @@ public final class HardcodedContracts {
       case "isEmpty":
         return emptyCheck(type, true);
       case "isTrue":
-        return new StandardMethodContract(new ValueConstraint[]{FALSE_VALUE}, fail());
+        if (PsiType.BOOLEAN.equals(type) || TypeUtils.typeEquals(JAVA_LANG_BOOLEAN, type)) {
+          return new StandardMethodContract(new ValueConstraint[]{FALSE_VALUE}, fail());
+        }
+        return null;
       case "isFalse":
-        return new StandardMethodContract(new ValueConstraint[]{TRUE_VALUE}, fail());
+        if (PsiType.BOOLEAN.equals(type) || TypeUtils.typeEquals(JAVA_LANG_BOOLEAN, type)) {
+          return new StandardMethodContract(new ValueConstraint[]{TRUE_VALUE}, fail());
+        }
+        return null;
     }
     return null;
   }

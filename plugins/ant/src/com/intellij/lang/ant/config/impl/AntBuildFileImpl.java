@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.InvalidDataException;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -21,6 +22,7 @@ import com.intellij.util.NewInstanceFactory;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.config.*;
 import org.jdom.Element;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -34,7 +36,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
   private volatile Map<String, String> myCachedExternalProperties;
   private final Object myOptionsLock = new Object();
 
-  public static final AbstractProperty<AntInstallation> ANT_INSTALLATION = new AbstractProperty<AntInstallation>() {
+  public static final AbstractProperty<AntInstallation> ANT_INSTALLATION = new AbstractProperty<>() {
     @Override
     public String getName() {
       return "$antInstallation";
@@ -59,7 +61,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
     }
   };
 
-  public static final AbstractProperty<List<File>> ALL_CLASS_PATH = new AbstractProperty<List<File>>() {
+  public static final AbstractProperty<List<File>> ALL_CLASS_PATH = new AbstractProperty<>() {
     @Override
     public String getName() {
       return "$allClasspath";
@@ -119,7 +121,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
   public static final AbstractProperty<AntReference> ANT_REFERENCE =
     new ValueProperty<>("antReference", AntReference.PROJECT_DEFAULT);
   public static final ListProperty<AntClasspathEntry> ADDITIONAL_CLASSPATH = ListProperty.create("additionalClassPath");
-  public static final AbstractProperty<AntInstallation> RUN_WITH_ANT = new AbstractProperty<AntInstallation>() {
+  public static final AbstractProperty<AntInstallation> RUN_WITH_ANT = new AbstractProperty<>() {
     @Override
     public String getName() {
       return "$runWithAnt";
@@ -144,6 +146,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
   };
 
   private final VirtualFile myVFile;
+  @NotNull
   private final Project myProject;
   private final AntConfigurationBase myAntConfiguration;
   private final ExternalizablePropertyContainer myWorkspaceOptions;
@@ -152,7 +155,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
   private final ClassLoaderHolder myClassloaderHolder;
   private boolean myShouldExpand = true;
 
-  public AntBuildFileImpl(PsiFile antFile, final AntConfigurationBase configuration) {
+  public AntBuildFileImpl(@NotNull PsiFile antFile, final AntConfigurationBase configuration) {
     myVFile = antFile.getOriginalFile().getVirtualFile();
     myProject = antFile.getProject();
     myAntConfiguration = configuration;
@@ -193,7 +196,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
   }
 
   @Override
-  public @NotNull String getPresentableName() {
+  public @NotNull @Nls String getPresentableName() {
     AntBuildModel model = myAntConfiguration.getModelIfRegistered(this);
     String name = model != null ? model.getName() : null;
     if (StringUtil.isEmptyOrSpaces(name)) {
@@ -204,7 +207,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
 
   @Override
   @Nullable
-  public String getName() {
+  public @NlsSafe String getName() {
     final VirtualFile vFile = getVirtualFile();
     return vFile != null ? vFile.getName() : null;
   }
@@ -265,7 +268,7 @@ public final class AntBuildFileImpl implements AntBuildFileBase {
 
   @Override
   @Nullable
-  public String getPresentableUrl() {
+  public @NlsSafe String getPresentableUrl() {
     final VirtualFile file = getVirtualFile();
     return (file == null) ? null : file.getPresentableUrl();
   }

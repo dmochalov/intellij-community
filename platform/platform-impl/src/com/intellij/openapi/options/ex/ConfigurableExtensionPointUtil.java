@@ -1,22 +1,19 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.options.ex;
 
-import com.intellij.AbstractBundle;
+import com.intellij.BundleBase;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.*;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.SmartList;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import java.text.MessageFormat;
 import java.util.*;
@@ -113,14 +110,11 @@ public final class ConfigurableExtensionPointUtil {
    * @return the root configurable group that represents a tree of settings
    */
   public static @NotNull ConfigurableGroup getConfigurableGroup(@Nullable Project project, boolean withIdeSettings) {
-    if (!withIdeSettings && project == null) {
-      project = ProjectManager.getInstance().getDefaultProject();
-    }
-
-    Project finalProject = project;
-    return new EpBasedConfigurableGroup(finalProject, () -> {
-      return getConfigurableGroup(getConfigurables(finalProject, withIdeSettings), finalProject);
-    });
+    Project targetProject = withIdeSettings ? project : ProjectUtil.currentOrDefaultProject(project);
+    return new EpBasedConfigurableGroup(
+      targetProject,
+      () -> getConfigurableGroup(getConfigurables(targetProject, withIdeSettings), targetProject)
+    );
   }
 
   /**
@@ -221,7 +215,7 @@ public final class ConfigurableExtensionPointUtil {
         node.myValue = new SortedConfigurableGroup(id, name, ep.getDescription(), ep.helpTopic, ep.weight);
       }
       else if (root) {
-        node.myValue = new SortedConfigurableGroup(id, "ROOT GROUP", null, null, 0);
+        node.myValue = new SortedConfigurableGroup(id, "ROOT GROUP", null, null, 0); //NON-NLS
       }
       else {
         LOG.warn("Use <groupConfigurable> to specify custom configurable group: " + groupId);
@@ -355,7 +349,7 @@ public final class ConfigurableExtensionPointUtil {
   }
 
   /**
-   * @param project         a project used to load project settings or {@code null}
+   * @param project         a project used to load project settings for or {@code null}
    * @param withIdeSettings specifies whether to load application settings or not
    * @return the list of all valid settings according to parameters
    */
@@ -420,7 +414,7 @@ public final class ConfigurableExtensionPointUtil {
     return null;
   }
 
-  private static String getString(ResourceBundle bundle, @NonNls String resource) {
+  private static @Nls String getString(ResourceBundle bundle, @NonNls String resource) {
     if (bundle == null) return null;
     try {
       return bundle.getString(resource);
@@ -430,10 +424,10 @@ public final class ConfigurableExtensionPointUtil {
     }
   }
 
-  private static String getName(ResourceBundle bundle, @NonNls String resource) {
+  private static @Nls String getName(ResourceBundle bundle, @NonNls String resource) {
     if (bundle == null) return null;
     try {
-      return AbstractBundle.message(bundle, resource);
+      return BundleBase.messageOrDefault(bundle, resource, null);
     }
     catch (MissingResourceException ignored) {
       return null;

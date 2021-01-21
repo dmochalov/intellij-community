@@ -1134,13 +1134,13 @@ public class Py3TypeTest extends PyTestCase {
   // PY-13750
   public void testBuiltinRound() {
     doTest("int", "expr = round(1)");
-    doTest("Union[float, int]", "expr = round(1, 1)");
+    doTest("Union[int, float]", "expr = round(1, 1)");
 
     doTest("int", "expr = round(1.1)");
     doTest("float", "expr = round(1.1, 1)");
 
     doTest("int", "expr = round(True)");
-    doTest("Union[float, int]", "expr = round(True, 1)");
+    doTest("Union[int, float]", "expr = round(True, 1)");
   }
 
   // PY-29665
@@ -1161,6 +1161,32 @@ public class Py3TypeTest extends PyTestCase {
            "    \"\"\"Example Docstring\"\"\"\n" +
            "    return 0\n" +
            "expr = example.__doc__");
+  }
+
+  // PY-29891
+  public void testContextManagerType() {
+    runWithLanguageLevel(
+      LanguageLevel.getLatest(),
+      () -> doTest("str",
+                   "from typing import Type, ContextManager\n" +
+                   "def example():\n" +
+                   "  manager: Type[ContextManager[str]]\n" +
+                   "  with manager() as m:\n" +
+                   "        expr = m")
+    );
+  }
+
+  // PY-29891
+  public void testAsyncContextManager() {
+    runWithLanguageLevel(
+      LanguageLevel.getLatest(),
+      () -> doTest("str",
+                   "from typing import AsyncContextManager\n" +
+                   "async def example():\n" +
+                   "    manager: AsyncContextManager[str]\n" +
+                   "    async with manager as m:\n" +
+                   "        expr = m")
+    );
   }
 
   private void doTest(final String expectedType, final String text) {

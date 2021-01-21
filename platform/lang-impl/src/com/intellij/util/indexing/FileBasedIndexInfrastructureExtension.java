@@ -16,30 +16,19 @@ import java.io.IOException;
 public interface FileBasedIndexInfrastructureExtension {
   ExtensionPointName<FileBasedIndexInfrastructureExtension> EP_NAME = ExtensionPointName.create("com.intellij.fileBasedIndexInfrastructureExtension");
 
-  /**
-   * This notification is sent from the IDE to let the extension point implementation
-   * update it's internal state in order to supply indexes.
-   * Extension point must not run any heavy tasks in this thread.
-   * @param indexingIndicator used only to track cancellation of the indexing, must not be used for updating texts/fractions.
-   */
-  void processIndexingProject(@NotNull Project project, @NotNull ProgressIndicator indexingIndicator);
-
-  /**
-   * This notification is sent when the indexing is started and there are no files detected to index
-   */
-  void noFilesFoundToProcessIndexingProject(@NotNull Project project, @NotNull ProgressIndicator indexingIndicator);
-
   interface FileIndexingStatusProcessor {
     /**
-     * Serves as an optimization when time-consuming {@link FileIndexingStatusProcessor#processUpToDateFile(VirtualFile, int, ID)}
+     * Serves as an optimization when time-consuming {@link FileIndexingStatusProcessor#processUpToDateFile(IndexedFile, int, ID)}
      * should not be called because takes no effect.
      */
     boolean shouldProcessUpToDateFiles();
 
     /**
      * Processes up to date file for given content-dependent index while "scanning files to index" in progress.
+     * @return true if the up-to-date file has been reviewed and it its indexing must be skipped,
+     * false if the up-to-date file must be re-indexed because previously associated data is not valid anymore.
      */
-    void processUpToDateFile(@NotNull VirtualFile file, int inputId, @NotNull ID<?, ?> indexId);
+    boolean processUpToDateFile(@NotNull IndexedFile file, int inputId, @NotNull ID<?, ?> indexId);
 
     /**
      * Tries to index file given content-dependent index "scanning files to index" in progress before its content will be loaded.
@@ -96,6 +85,12 @@ public interface FileBasedIndexInfrastructureExtension {
    **/
   @NotNull
   InitializationResult initialize();
+
+  /**
+   * Executed when IntelliJ is requested to clear indexes. Each extension should reset its caches.
+   * For example, it may happen on index invalidation.
+   */
+  void resetPersistentState();
 
   /**
    * Executed when IntelliJ is shutting down it's indexes (IDE shutdown or plugin load/unload). It is the best time

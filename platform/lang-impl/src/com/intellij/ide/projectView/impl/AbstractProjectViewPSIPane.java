@@ -55,9 +55,7 @@ public abstract class AbstractProjectViewPSIPane extends AbstractProjectViewPane
   @Override
   public JComponent createComponent() {
     if (myComponent != null) {
-      if (myTree != null) {
-        myTree.updateUI();
-      }
+      SwingUtilities.updateComponentTreeUI(myComponent);
       return myComponent;
     }
 
@@ -68,7 +66,7 @@ public abstract class AbstractProjectViewPSIPane extends AbstractProjectViewPane
     myComponent = ScrollPaneFactory.createScrollPane(myTree);
     if (Registry.is("error.stripe.enabled")) {
       ErrorStripePainter painter = new ErrorStripePainter(true);
-      Disposer.register(this, new TreeUpdater<ErrorStripePainter>(painter, myComponent, myTree) {
+      Disposer.register(this, new TreeUpdater<>(painter, myComponent, myTree) {
         @Override
         protected void update(ErrorStripePainter painter, int index, Object object) {
           if (object instanceof DefaultMutableTreeNode) {

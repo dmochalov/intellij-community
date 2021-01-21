@@ -14,14 +14,10 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsDataKeys;
 import com.intellij.openapi.vcs.VcsException;
-import com.intellij.openapi.vcs.changes.Change;
-import com.intellij.openapi.vcs.changes.ChangeList;
-import com.intellij.openapi.vcs.changes.ChangeListManager;
-import com.intellij.openapi.vcs.changes.ChangesPreprocess;
+import com.intellij.openapi.vcs.changes.*;
 import com.intellij.openapi.vcs.changes.ui.ChangeListChooser;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.WaitForProgressToShow;
@@ -55,17 +51,22 @@ abstract class RevertCommittedStuffAbstractAction extends AnAction implements Du
     String defaultName = null;
     final ChangeList[] changeLists = e.getData(VcsDataKeys.CHANGE_LISTS);
 
-    String action = myReverse ? "Revert" : "Apply";
     if (changeLists != null && changeLists.length > 0) {
-      defaultName = String.format("%s: %s", action, changeLists[0].getName());
+      defaultName = VcsBundle.message("changes.revert.apply.change.list.name", myReverse ? 0 : 1, changeLists[0].getName());
     }
-    String title = String.format("%s Changes", action);
-    String errorPrefix = String.format("Failed to %s changes: ", StringUtil.toLowerCase(action));
+    String title = VcsBundle.message("changes.progress.title.choice.revert.apply.changes", myReverse ? 0 : 1);
+    String errorPrefix = VcsBundle.message("changes.dialog.message.failed.to.revert.apply.changes", myReverse ? 0 : 1);
 
-    final ChangeListChooser chooser = new ChangeListChooser(project, ChangeListManager.getInstance(project).getChangeListsCopy(), null,
-                                                            VcsBundle.message("revert.changes.changelist.chooser.title"), defaultName);
-    if (!chooser.showAndGet()) {
-      return;
+    LocalChangeList targetList;
+    if (ChangeListManager.getInstance(project).areChangeListsEnabled()) {
+      ChangeListChooser chooser = new ChangeListChooser(project, null, null,
+                                                        VcsBundle.message("revert.changes.changelist.chooser.title"), defaultName);
+      if (!chooser.showAndGet()) return;
+
+      targetList = chooser.getSelectedList();
+    }
+    else {
+      targetList = null;
     }
 
     ProgressManager.getInstance().run(new Task.Backgroundable(project, title, true) {
@@ -73,8 +74,8 @@ abstract class RevertCommittedStuffAbstractAction extends AnAction implements Du
       public void run(@NotNull ProgressIndicator indicator) {
         try {
           List<Change> preprocessed = ChangesPreprocess.preprocessChangesRemoveDeletedForDuplicateMoved(changesList);
-          List<FilePatch> patches = new ArrayList<>(IdeaTextPatchBuilder.buildPatch(project, preprocessed, baseDir.toNioPath(), myReverse, false));
-          new PatchApplier(project, baseDir, patches, chooser.getSelectedList(), null).execute();
+          List<FilePatch> patches = IdeaTextPatchBuilder.buildPatch(project, preprocessed, baseDir.toNioPath(), myReverse, false);
+          new PatchApplier(project, baseDir, new ArrayList<>(patches), targetList, null).execute();
         }
         catch (final VcsException ex) {
           WaitForProgressToShow.runOrInvokeLaterAboveProgress(() -> {

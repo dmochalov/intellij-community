@@ -6,6 +6,7 @@ import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FileStatus;
+import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.vcsUtil.VcsFileUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -48,7 +49,7 @@ public final class GitPatchParser {
         iterator.previous();
       }
       else if (contentParser.testIsStart(next)) {
-        patch = contentParser.readTextPatch(next, iterator, true);
+        patch = contentParser.readTextPatch(next, iterator);
       }
     }
     if (patch == null) {
@@ -68,7 +69,8 @@ public final class GitPatchParser {
     int newFileMode = -1;
     Couple<String> sha1Indexes = null;
     if (beforeAfterName == null) {
-      throw new PatchSyntaxException(iterator.previousIndex(), "Can't detect file names from git format header line");
+      throw new PatchSyntaxException(iterator.previousIndex(),
+                                     VcsBundle.message("patch.can.t.detect.file.names.from.git.format.header.line"));
     }
     while (iterator.hasNext()) {
       String next = iterator.next();
@@ -135,7 +137,7 @@ public final class GitPatchParser {
 
   @Nullable
   private static String getFileNameFromGitHeaderLine(@NotNull String line, boolean before) {
-    return stripPatchNameIfNeeded(VcsFileUtil.unescapeGitPath(line), true, before);
+    return stripPatchNameIfNeeded(VcsFileUtil.unescapeGitPath(line), before);
   }
 
   @NotNull

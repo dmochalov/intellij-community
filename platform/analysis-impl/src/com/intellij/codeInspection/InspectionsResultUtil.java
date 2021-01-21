@@ -2,13 +2,12 @@
 package com.intellij.codeInspection;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
-import com.intellij.codeInspection.ex.GlobalInspectionContextBase;
-import com.intellij.codeInspection.ex.InspectionToolWrapper;
+import com.intellij.codeInspection.ex.*;
 import com.intellij.codeInspection.ui.AggregateResultsExporter;
 import com.intellij.configurationStore.JbXmlOutputter;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.JBIterable;
@@ -65,8 +64,20 @@ public final class InspectionsResultUtil {
           xmlWriter.addAttribute("shortName", shortName);
           xmlWriter.addAttribute("defaultSeverity", toolWrapper.getDefaultLevel().getSeverity().getName());
           xmlWriter.addAttribute("displayName", toolWrapper.getDisplayName());
-          final boolean toolEnabled = profile.isToolEnabled(HighlightDisplayKey.find(shortName));
-          xmlWriter.addAttribute("enabled", Boolean.toString(toolEnabled));
+          xmlWriter.addAttribute("enabled", Boolean.toString(isToolEnabled(profile, shortName)));
+          String language = toolWrapper.getLanguage();
+          if (language != null) {
+            xmlWriter.addAttribute("language", language);
+          }
+          InspectionEP extension = toolWrapper.getExtension();
+          if (extension != null) {
+            PluginDescriptor plugin = extension.getPluginDescriptor();
+            String pluginId = plugin.getPluginId().getIdString();
+            xmlWriter.addAttribute("pluginId", pluginId);
+            xmlWriter.addAttribute("pluginVersion", plugin.getVersion());
+          }
+          xmlWriter.addAttribute("isGlobalTool", String.valueOf(toolWrapper instanceof GlobalInspectionToolWrapper));
+
           final String description = toolWrapper.loadDescription();
           if (description != null) {
             xmlWriter.setValue(description);
@@ -86,6 +97,16 @@ public final class InspectionsResultUtil {
     }
   }
 
+  private static boolean isToolEnabled(@NotNull InspectionProfile profile, String shortName) {
+    if (profile instanceof InspectionProfileImpl) {
+      ToolsImpl tools = ((InspectionProfileImpl)profile).getToolsOrNull(shortName, null);
+      if (tools != null)  {
+        return tools.isEnabled();
+      }
+    }
+    return profile.isToolEnabled(HighlightDisplayKey.find(shortName));
+  }
+
   public static @NotNull Path getInspectionResultPath(@NotNull Path outputDir, String name) {
     return outputDir.resolve(name + XML_EXTENSION);
   }
@@ -103,7 +124,7 @@ public final class InspectionsResultUtil {
   public static void writeInspectionResult(@NotNull Project project, @NotNull String shortName,
                                            @NotNull Collection<? extends InspectionToolWrapper<?, ?>> wrappers,
                                            @NotNull Path outputDirectory,
-                                           @NotNull Function<InspectionToolWrapper, InspectionToolResultExporter> f) throws IOException {
+                                           @NotNull Function<? super InspectionToolWrapper, ? extends InspectionToolResultExporter> f) throws IOException {
     //dummy entry points tool
     if (wrappers.isEmpty()) return;
     try (XmlWriterWrapper reportWriter = new XmlWriterWrapper(project, outputDirectory, shortName,
@@ -118,12 +139,6 @@ public final class InspectionsResultUtil {
         }
       }
     }
-  }
-
-  public static void writeProfileName(@NotNull Path outputDirectory, @Nullable String profileName) throws IOException {
-    Element element = new Element(INSPECTIONS_NODE);
-    element.setAttribute(PROFILE, Objects.requireNonNull(profileName));
-    JDOMUtil.write(element, outputDirectory.resolve(DESCRIPTIONS + XML_EXTENSION));
   }
 
   private static final class XmlWriterWrapper implements Closeable {

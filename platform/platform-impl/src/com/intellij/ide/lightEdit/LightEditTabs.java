@@ -25,6 +25,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.fileEditor.impl.EditorWithProviderComposite;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -48,11 +49,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 final class LightEditTabs extends JBEditorTabs implements LightEditorListener, CloseAction.CloseTarget {
-  private final LightEditorManagerImpl myEditorManager;
-  private final ExecutorService myTabUpdateExecutor;
+  private final @NotNull Project myProject;
+  private final @NotNull LightEditorManagerImpl myEditorManager;
+  private final @NotNull ExecutorService myTabUpdateExecutor;
 
-  LightEditTabs(@NotNull Disposable parentDisposable, @NotNull LightEditorManagerImpl editorManager) {
-    super(LightEditUtil.getProject(), null, parentDisposable);
+  LightEditTabs(@NotNull Project project, @NotNull Disposable parentDisposable, @NotNull LightEditorManagerImpl editorManager) {
+    super(project, null, parentDisposable);
+    myProject = project;
 
     myEditorManager = editorManager;
     myTabUpdateExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor("Light Edit Tabs Update", 1);
@@ -81,7 +84,7 @@ final class LightEditTabs extends JBEditorTabs implements LightEditorListener, C
 
   private void addEditorTab(@NotNull LightEditorInfo editorInfo, int index) {
     EditorWithProviderComposite editorContainer =
-      ((LightEditFileEditorManagerImpl)FileEditorManager.getInstance(LightEditService.getInstance().getOrCreateProject()))
+      ((LightEditFileEditorManagerImpl)FileEditorManager.getInstance(myProject))
         .createEditorComposite(editorInfo);
     TabInfo tabInfo = new TabInfo(editorContainer.getComponent())
       .setText(editorInfo.getFile().getPresentableName())
@@ -289,7 +292,7 @@ final class LightEditTabs extends JBEditorTabs implements LightEditorListener, C
   @Override
   public Object getData(@NotNull String dataId) {
     if (CommonDataKeys.PROJECT.is(dataId)) {
-      return LightEditUtil.getProject();
+      return myProject;
     }
     else if (CommonDataKeys.VIRTUAL_FILE.is(dataId)) {
       return getSelectedFile();
@@ -308,7 +311,7 @@ final class LightEditTabs extends JBEditorTabs implements LightEditorListener, C
     assert ApplicationManager.getApplication().isDispatchThread();
     LightEditorInfo editorInfo = getEditorInfo(tabInfo);
     if (editorInfo == null) return;
-    EditorNotifications.getInstance(LightEditUtil.getProject()).updateNotifications(editorInfo.getFile());
+    EditorNotifications.getInstance(myProject).updateNotifications(editorInfo.getFile());
     asyncUpdateTabs(Collections.singletonList(Pair.createNonNull(tabInfo, editorInfo)));
   }
 
@@ -382,11 +385,17 @@ final class LightEditTabs extends JBEditorTabs implements LightEditorListener, C
   }
 
   @Nullable
-  public EditorWithProviderComposite findEditorComposite(@NotNull VirtualFile virtualFile) {
-    for (TabInfo tabInfo : getTabs()) {
-      final Object data = tabInfo.getObject();
-      if (data instanceof TabEditorData && virtualFile.equals(((TabEditorData)data).editorInfo.getFile())) {
-        return ((TabEditorData)data).editorComposite;
+  public EditorWithProviderComposite findEditorComposite(@NotNull FileEditor fileEditor) {
+    VirtualFile virtualFile = fileEditor.getFile();
+    if (virtualFile != null) {
+      for (TabInfo tabInfo : getTabs()) {
+        final Object data = tabInfo.getObject();
+        if (data instanceof TabEditorData && virtualFile.equals(((TabEditorData)data).editorInfo.getFile())) {
+          EditorWithProviderComposite composite = ((TabEditorData)data).editorComposite;
+          if (ContainerUtil.exists(composite.getEditors(), editor->editor.equals(fileEditor))) {
+            return composite;
+          }
+        }
       }
     }
     return null;

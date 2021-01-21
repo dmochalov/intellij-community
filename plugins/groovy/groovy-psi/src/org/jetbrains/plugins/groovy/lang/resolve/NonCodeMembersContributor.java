@@ -5,6 +5,7 @@ import com.intellij.openapi.extensions.ExtensionPointListener;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.patterns.compiler.PatternCompilerFactory;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiType;
@@ -77,7 +78,7 @@ public abstract class NonCodeMembersContributor {
   public static final ExtensionPointName<NonCodeMembersContributor> EP_NAME = ExtensionPointName.create("org.intellij.groovy.membersContributor");
 
   static {
-    EP_NAME.addExtensionPointListener(new ExtensionPointListener<NonCodeMembersContributor>() {
+    EP_NAME.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull NonCodeMembersContributor extension, @NotNull PluginDescriptor pluginDescriptor) {
         dropCache();
@@ -124,6 +125,7 @@ public abstract class NonCodeMembersContributor {
 
   private static void dropCache() {
     cache = null;
+    PatternCompilerFactory.getFactory().dropCache();
   }
 
   private static void ensureInit() {

@@ -232,10 +232,11 @@ tailrec fun UElement.isLastElementInControlFlow(scopeElement: UElement? = null):
   }
 
 fun UNamedExpression.getAnnotationMethod(): PsiMethod? {
-  if (sourcePsi == null) return null
   val annotation : UAnnotation? = getParentOfType(UAnnotation::class.java, true)
   val fqn = annotation?.qualifiedName ?: return null
-  val psiClass = JavaPsiFacade.getInstance(sourcePsi!!.project).findClass(fqn, sourcePsi!!.resolveScope)
+  val annotationSrc = annotation.sourcePsi
+  if (annotationSrc == null) return null
+  val psiClass = JavaPsiFacade.getInstance(annotationSrc.project).findClass(fqn, annotationSrc.resolveScope)
   if (psiClass != null && psiClass.isAnnotationType) {
     return ArrayUtil.getFirstElement(psiClass.findMethodsByName(this.name ?: "value", false))
   }
@@ -244,3 +245,14 @@ fun UNamedExpression.getAnnotationMethod(): PsiMethod? {
 
 val UElement.textRange: TextRange?
   get() = sourcePsi?.textRange
+
+/**
+ * A helper function for getting [UMethod] for element for LineMarker.
+ * It handles cases, when [getUParentForIdentifier] returns same `parent` for more than one `identifier`.
+ * Such situations cause multiple LineMarkers for same declaration.
+ */
+inline fun <reified T : UDeclaration> getUParentForDeclarationLineMarkerElement(lineMarkerElement: PsiElement): T? {
+  val parent = getUParentForIdentifier(lineMarkerElement) as? T ?: return null
+  if (parent.uastAnchor.sourcePsiElement != lineMarkerElement) return null
+  return parent
+}

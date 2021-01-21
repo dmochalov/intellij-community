@@ -42,6 +42,7 @@ import com.intellij.util.ui.tree.TreeUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.mvc.MvcFramework;
 
 import javax.swing.*;
@@ -232,43 +233,43 @@ public class MvcProjectViewPane extends AbstractProjectViewPSIPane implements Id
 
   @Override
   public Object getData(@NotNull String dataId) {
-    if (CommonDataKeys.PSI_ELEMENT.getName().equals(dataId)) {
+    if (CommonDataKeys.PSI_ELEMENT.is(dataId)) {
       final PsiElement[] elements = getSelectedPSIElements();
       return elements.length == 1 ? elements[0] : null;
     }
-    if (LangDataKeys.PSI_ELEMENT_ARRAY.getName().equals(dataId)) {
+    if (LangDataKeys.PSI_ELEMENT_ARRAY.is(dataId)) {
       return getSelectedPSIElements();
     }
-    if (LangDataKeys.MODULE_CONTEXT.getName().equals(dataId)) {
+    if (LangDataKeys.MODULE_CONTEXT.is(dataId)) {
       final Object element = getSelectedElement();
       if (element instanceof Module) {
         return element;
       }
       return null;
     }
-    if (LangDataKeys.MODULE_CONTEXT_ARRAY.getName().equals(dataId)) {
+    if (LangDataKeys.MODULE_CONTEXT_ARRAY.is(dataId)) {
       final List<Module> moduleList = ContainerUtil.findAll(getSelectedElements(), Module.class);
       if (!moduleList.isEmpty()) {
         return moduleList.toArray(Module.EMPTY_ARRAY);
       }
       return null;
     }
-    if (dataId.equals(LangDataKeys.IDE_VIEW.getName())) {
+    if (LangDataKeys.IDE_VIEW.is(dataId)) {
       return this;
     }
-    if (dataId.equals(PlatformDataKeys.HELP_ID.getName())) {
+    if (PlatformDataKeys.HELP_ID.is(dataId)) {
       return "reference.toolwindows." + StringUtil.toLowerCase(myId);
     }
-    if (PlatformDataKeys.CUT_PROVIDER.getName().equals(dataId)) {
+    if (PlatformDataKeys.CUT_PROVIDER.is(dataId)) {
       return myCopyPasteDelegator.getCutProvider();
     }
-    if (PlatformDataKeys.COPY_PROVIDER.getName().equals(dataId)) {
+    if (PlatformDataKeys.COPY_PROVIDER.is(dataId)) {
       return myCopyPasteDelegator.getCopyProvider();
     }
-    if (PlatformDataKeys.PASTE_PROVIDER.getName().equals(dataId)) {
+    if (PlatformDataKeys.PASTE_PROVIDER.is(dataId)) {
       return myCopyPasteDelegator.getPasteProvider();
     }
-    if (PlatformDataKeys.DELETE_ELEMENT_PROVIDER.getName().equals(dataId)) {
+    if (PlatformDataKeys.DELETE_ELEMENT_PROVIDER.is(dataId)) {
       for (final Object element : getSelectedElements()) {
         if (element instanceof Module) {
           return myDeleteModuleProvider;
@@ -448,7 +449,11 @@ public class MvcProjectViewPane extends AbstractProjectViewPSIPane implements Id
 
   private final class ScrollFromSourceAction extends AnAction implements DumbAware {
     private ScrollFromSourceAction() {
-      super("Scroll from Source", "Select the file open in the active editor", AllIcons.General.Locate);
+      super(
+        GroovyBundle.message("scroll.from.source.action.text"),
+        GroovyBundle.message("scroll.from.source.action.description"),
+        AllIcons.General.Locate
+      );
     }
 
     @Override
@@ -483,8 +488,11 @@ public class MvcProjectViewPane extends AbstractProjectViewPSIPane implements Id
 
   private final class HideEmptyMiddlePackagesAction extends ToggleAction implements DumbAware {
     private HideEmptyMiddlePackagesAction() {
-      super("Compact Empty Middle Packages", "Show/Compact Empty Middle Packages",
-            AllIcons.ObjectBrowser.CompactEmptyPackages);
+      super(
+        GroovyBundle.message("compact.empty.middle.packages.action.text"),
+        GroovyBundle.message("compact.empty.middle.packages.action.description"),
+        AllIcons.ObjectBrowser.CompactEmptyPackages
+      );
     }
 
     @Override

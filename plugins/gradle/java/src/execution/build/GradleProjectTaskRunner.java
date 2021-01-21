@@ -29,7 +29,6 @@ import com.intellij.task.*;
 import com.intellij.task.impl.JpsProjectTaskRunner;
 import com.intellij.util.CommonProcessors;
 import com.intellij.util.SmartList;
-import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.FactoryMap;
 import com.intellij.util.containers.MultiMap;
@@ -43,6 +42,7 @@ import org.jetbrains.plugins.gradle.service.project.GradleProjectResolverUtil;
 import org.jetbrains.plugins.gradle.service.task.GradleTaskManager;
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings;
 import org.jetbrains.plugins.gradle.settings.GradleSettings;
+import org.jetbrains.plugins.gradle.util.GradleBundle;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 
 import java.io.File;
@@ -171,7 +171,7 @@ public class GradleProjectTaskRunner extends ProjectTaskRunner {
       else {
         projectName = projectFile.getName();
       }
-      String executionName = "Build " + projectName;
+      String executionName = GradleBundle.message("gradle.execution.name.build.project.", projectName);
       settings.setExecutionName(executionName);
       settings.setExternalProjectPath(rootProjectPath);
       settings.setTaskNames(ContainerUtil.collect(ContainerUtil.concat(cleanTasks, buildTasks).iterator()));
@@ -186,7 +186,7 @@ public class GradleProjectTaskRunner extends ProjectTaskRunner {
       if (outputPathsFile != null && context.isCollectionOfGeneratedFilesEnabled()) {
         scripts.add(String.format(COLLECT_OUTPUT_PATHS_INIT_SCRIPT_TEMPLATE, FileUtil.toCanonicalPath(outputPathsFile.getAbsolutePath())));
       }
-      userData.putUserData(GradleTaskManager.INIT_SCRIPT_KEY, join(scripts, SystemProperties.getLineSeparator()));
+      userData.putUserData(GradleTaskManager.INIT_SCRIPT_KEY, join(scripts, System.lineSeparator()));
       userData.putUserData(GradleTaskManager.INIT_SCRIPT_PREFIX_KEY, executionName);
 
       ExternalSystemUtil.runTask(settings, DefaultRunExecutor.EXECUTOR_ID, project, GradleConstants.SYSTEM_ID,

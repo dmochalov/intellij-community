@@ -22,8 +22,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 public final class CtrlYActionChooser {
-  private static final String ASK_ABOUT_SHORTCUT = "ask.about.ctrl.y.shortcut";
-  private static final Set<String> TARGET_KEYMAPS = new HashSet<String>() {{
+  private static final String ASK_ABOUT_SHORTCUT = "ask.about.ctrl.y.shortcut.v2";
+  private static final Set<String> TARGET_KEYMAPS = new HashSet<>() {{
     add(KeymapManager.DEFAULT_IDEA_KEYMAP);
     add(KeymapManager.X_WINDOW_KEYMAP);
     add(KeymapManager.KDE_KEYMAP);

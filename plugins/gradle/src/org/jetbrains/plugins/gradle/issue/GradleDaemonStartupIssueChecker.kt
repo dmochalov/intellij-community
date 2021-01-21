@@ -17,6 +17,7 @@ import com.intellij.util.io.isFile
 import com.intellij.util.text.nullize
 import org.gradle.initialization.BuildLayoutParameters
 import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.annotations.Nls
 import org.jetbrains.plugins.gradle.execution.GradleConsoleFilter
 import org.jetbrains.plugins.gradle.issue.quickfix.GradleSettingsQuickFix
 import org.jetbrains.plugins.gradle.service.execution.GradleExecutionErrorHandler.getRootCauseAndLocation
@@ -42,11 +43,6 @@ class GradleDaemonStartupIssueChecker : GradleIssueChecker {
       return null
     }
 
-    // JDK compatibility issues should be handled by org.jetbrains.plugins.gradle.issue.IncompatibleGradleJdkIssueChecker
-    if(rootCauseText.contains("FAILURE: Build failed with an exception.")) {
-      return null
-    }
-
     val quickFixDescription = StringBuilder()
     val quickFixes = ArrayList<BuildIssueQuickFix>()
     val projectGradleProperties = Paths.get(issueData.projectPath, "gradle.properties")
@@ -60,7 +56,7 @@ class GradleDaemonStartupIssueChecker : GradleIssueChecker {
     val commonGradleProperties = Paths.get(gradleUserHomeDir.path, "gradle.properties")
     if (commonGradleProperties.isFile()) {
       val openFileQuickFix = OpenFileQuickFix(commonGradleProperties, "org.gradle.jvmargs")
-      quickFixDescription.append(" - <a href=\"${openFileQuickFix.id}\">gradle.properties</a> in in GRADLE_USER_HOME directory\n")
+      quickFixDescription.append(" - <a href=\"${openFileQuickFix.id}\">gradle.properties</a> in GRADLE_USER_HOME directory\n")
       quickFixes.add(openFileQuickFix)
     }
 
@@ -101,9 +97,9 @@ class GradleDaemonStartupIssueChecker : GradleIssueChecker {
     if (location == null) return false
 
     if (failureCause == "startup failed:") {
-      val locationLine = message.substringAfter("> startup failed:", "").nullize()?.trimStart()?.substringBefore("\n") ?: return false
-      val failedStartupReason = locationLine.substringAfter("'${location.file.path}': ${location.startLine + 1}: ", "")
-                                  .nullize()?.substringBeforeLast(" @ ") ?: return false
+      val locationLine: @Nls String = message.substringAfter("> startup failed:", "").nullize()?.trimStart()?.substringBefore("\n") ?: return false
+      val failedStartupReason: @Nls String  = locationLine.substringAfter("'${location.file.path}': ${location.startLine + 1}: ", "") //NON-NLS
+                                  .nullize()?.substringBeforeLast(" @ ") ?: return false //NON-NLS
       val locationPart = locationLine.substringAfterLast(" @ ")
       val matchResult = GradleConsoleFilter.LINE_AND_COLUMN_PATTERN.toRegex().matchEntire(locationPart)
       val values = matchResult?.groupValues?.drop(1)?.map { it.toInt() } ?: listOf(location.startLine + 1, 0)
@@ -111,7 +107,7 @@ class GradleDaemonStartupIssueChecker : GradleIssueChecker {
       val column = values[1]
 
       messageConsumer.accept(object : FileMessageEventImpl(
-        parentEventId, MessageEvent.Kind.ERROR, null, failedStartupReason, message,
+        parentEventId, MessageEvent.Kind.ERROR, null, failedStartupReason, message, //NON-NLS
         FilePosition(location.file, line, column)), DuplicateMessageAware {}
       )
       return true

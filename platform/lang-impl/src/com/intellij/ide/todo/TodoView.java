@@ -19,7 +19,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ex.ToolWindowEx;
@@ -237,13 +237,6 @@ public class TodoView implements PersistentStateComponent<TodoView.State>, Dispo
   }
 
   @NotNull
-  static String getTabNameForChangeList(@NotNull String changelistName) {
-    changelistName = changelistName.trim();
-    String suffix = "Changelist";
-    return StringUtil.endsWithIgnoreCase(changelistName, suffix) ? changelistName : changelistName + " " + suffix;
-  }
-
-  @NotNull
   protected AllTodosTreeBuilder createAllTodoBuilder(JTree tree, Project project) {
     return new AllTodosTreeBuilder(tree, project);
   }
@@ -273,10 +266,10 @@ public class TodoView implements PersistentStateComponent<TodoView.State>, Dispo
   }
 
   public void refresh() {
-    Map<TodoPanel, Set<VirtualFile>> files = new HashMap<>();
     ReadAction.nonBlocking(() -> {
+      Map<TodoPanel, Set<VirtualFile>> files = new HashMap<>();
       if (myAllTodos == null) {
-        return;
+        return files;
       }
       for (TodoPanel panel : myPanels) {
         panel.myTodoTreeBuilder.collectFiles(virtualFile -> {
@@ -284,8 +277,9 @@ public class TodoView implements PersistentStateComponent<TodoView.State>, Dispo
           return true;
         });
       }
+      return files;
     })
-      .finishOnUiThread(ModalityState.NON_MODAL, (__) -> {
+      .finishOnUiThread(ModalityState.NON_MODAL, files -> {
         for (TodoPanel panel : myPanels) {
           panel.rebuildCache(ObjectUtils.notNull(files.get(panel), new HashSet<>()));
           panel.updateTree();
@@ -300,7 +294,7 @@ public class TodoView implements PersistentStateComponent<TodoView.State>, Dispo
     //do nothing
   }
 
-  public void addCustomTodoView(final TodoTreeBuilderFactory factory, final String title, final TodoPanelSettings settings) {
+  public void addCustomTodoView(final TodoTreeBuilderFactory factory, @NlsContexts.TabTitle final String title, final TodoPanelSettings settings) {
     Content content = ContentFactory.SERVICE.getInstance().createContent(null, title, true);
     final TodoPanel panel = myChangesSupport.createPanel(myProject, settings, content, factory);
     if (panel == null) return;
@@ -328,7 +322,6 @@ public class TodoView implements PersistentStateComponent<TodoView.State>, Dispo
   private JComponent wrapWithDumbModeSpoiler(@NotNull TodoPanel panel) {
     return DumbService.getInstance(myProject).wrapWithSpoiler(panel, () -> ApplicationManager.getApplication().invokeLater(() -> {
       panel.rebuildCache();
-      panel.updateTree();
     }, myProject.getDisposed()), panel);
   }
 }

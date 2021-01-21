@@ -6,28 +6,29 @@ import com.intellij.openapi.extensions.ExtensionPointListener;
 import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.jetbrains.python.packaging.pipenv.PyPipEnvPackageManagementService;
-import com.jetbrains.python.packaging.pipenv.PyPipEnvPackageManager;
+import com.intellij.util.ArrayUtil;
 import com.jetbrains.python.packaging.ui.PyCondaManagementService;
 import com.jetbrains.python.packaging.ui.PyPackageManagementService;
+import com.jetbrains.python.sdk.PySdkProvider;
 import com.jetbrains.python.sdk.PythonSdkType;
 import com.jetbrains.python.sdk.PythonSdkUtil;
-import com.jetbrains.python.sdk.pipenv.PipenvKt;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * @author yole
  */
-public class PyPackageManagersImpl extends PyPackageManagers implements Disposable {
+public class PyPackageManagersImpl extends PyPackageManagers {
   private final Map<String, PyPackageManager> myStandardManagers = new HashMap<>();
   private final Map<String, PyPackageManager> myProvidedManagers = new HashMap<>();
 
   public PyPackageManagersImpl() {
-    PyPackageManagerProvider.EP_NAME.addExtensionPointListener(new ExtensionPointListener<PyPackageManagerProvider>() {
+    PyPackageManagerProvider.EP_NAME.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionRemoved(@NotNull PyPackageManagerProvider extension, @NotNull PluginDescriptor pluginDescriptor) {
         clearProvidedManagersCache();
@@ -56,9 +57,6 @@ public class PyPackageManagersImpl extends PyPackageManagers implements Disposab
         if (PythonSdkUtil.isRemote(sdk)) {
           manager = new PyUnsupportedPackageManager(sdk);
         }
-        else if (PipenvKt.isPipEnv(sdk)) {
-          manager = new PyPipEnvPackageManager(sdk);
-        }
         else if (PythonSdkUtil.isConda(sdk) &&
                  homeDirectory != null &&
                  PyCondaPackageService.getCondaExecutable(sdk.getHomePath()) != null) {
@@ -69,34 +67,46 @@ public class PyPackageManagersImpl extends PyPackageManagers implements Disposab
         }
       }
       cache.put(key, manager);
+      if (sdk instanceof Disposable) {
+        Disposer.register((Disposable)sdk, () -> clearCache(sdk));
+      }
     }
     return manager;
   }
 
   @Override
   public PyPackageManagementService getManagementService(Project project, Sdk sdk) {
-    if (PythonSdkUtil.isConda(sdk)) {
-      return new PyCondaManagementService(project, sdk);
+    Optional<PyPackageManagementService> provided = PySdkProvider.EP_NAME.extensions()
+      .map(ext -> ext.tryCreatePackageManagementServiceForSdk(project, sdk))
+      .filter(service -> service != null)
+      .findFirst();
+
+    if (provided.isPresent()) {
+      return provided.get();
     }
-    else if (PipenvKt.isPipEnv(sdk)) {
-      return new PyPipEnvPackageManagementService(project, sdk);
+    else if (PythonSdkUtil.isConda(sdk)) {
+      return new PyCondaManagementService(project, sdk);
     }
     return new PyPackageManagementService(project, sdk);
   }
 
   @Override
   public synchronized void clearCache(@NotNull Sdk sdk) {
-    final String key = PythonSdkType.getSdkKey(sdk);
-    myStandardManagers.remove(key);
-    myProvidedManagers.remove(key);
+    String sdkKey = PythonSdkType.getSdkKey(sdk);
+    removeCachedManager(myStandardManagers, sdkKey);
+    removeCachedManager(myProvidedManagers, sdkKey);
   }
 
   private synchronized void clearProvidedManagersCache() {
-    myProvidedManagers.clear();
+    for (String key : ArrayUtil.toStringArray(myProvidedManagers.keySet())) {
+      removeCachedManager(myProvidedManagers, key);
+    }
   }
 
-  @Override
-  public void dispose() {
-    // Needed to dispose PyPackageManagerProvider EP listener
+  private static void removeCachedManager(@NotNull Map<String, PyPackageManager> cache, @NotNull String key) {
+    PyPackageManager removed = cache.remove(key);
+    if (removed != null) {
+      Disposer.dispose(removed);
+    }
   }
 }

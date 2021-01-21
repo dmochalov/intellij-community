@@ -95,22 +95,23 @@ public final class ExtensionsAreaImpl implements ExtensionsArea {
     registerExtension(getExtensionPoint(epName), pluginDescriptor, extensionElement);
   }
 
-  @Override
-  public void registerExtension(@NotNull ExtensionPoint<?> extensionPoint, @NotNull PluginDescriptor pluginDescriptor, @NotNull Element extensionElement) {
+  private void registerExtension(@NotNull ExtensionPoint<?> extensionPoint,
+                                 @NotNull PluginDescriptor pluginDescriptor,
+                                 @NotNull Element extensionElement) {
     ((ExtensionPointImpl<?>)extensionPoint).createAndRegisterAdapter(extensionElement, pluginDescriptor, componentManager);
   }
 
   public boolean unregisterExtensions(@NotNull String extensionPointName,
-                                      @NotNull PluginDescriptor loadedPluginDescriptor,
-                                      @NotNull List<? extends Element> elements,
-                                      @NotNull List<? super Runnable> priorityListenerCallbacks,
-                                      @NotNull List<? super Runnable> listenerCallbacks) {
+                                      @NotNull PluginDescriptor pluginDescriptor,
+                                      @NotNull List<Element> elements,
+                                      @NotNull List<Runnable> priorityListenerCallbacks,
+                                      @NotNull List<Runnable> listenerCallbacks) {
     ExtensionPointImpl<?> point = extensionPoints.get(extensionPointName);
     if (point == null) {
       return false;
     }
 
-    point.unregisterExtensions(componentManager, loadedPluginDescriptor, elements, priorityListenerCallbacks, listenerCallbacks);
+    point.unregisterExtensions(componentManager, pluginDescriptor, elements, priorityListenerCallbacks, listenerCallbacks);
     return true;
   }
 
@@ -160,6 +161,14 @@ public final class ExtensionsAreaImpl implements ExtensionsArea {
     doRegisterExtensionPoint(extensionPointName, extensionPointBeanClass, kind);
   }
 
+  @Override
+  @TestOnly
+  public void registerDynamicExtensionPoint(@NonNls @NotNull String extensionPointName,
+                                            @NotNull String extensionPointBeanClass,
+                                            ExtensionPoint.@NotNull Kind kind) {
+    doRegisterExtensionPoint(extensionPointName, extensionPointBeanClass, kind, true);
+  }
+
   @TestOnly
   public void registerExtensionPoint(@NotNull BaseExtensionPointName<?> extensionPoint,
                                      @NotNull String extensionPointBeanClass,
@@ -172,8 +181,13 @@ public final class ExtensionsAreaImpl implements ExtensionsArea {
 
   @TestOnly
   void doRegisterExtensionPoint(@NotNull String extensionPointName, @NotNull String extensionPointBeanClass, @NotNull ExtensionPoint.Kind kind) {
+    doRegisterExtensionPoint(extensionPointName, extensionPointBeanClass, kind, false);
+  }
+
+  @TestOnly
+  void doRegisterExtensionPoint(@NotNull String extensionPointName, @NotNull String extensionPointBeanClass, @NotNull ExtensionPoint.Kind kind, boolean dynamic) {
     PluginDescriptor pluginDescriptor = new DefaultPluginDescriptor(PluginId.getId("FakeIdForTests"));
-    doRegisterExtensionPoint(extensionPointName, extensionPointBeanClass, pluginDescriptor, kind == ExtensionPoint.Kind.INTERFACE, false);
+    doRegisterExtensionPoint(extensionPointName, extensionPointBeanClass, pluginDescriptor, kind == ExtensionPoint.Kind.INTERFACE, dynamic);
   }
 
   @TestOnly
@@ -215,7 +229,7 @@ public final class ExtensionsAreaImpl implements ExtensionsArea {
 
     PluginId id1 = getExtensionPoint(pointName).getPluginDescriptor().getPluginId();
     PluginId id2 = pluginDescriptor.getPluginId();
-    String message = "Duplicate registration for EP '" + pointName + "': first in " + id1 + ", second in " + id2;
+    @NonNls String message = "Duplicate registration for EP '" + pointName + "': first in " + id1 + ", second in " + id2;
     if (DEBUG_REGISTRATION) {
       LOG.error(message, epTraces.get(pointName));
     }
@@ -246,8 +260,12 @@ public final class ExtensionsAreaImpl implements ExtensionsArea {
       ExtensionPointImpl<?> old = map.put(point.getName(), point);
       if (old != null) {
         map.put(point.getName(), old);
-        throw componentManager.createError("Duplicate registration for EP '" + point.getName() + "': first in " + old.getPluginDescriptor() +
-                                             ", second in " + point.getPluginDescriptor(), point.getPluginDescriptor().getPluginId());
+        PluginDescriptor oldPluginDescriptor = old.getPluginDescriptor();
+        PluginDescriptor pluginDescriptor = point.getPluginDescriptor();
+        throw componentManager.createError("Duplicate registration for EP '" + point.getName() + "': " +
+                                           "first in " + oldPluginDescriptor + " (" + oldPluginDescriptor.getPluginPath() + ")" +
+                                           ", second in " + pluginDescriptor+ " (" + pluginDescriptor.getPluginPath() + ")",
+                                           pluginDescriptor.getPluginId());
       }
     }
   }

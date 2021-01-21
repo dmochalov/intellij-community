@@ -9,7 +9,6 @@ import com.intellij.workspaceModel.storage.entities.MySource
 import com.intellij.workspaceModel.storage.impl.RefsTable
 import com.intellij.workspaceModel.storage.impl.StorageIndexes
 import com.intellij.workspaceModel.storage.impl.WorkspaceEntityStorageBuilderImpl
-import com.intellij.workspaceModel.storage.impl.containers.putAll
 import com.intellij.workspaceModel.storage.impl.exceptions.AddDiffException
 import com.intellij.workspaceModel.storage.impl.exceptions.ReplaceBySourceException
 import junit.framework.TestCase
@@ -33,6 +32,7 @@ class PropertyTest {
     }
   }
 
+  @Ignore("Temporally disable")
   @Test
   fun testReplaceBySource() {
     PropertyChecker.checkScenarios {
@@ -44,7 +44,6 @@ class PropertyTest {
     }
   }
 
-  @Ignore("Temporally disable")
   @Test
   fun testAddDiff() {
     PropertyChecker.checkScenarios {
@@ -65,8 +64,11 @@ private class AddDiff(private val storage: WorkspaceEntityStorageBuilder) : Impe
     env.logMessage("Modify diff:")
     env.executeCommands(getEntityManipulation(another))
 
+    /*
+    // Do not modify local store currently
     env.logMessage("Modify original storage:")
     env.executeCommands(getEntityManipulation(storage as WorkspaceEntityStorageBuilderImpl))
+    */
 
     try {
       storage.addDiff(another)
@@ -98,7 +100,8 @@ private class ReplaceBySource(private val storage: WorkspaceEntityStorageBuilder
     try {
       storage.replaceBySource(filter.first, another)
     }
-    catch (e: ReplaceBySourceException) {
+    catch (e: AssertionError) {
+      if (e.cause !is ReplaceBySourceException) error("ReplaceBySource exception expected")
       env.logMessage("Cannot perform replace by source: ${e.message}. Fallback to previous state")
       (storage as WorkspaceEntityStorageBuilderImpl).restoreFromBackup(backup)
     }

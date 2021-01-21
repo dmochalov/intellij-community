@@ -5,54 +5,50 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.NotNullLazyValue;
-import com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier;
 import com.intellij.util.SystemProperties;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.idea.svn.IdeaSVNConfigFile;
 import org.jetbrains.idea.svn.SvnConfiguration;
 import org.jetbrains.idea.svn.api.Url;
+import org.jetbrains.idea.svn.config.ServersFileKeys;
+import org.jetbrains.idea.svn.config.SvnIniFile;
 
 import java.nio.file.Path;
 
-import static org.jetbrains.idea.svn.IdeaSVNConfigFile.*;
+import static com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier.showOverChangesView;
+import static org.jetbrains.idea.svn.SvnBundle.message;
 import static org.jetbrains.idea.svn.SvnUtil.SYSTEM_CONFIGURATION_PATH;
+import static org.jetbrains.idea.svn.config.SvnIniFile.*;
 
-public class SvnAuthenticationManager {
-
+public final class SvnAuthenticationManager {
   // TODO Looks reasonable to introduce some AuthType/AuthKind class
-  public static final String PASSWORD = "svn.simple";
-  public static final String SSL = "svn.ssl.client-passphrase";
+  public static final @NonNls String PASSWORD = "svn.simple";
+  public static final @NonNls String SSL = "svn.ssl.client-passphrase";
 
-  public static final String SVN_SSH = "svn+ssh";
-  public static final String HTTP = "http";
-  public static final String HTTPS = "https";
+  public static final @NonNls String SVN_SSH = "svn+ssh";
+  public static final @NonNls String HTTP = "http";
+  public static final @NonNls String HTTPS = "https";
 
   private final @NotNull Project myProject;
   private final @NotNull Path myConfigDirectory;
-  private final NotNullLazyValue<Couple<IdeaSVNConfigFile>> myConfigFile = new NotNullLazyValue<Couple<IdeaSVNConfigFile>>() {
-    @NotNull
-    @Override
-    protected Couple<IdeaSVNConfigFile> compute() {
-      IdeaSVNConfigFile userConfig = new IdeaSVNConfigFile(myConfigDirectory.resolve(CONFIG_FILE_NAME));
-      IdeaSVNConfigFile systemConfig = new IdeaSVNConfigFile(SYSTEM_CONFIGURATION_PATH.getValue().resolve(CONFIG_FILE_NAME));
-      return Couple.of(systemConfig, userConfig);
-    }
-  };
-  private final NotNullLazyValue<Couple<IdeaSVNConfigFile>> myServersFile = new NotNullLazyValue<Couple<IdeaSVNConfigFile>>() {
-    @NotNull
-    @Override
-    protected Couple<IdeaSVNConfigFile> compute() {
-      IdeaSVNConfigFile userConfig = new IdeaSVNConfigFile(myConfigDirectory.resolve(SERVERS_FILE_NAME));
-      IdeaSVNConfigFile systemConfig = new IdeaSVNConfigFile(SYSTEM_CONFIGURATION_PATH.getValue().resolve(SERVERS_FILE_NAME));
-      return Couple.of(systemConfig, userConfig);
-    }
-  };
+  private final NotNullLazyValue<Couple<SvnIniFile>> myConfigFile;
+  private final NotNullLazyValue<Couple<SvnIniFile>> myServersFile;
   private AuthenticationProvider myProvider;
 
   public SvnAuthenticationManager(@NotNull Project project, @NotNull Path configDirectory) {
     myProject = project;
     myConfigDirectory = configDirectory;
+    myConfigFile = NotNullLazyValue.lazy(() -> {
+        SvnIniFile userConfig = new SvnIniFile(myConfigDirectory.resolve(CONFIG_FILE_NAME));
+        SvnIniFile systemConfig = new SvnIniFile(SYSTEM_CONFIGURATION_PATH.getValue().resolve(CONFIG_FILE_NAME));
+        return Couple.of(systemConfig, userConfig);
+      });
+    myServersFile = NotNullLazyValue.lazy(() -> {
+        SvnIniFile userConfig = new SvnIniFile(myConfigDirectory.resolve(SERVERS_FILE_NAME));
+        SvnIniFile systemConfig = new SvnIniFile(SYSTEM_CONFIGURATION_PATH.getValue().resolve(SERVERS_FILE_NAME));
+        return Couple.of(systemConfig, userConfig);
+      });
   }
 
   public AuthenticationData requestFromCache(String kind, String realm) {
@@ -89,7 +85,7 @@ public class SvnAuthenticationManager {
     String protocol = url.getProtocol();
     if (HTTP.equals(protocol) || HTTPS.equals(protocol)) {
       String host = url.getHost();
-      String timeout = getPropertyIdea(host, myServersFile.getValue(), "http-timeout");
+      String timeout = getPropertyIdea(host, myServersFile.getValue(), ServersFileKeys.TIMEOUT);
       if (timeout != null) {
         try {
           return Integer.parseInt(timeout) * 1000;
@@ -116,8 +112,7 @@ public class SvnAuthenticationManager {
   }
 
   public void warnOnAuthStorageDisabled() {
-    VcsBalloonProblemNotifier
-      .showOverChangesView(myProject, "Cannot store credentials: forbidden by \"store-auth-creds=no\"", MessageType.ERROR);
+    showOverChangesView(myProject, message("svn.cannot.save.credentials.store-auth-creds"), MessageType.ERROR);
   }
 
   public final class HostOptions {
@@ -130,7 +125,9 @@ public class SvnAuthenticationManager {
     public boolean isAuthStorageEnabled() {
       String perHostValue = getPropertyIdea(myUrl.getHost(), myServersFile.getValue(), "store-auth-creds");
       boolean storageEnabled =
-        perHostValue != null ? isTurned(perHostValue) : isTurned(getValue(myConfigFile.getValue(), "auth", "store-auth-creds"));
+        perHostValue != null
+        ? isTurned(perHostValue, false)
+        : isTurned(getValue(myConfigFile.getValue(), "auth", "store-auth-creds"), true);
 
       if (!storageEnabled) {
         warnOnAuthStorageDisabled();

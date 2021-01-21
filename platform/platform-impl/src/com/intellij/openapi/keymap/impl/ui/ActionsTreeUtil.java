@@ -3,6 +3,7 @@ package com.intellij.openapi.keymap.impl.ui;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.actionMacro.ActionMacro;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.PluginManagerCore;
@@ -22,10 +23,13 @@ import com.intellij.openapi.keymap.impl.ActionShortcutRestrictions;
 import com.intellij.openapi.keymap.impl.KeymapImpl;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,15 +37,10 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.util.*;
+import java.util.function.Supplier;
 
 public final class ActionsTreeUtil {
   private static final Logger LOG = Logger.getInstance(ActionsTreeUtil.class);
-
-  /**
-   * @deprecated Use {@link #getMainMenuTitle()} instead
-   */
-  @Deprecated
-  public static final String MAIN_MENU_TITLE = "Main menu";
 
   @NonNls
   private static final String EDITOR_PREFIX = "Editor";
@@ -112,7 +111,7 @@ public final class ActionsTreeUtil {
       if (collected.contains(pluginId)) {
         continue;
       }
-      Group pluginGroup = new Group(pluginId.getIdString(), null, null);
+      Group pluginGroup = new Group(pluginId.getIdString(), null, null); //NON-NLS
       final String[] pluginActions = actionManager.getPluginActions(pluginId);
       if (pluginActions.length == 0) {
         continue;
@@ -186,33 +185,34 @@ public final class ActionsTreeUtil {
     return createGroup(actionGroup, getName(actionGroup), actionGroup.getTemplatePresentation().getIcon(), null, ignore, filtered);
   }
 
+  @NlsActions.ActionText
   private static String getName(AnAction action) {
     final String name = action.getTemplatePresentation().getText();
     if (name != null && !name.isEmpty()) {
       return name;
     }
     else {
-      final String id = action instanceof ActionStub ? ((ActionStub)action).getId() : ActionManager.getInstance().getId(action);
+      @NlsSafe final String id = action instanceof ActionStub ? ((ActionStub)action).getId() : ActionManager.getInstance().getId(action);
       if (id != null) {
         return id;
       }
       if (action instanceof DefaultActionGroup) {
         final DefaultActionGroup group = (DefaultActionGroup)action;
-        if (group.getChildrenCount() == 0) return "Empty group";
+        if (group.getChildrenCount() == 0) return IdeBundle.message("action.empty.group.text");
         final AnAction[] children = group.getChildActionsOrStubs();
         for (AnAction child : children) {
           if (!(child instanceof Separator)) {
-            return "group." + getName(child);
+            return "group." + getName(child); //NON-NLS
           }
         }
-        return "Empty unnamed group";
+        return IdeBundle.message("action.empty.unnamed.group.text");
       }
-      return action.getClass().getName();
+      return action.getClass().getName(); //NON-NLS
     }
   }
 
   public static Group createGroup(ActionGroup actionGroup,
-                                  String groupName,
+                                  @NlsActions.ActionText String groupName,
                                   Icon icon,
                                   Icon openIcon,
                                   boolean ignore,
@@ -220,11 +220,15 @@ public final class ActionsTreeUtil {
     return createGroup(actionGroup, groupName, icon, openIcon, ignore, filtered, true);
   }
 
-  public static Group createGroup(ActionGroup actionGroup, String groupName, Icon icon, Icon openIcon, boolean ignore, Condition<? super AnAction> filtered,
+  public static Group createGroup(ActionGroup actionGroup, @NlsActions.ActionText String groupName, Icon icon, Icon openIcon, boolean ignore, Condition<? super AnAction> filtered,
                                   boolean normalizeSeparators) {
     ActionManager actionManager = ActionManager.getInstance();
     Group group = new Group(groupName, actionManager.getId(actionGroup), icon);
     AnAction[] children = getActions(actionGroup);
+    if (actionGroup instanceof ActionGroupStub && children.length == 0) {
+      // ActionManagerImpl#preloadActions does not preload action groups, e.g. File | New
+      children = getActions((ActionGroup)actionManager.getAction(((ActionGroupStub)actionGroup).getId()));
+    }
 
     for (AnAction action : children) {
       if (action == null) {
@@ -259,7 +263,7 @@ public final class ActionsTreeUtil {
 
   @NotNull
   public static Group createCorrectedGroup(@NotNull ActionGroup actionGroup,
-                                           @NotNull String groupName,
+                                           @NotNull @NlsActions.ActionText String groupName,
                                            @NotNull List<String> path,
                                            @NotNull List<ActionUrl> actionUrls) {
     path.add(groupName);
@@ -550,6 +554,9 @@ public final class ActionsTreeUtil {
       ArrayList<String> options = new ArrayList<>();
       options.add(action.getTemplatePresentation().getText());
       options.add(action.getTemplatePresentation().getDescription());
+      for (Supplier<String> synonym : action.getSynonyms()) {
+        options.add(synonym.get());
+      }
       String id = action instanceof ActionStub ? ((ActionStub)action).getId() : ActionManager.getInstance().getId(action);
       if (id != null) {
         options.add(id);
@@ -650,50 +657,66 @@ public final class ActionsTreeUtil {
     return action;
   }
 
+  @Nls
   public static String getMainMenuTitle() {
     return KeyMapBundle.message("main.menu.action.title");
   }
 
+  @Nls
   public static String getMainToolbar() {
     return KeyMapBundle.message("main.toolbar.title");
   }
 
+  public static String getExperimentalToolbar(){
+    return KeyMapBundle.message("experimental.toolbar.title");
+  }
+
+  @Nls
   public static String getEditorPopup() {
     return KeyMapBundle.message("editor.popup.menu.title");
   }
 
+  @Nls
   public static String getEditorGutterPopupMenu() {
     return KeyMapBundle.message("editor.gutter.popup.menu");
   }
 
+  @Nls
   public static String getScopeViewPopupMenu() {
     return KeyMapBundle.message("scope.view.popup.menu");
   }
 
+  @Nls
   public static String getNavigationBarPopupMenu() {
     return KeyMapBundle.message("navigation.bar.popup.menu");
   }
 
+  @Nls
   public static String getNavigationBarToolbar() {
     return KeyMapBundle.message("navigation.bar.toolbar");
   }
 
+  @Nls
   public static String getEditorTabPopup() {
     return KeyMapBundle.message("editor.tab.popup.menu.title");
   }
 
+  @Nls
   public static String getFavoritesPopup() {
     return KeyMapBundle.message("favorites.popup.title");
   }
 
+  @Nls
   public static String getProjectViewPopup() {
     return KeyMapBundle.message("project.view.popup.menu.title");
   }
 
+  @Nls
   public static String getCommanderPopup() {
     return KeyMapBundle.message("commender.view.popup.menu.title");
   }
 
+  @Nls
   public static String getJ2EEPopup() {
     return KeyMapBundle.message("j2ee.view.popup.menu.title");
   }

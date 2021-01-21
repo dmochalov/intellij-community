@@ -18,6 +18,7 @@ package com.intellij.codeInsight.template.impl;
 
 import com.intellij.codeInsight.template.Expression;
 import com.intellij.codeInsight.template.Template;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,7 +34,17 @@ public class Variable implements Cloneable {
   private Expression myDefaultValueExpression;
   private final boolean mySkipOnStart;
 
-  public Variable(@NotNull String name, @Nullable Expression expression, @Nullable Expression defaultValueExpression, 
+  public Variable(@NotNull Variable from) {
+    myName = from.myName;
+    myExpression = from.myExpression;
+    myDefaultValueExpression = from.myDefaultValueExpression;
+    myExpressionString = from.myExpressionString;
+    myDefaultValueString = from.myDefaultValueString;
+    myAlwaysStopAt = from.myAlwaysStopAt;
+    mySkipOnStart = from.mySkipOnStart;
+  }
+
+  public Variable(@NotNull @NlsSafe String name, @Nullable Expression expression, @Nullable Expression defaultValueExpression,
                   boolean alwaysStopAt, boolean skipOnStart) {
     myName = name;
     myExpression = expression;
@@ -42,7 +53,10 @@ public class Variable implements Cloneable {
     mySkipOnStart = skipOnStart;
   }
 
-  public Variable(@NotNull String name, @Nullable String expression, @Nullable String defaultValueString, boolean alwaysStopAt) {
+  public Variable(@NotNull @NlsSafe String name,
+                  @Nullable @NlsSafe String expression,
+                  @Nullable @NlsSafe String defaultValueString,
+                  boolean alwaysStopAt) {
     myName = name;
     myExpressionString = StringUtil.notNullize(expression);
     myDefaultValueString = StringUtil.notNullize(defaultValueString);

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.introduceParameter;
 
 import com.intellij.analysis.AnalysisScope;
@@ -27,7 +13,6 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.MethodReferencesSearch;
@@ -51,6 +36,9 @@ import com.intellij.usageView.UsageViewUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.MultiMap;
 import gnu.trove.TIntArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -78,7 +66,7 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
   private final boolean myDeclareFinal;
   private final boolean myGenerateDelegate;
   private PsiType myForcedType;
-  private final TIntArrayList myParametersToRemove;
+  private final IntList myParametersToRemove;
   private final PsiManager myManager;
   private JavaExpressionWrapper myInitializerWrapper;
   private boolean myHasConflicts;
@@ -99,7 +87,7 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
                                      boolean declareFinal,
                                      boolean generateDelegate,
                                      PsiType forcedType,
-                                     @NotNull TIntArrayList parametersToRemove) {
+                                     @NotNull IntList parametersToRemove) {
     super(project);
 
     myMethodToReplaceIn = methodToReplaceIn;
@@ -120,6 +108,27 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
     myParametersToRemove = parametersToRemove;
 
     myInitializerWrapper = expressionToSearch == null ? null : new JavaExpressionWrapper(expressionToSearch);
+  }
+
+  /**
+   * if expressionToSearch is null, search for localVariable
+   */
+  public IntroduceParameterProcessor(@NotNull Project project,
+                                     PsiMethod methodToReplaceIn,
+                                     @NotNull PsiMethod methodToSearchFor,
+                                     PsiExpression parameterInitializer,
+                                     PsiExpression expressionToSearch,
+                                     PsiLocalVariable localVariable,
+                                     boolean removeLocalVariable,
+                                     String parameterName,
+                                     boolean replaceAllOccurrences,
+                                     int replaceFieldsWithGetters,
+                                     boolean declareFinal,
+                                     boolean generateDelegate,
+                                     PsiType forcedType,
+                                     @NotNull TIntArrayList parametersToRemove) {
+    this(project, methodToReplaceIn, methodToSearchFor, parameterInitializer, expressionToSearch, localVariable, removeLocalVariable, parameterName, replaceAllOccurrences,
+         replaceFieldsWithGetters, declareFinal, generateDelegate, forcedType, new IntArrayList(parametersToRemove.toNativeArray()));
   }
 
   public void setParameterInitializer(PsiExpression parameterInitializer) {
@@ -233,11 +242,11 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
   @Override
   protected boolean preprocessUsages(@NotNull Ref<UsageInfo[]> refUsages) {
     UsageInfo[] usagesIn = refUsages.get();
-    MultiMap<PsiElement, String> conflicts = new MultiMap<>();
+    MultiMap<PsiElement, @Nls String> conflicts = new MultiMap<>();
 
     AnySameNameVariables anySameNameVariables = new AnySameNameVariables();
     myMethodToReplaceIn.accept(anySameNameVariables);
-    final Pair<PsiElement, String> conflictPair = anySameNameVariables.getConflict();
+    final Pair<PsiElement, @Nls String> conflictPair = anySameNameVariables.getConflict();
     if (conflictPair != null) {
       conflicts.putValue(conflictPair.first, conflictPair.second);
     }
@@ -323,16 +332,16 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
   }
 
   public class AnySameNameVariables extends JavaRecursiveElementWalkingVisitor {
-    private Pair<PsiElement, String> conflict;
+    private Pair<PsiElement, @Nls String> conflict;
 
-    public Pair<PsiElement, String> getConflict() {
+    public Pair<PsiElement, @Nls String> getConflict() {
       return conflict;
     }
 
     @Override public void visitVariable(PsiVariable variable) {
       if (variable == myLocalVariable) return;
       if (variable instanceof PsiParameter && ((PsiParameter)variable).getDeclarationScope() == myMethodToReplaceIn) {
-        if (getParametersToRemove().contains(myMethodToReplaceIn.getParameterList().getParameterIndex((PsiParameter)variable))){
+        if (getParameterListToRemove().contains(myMethodToReplaceIn.getParameterList().getParameterIndex((PsiParameter)variable))){
           return;
         }
       }
@@ -340,7 +349,7 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
         String descr = JavaRefactoringBundle.message("there.is.already.a.0.it.will.conflict.with.an.introduced.parameter",
                                                  RefactoringUIUtil.getDescription(variable, true));
 
-        conflict = Pair.create(variable, StringUtil.capitalize(descr));
+        conflict = Pair.create(variable, descr);
       }
     }
 
@@ -591,7 +600,8 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
 
   private void removeParametersFromCall(final PsiExpressionList argList) {
     final PsiExpression[] exprs = argList.getExpressions();
-    myParametersToRemove.forEachDescending(paramNum -> {
+    for (int i = myParametersToRemove.size() - 1; i >= 0; i--) {
+      int paramNum = myParametersToRemove.getInt(i);
       if (paramNum < exprs.length) {
         try {
           exprs[paramNum].delete();
@@ -600,8 +610,7 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
           LOG.error(e);
         }
       }
-      return true;
-    });
+    }
   }
 
   @Override
@@ -661,7 +670,7 @@ public class IntroduceParameterProcessor extends BaseRefactoringProcessor implem
 
   @Override
   @NotNull
-  public TIntArrayList getParametersToRemove() {
+  public IntList getParameterListToRemove() {
     return myParametersToRemove;
   }
 

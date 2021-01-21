@@ -12,37 +12,42 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
+import com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTracker.Companion.LOG
+import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectId
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.util.ExternalSystemBundle.message
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.containers.DisposableWrapperList
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
-@State(name = "UnlinkedProjectNotification", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
+@State(name = "UnlinkedProjectNotification", storages = [Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE)])
 class UnlinkedProjectNotificationAware(private val project: Project) : PersistentStateComponent<UnlinkedProjectNotificationAware.State> {
-
-  private val disabledNotifications = ContainerUtil.newConcurrentSet<String>()
-  private val notifiedNotifications = DisposableWrapperList<String>()
+  private val disabledNotifications = Collections.newSetFromMap<String>(ConcurrentHashMap())
+  private val notifiedNotifications = DisposableWrapperList<ExternalSystemProjectId>()
 
   fun notify(unlinkedProjectAware: ExternalSystemUnlinkedProjectAware, externalProjectPath: String) {
     ApplicationManager.getApplication().assertIsDispatchThread()
 
-    val systemId = unlinkedProjectAware.systemId.id
-    val systemName = unlinkedProjectAware.systemId.readableName
+    val systemId = unlinkedProjectAware.systemId
+    val projectId = unlinkedProjectAware.getProjectId(externalProjectPath)
+    val systemName = systemId.readableName
 
-    if (systemId in disabledNotifications) return
-    if (systemId in notifiedNotifications) return
+    if (systemId.id in disabledNotifications) return
+    if (projectId in notifiedNotifications) {
+      LOG.debug("Unlinked ${projectId.readableName} project notification is already notified")
+      return
+    }
 
     val notification = NOTIFICATION_GROUP.createNotification(
       message("unlinked.project.notification.title", systemName),
       NotificationType.INFORMATION
     )
 
-    val notificationDisposable = Disposer.newDisposable()
-    Disposer.register(project, notificationDisposable)
-    notifiedNotifications.add(systemId, notificationDisposable)
+    val notificationDisposable = createExtensionDisposable(project, unlinkedProjectAware)
+    notifiedNotifications.add(projectId, notificationDisposable)
     notification.whenExpired { Disposer.dispose(notificationDisposable) }
     unlinkedProjectAware.subscribe(project, object : ExternalSystemProjectLinkListener {
       override fun onProjectLinked(externalProjectPath: String) {
@@ -50,13 +55,13 @@ class UnlinkedProjectNotificationAware(private val project: Project) : Persisten
       }
     }, notificationDisposable)
 
-    notification.addAction(NotificationAction.createSimpleExpiring(message("unlinked.project.notification.load.action", systemName)) {
+    notification.addAction(NotificationAction.createSimpleExpiring(unlinkedProjectAware.getNotificationText()) {
       notification.expire()
       unlinkedProjectAware.linkAndLoadProject(project, externalProjectPath)
     })
     notification.addAction(NotificationAction.createSimple(message("unlinked.project.notification.skip.action")) {
       notification.expire()
-      disabledNotifications.add(systemId)
+      disabledNotifications.add(systemId.id)
     })
     notification.contextHelpAction = object : DumbAwareAction(
       CommonBundle.getHelpButtonText(),
@@ -65,6 +70,8 @@ class UnlinkedProjectNotificationAware(private val project: Project) : Persisten
     }
 
     notification.notify(project)
+
+    LOG.debug("Notified unlinked ${projectId.readableName} project notification")
   }
 
   override fun getState(): State {

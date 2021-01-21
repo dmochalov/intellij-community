@@ -4,7 +4,7 @@ import com.intellij.openapi.application.ex.PathManagerEx
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.workspaceModel.ide.getInstance
-import com.intellij.workspaceModel.storage.VirtualFileUrlManager
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import com.intellij.workspaceModel.storage.WorkspaceEntityStorageBuilder
 import com.intellij.workspaceModel.storage.bridgeEntities.ModuleEntity
 import com.intellij.workspaceModel.storage.bridgeEntities.projectLibraries
@@ -114,7 +114,8 @@ class JpsProjectReloadingTest : HeavyPlatformTestCase() {
                      updateAction: (LoadedProjectData) -> JpsConfigurationFilesChange): ReloadedProjectData {
     val projectData = copyAndLoadProject(originalProjectFile, virtualFileManager)
     val change = updateAction(projectData)
-    val (changedEntities, builder) = projectData.serializers.reloadFromChangedFiles(change, CachingJpsFileContentReader(projectData.projectDirUrl))
+    val (changedEntities, builder) =
+      projectData.serializers.reloadFromChangedFiles(change, CachingJpsFileContentReader(projectData.projectDirUrl), TestErrorReporter)
     val originalBuilder = WorkspaceEntityStorageBuilder.from(projectData.storage)
     originalBuilder.replaceBySource({it in changedEntities}, builder)
     projectData.serializers.checkConsistency(projectData.projectDirUrl, originalBuilder, virtualFileManager)

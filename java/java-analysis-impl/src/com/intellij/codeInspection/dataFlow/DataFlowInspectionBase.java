@@ -38,10 +38,8 @@ import org.jdom.Element;
 import org.jetbrains.annotations.*;
 
 import javax.swing.*;
-import java.text.MessageFormat;
 import java.util.*;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 import static com.intellij.util.ObjectUtils.tryCast;
 
@@ -445,18 +443,17 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       ContainerUtil.addIfNotNull(fixes, createExplainFix(ref, new TrackingRunner.ValueDfaProblemType(value)));
     }
 
-    String valueText;
     ProblemHighlightType type;
+    String message;
     if (ref instanceof PsiMethodCallExpression || ref instanceof PsiPolyadicExpression) {
       type = ProblemHighlightType.GENERIC_ERROR_OR_WARNING;
-      valueText = "Result of";
+      message = JavaAnalysisBundle.message("dataflow.message.constant.expression", presentableName);
     }
     else {
       type = ProblemHighlightType.WEAK_WARNING;
-      valueText = "Value";
+      message = JavaAnalysisBundle.message("dataflow.message.constant.value", presentableName);
     }
-    reporter.registerProblem(ref, MessageFormat.format("{0} <code>#ref</code> #loc is always ''{1}''", valueText, presentableName),
-                             type, fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
+    reporter.registerProblem(ref, message, type, fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
   }
 
   private static boolean shouldReportZero(PsiExpression ref) {
@@ -477,7 +474,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       PsiMethodCallExpression call = (PsiMethodCallExpression)ref;
       PsiExpression qualifier = call.getMethodExpression().getQualifierExpression();
       if (PsiUtil.isConstantExpression(qualifier) &&
-          Stream.of(call.getArgumentList().getExpressions()).allMatch(PsiUtil::isConstantExpression)) {
+          ContainerUtil.and(call.getArgumentList().getExpressions(), PsiUtil::isConstantExpression)) {
         return false;
       }
     }
@@ -531,16 +528,22 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       if (context instanceof PsiForStatement && PsiTreeUtil.isAncestor(((PsiForStatement)context).getInitialization(), expr, true)) {
         return;
       }
-      if (context instanceof PsiClassInitializer && expr instanceof PsiReferenceExpression) {
-        if (assignment != null) {
-          Object constValue = ExpressionUtils.computeConstantExpression(assignment.getRExpression());
-          if (constValue == PsiTypesUtil.getDefaultValue(expr.getType())) {
-            PsiReferenceExpression ref = (PsiReferenceExpression)expr;
-            PsiElement target = ref.resolve();
-            if (target instanceof PsiField &&
-                (((PsiField)target).hasModifierProperty(PsiModifier.STATIC) || ExpressionUtil.isEffectivelyUnqualified(ref)) &&
-                ((PsiField)target).getContainingClass() == ((PsiClassInitializer)context).getContainingClass()) {
-              return;
+      if (expr instanceof PsiReferenceExpression) {
+        PsiReferenceExpression ref = (PsiReferenceExpression)expr;
+        PsiField field = tryCast(ref.resolve(), PsiField.class);
+        if (field != null) {
+          // Final field assignment: even if redundant according to DFA model (e.g. this.field = null),
+          // it's necessary due to language semantics
+          if (field.hasModifierProperty(PsiModifier.FINAL)) return;
+          if (context instanceof PsiClassInitializer) {
+            if (assignment != null) {
+              Object constValue = ExpressionUtils.computeConstantExpression(assignment.getRExpression());
+              if (constValue == PsiTypesUtil.getDefaultValue(expr.getType())) {
+                if ((field.hasModifierProperty(PsiModifier.STATIC) || ExpressionUtil.isEffectivelyUnqualified(ref)) &&
+                    field.getContainingClass() == ((PsiClassInitializer)context).getContainingClass()) {
+                  return;
+                }
+              }
             }
           }
         }
@@ -591,6 +594,10 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
         LocalQuickFix[] fixes = createMethodReferenceNPEFixes(methodRef, reporter.isOnTheFly()).toArray(LocalQuickFix.EMPTY_ARRAY);
         reporter.registerProblem(methodRef, JavaAnalysisBundle.message("dataflow.message.passing.nullable.argument.methodref"), fixes);
       });
+      NullabilityProblemKind.unboxingMethodRefParameter.ifMyProblem(problem, methodRef -> {
+        LocalQuickFix[] fixes = createMethodReferenceNPEFixes(methodRef, reporter.isOnTheFly()).toArray(LocalQuickFix.EMPTY_ARRAY);
+        reporter.registerProblem(methodRef, JavaAnalysisBundle.message("dataflow.message.unboxing.nullable.argument.methodref"), fixes);
+      });
       NullabilityProblemKind.arrayAccessNPE.ifMyProblem(problem, arrayAccess -> {
         LocalQuickFix[] fixes =
           createNPEFixes(arrayAccess.getArrayExpression(), arrayAccess, reporter.isOnTheFly()).toArray(LocalQuickFix.EMPTY_ARRAY);
@@ -639,6 +646,9 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       if (indexExpression != null) {
         holder.registerProblem(indexExpression, JavaAnalysisBundle.message("dataflow.message.array.index.out.of.bounds"));
       }
+    });
+    visitor.negativeArraySizes().forEach(dimExpression -> {
+      holder.registerProblem(dimExpression, JavaAnalysisBundle.message("dataflow.message.negative.array.size"));
     });
   }
 
@@ -697,7 +707,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
     });
   }
 
-  private static @NotNull String getContractMessage(List<? extends MethodContract> contracts) {
+  private static @NotNull @InspectionMessage String getContractMessage(List<? extends MethodContract> contracts) {
     if (contracts.stream().allMatch(mc -> mc.getConditions().stream().allMatch(ContractValue::isBoundCheckingCondition))) {
       return JavaAnalysisBundle.message("dataflow.message.contract.fail.index");
     }
@@ -726,11 +736,11 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
     nullArgs.forEach((anchor, alwaysPresent) -> {
       if (alwaysPresent == ThreeState.UNSURE) return;
       if (alwaysPresent.toBoolean()) {
-        reporter.registerProblem(anchor, "Passing a non-null argument to <code>Optional</code>",
+        reporter.registerProblem(anchor, JavaAnalysisBundle.message("dataflow.message.passing.non.null.argument.to.optional"),
                                  DfaOptionalSupport.createReplaceOptionalOfNullableWithOfFix(anchor));
       }
       else {
-        reporter.registerProblem(anchor, "Passing <code>null</code> argument to <code>Optional</code>",
+        reporter.registerProblem(anchor, JavaAnalysisBundle.message("dataflow.message.passing.null.argument.to.optional"),
                                  DfaOptionalSupport.createReplaceOptionalOfNullableWithEmptyFix(anchor));
       }
     });

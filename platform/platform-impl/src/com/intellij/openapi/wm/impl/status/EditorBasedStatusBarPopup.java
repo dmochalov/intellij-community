@@ -16,6 +16,7 @@ import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileEditor.*;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.NlsContexts.Tooltip;
@@ -30,16 +31,12 @@ import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.ui.ClickListener;
 import com.intellij.ui.awt.RelativePoint;
-import com.intellij.ui.popup.util.PopupState;
+import com.intellij.ui.popup.PopupState;
 import com.intellij.util.Alarm;
 import com.intellij.util.ObjectUtils;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.indexing.IndexingBundle;
 import com.intellij.util.ui.UIUtil;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -50,7 +47,7 @@ import java.lang.ref.WeakReference;
 import static com.intellij.openapi.util.NlsContexts.StatusBarText;
 
 public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implements StatusBarWidget.Multiframe, CustomStatusBarWidget {
-  private final PopupState myPopupState = new PopupState();
+  private final PopupState<JBPopup> myPopupState = PopupState.forPopup();
   private final JPanel myComponent;
   private final boolean myWriteableFileRequired;
   private boolean actionEnabled;
@@ -187,7 +184,7 @@ public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implem
     if (popup != null) {
       Dimension dimension = popup.getContent().getPreferredSize();
       Point at = new Point(0, -dimension.height);
-      popup.addListener(myPopupState);
+      myPopupState.prepareToShow(popup);
       popup.show(new RelativePoint(e.getComponent(), at));
       Disposer.register(this, popup); // destroy popup on unexpected project close
     }
@@ -198,14 +195,13 @@ public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implem
     Editor editor = getEditor();
     DataContext parent = DataManager.getInstance().getDataContext((Component)myStatusBar);
     VirtualFile selectedFile = getSelectedFile();
-    return SimpleDataContext.getSimpleContext(
-      ContainerUtil.<String, Object>immutableMapBuilder()
-        .put(CommonDataKeys.VIRTUAL_FILE.getName(), selectedFile)
-        .put(CommonDataKeys.VIRTUAL_FILE_ARRAY.getName(), selectedFile == null ? VirtualFile.EMPTY_ARRAY : new VirtualFile[] {selectedFile})
-        .put(CommonDataKeys.PROJECT.getName(), getProject())
-        .put(PlatformDataKeys.CONTEXT_COMPONENT.getName(), editor == null ? null : editor.getComponent())
-        .build(),
-      parent);
+    return SimpleDataContext.builder()
+      .add(CommonDataKeys.VIRTUAL_FILE, selectedFile)
+      .add(CommonDataKeys.VIRTUAL_FILE_ARRAY, selectedFile == null ? VirtualFile.EMPTY_ARRAY : new VirtualFile[] {selectedFile})
+      .add(CommonDataKeys.PROJECT, getProject())
+      .add(PlatformDataKeys.CONTEXT_COMPONENT, editor == null ? null : editor.getComponent())
+      .setParent(parent)
+      .build();
   }
 
   @Override
@@ -317,8 +313,8 @@ public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implem
      */
     public static final WidgetState NO_CHANGE_MAKE_VISIBLE = new WidgetState();
 
-    protected final String toolTip;
-    private final String text;
+    protected final @Tooltip String toolTip;
+    private final @StatusBarText String text;
     private final boolean actionEnabled;
     private Icon icon;
 
@@ -339,7 +335,7 @@ public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implem
      * Use myConnection.subscribe(DumbService.DUMB_MODE, your_listener) inside registerCustomListeners,
      *   and call update() inside listener callbacks, to refresh your widget state when indexes are loaded
      */
-    public static WidgetState getDumbModeState(String name, String widgetPrefix) {
+    public static WidgetState getDumbModeState(@Nls String name, @StatusBarText String widgetPrefix) {
       // todo: update accordingly to UX-252
       return new WidgetState(ActionUtil.getUnavailableMessage(name, false),
                              widgetPrefix + IndexingBundle.message("progress.indexing.updating"),
@@ -350,11 +346,12 @@ public abstract class EditorBasedStatusBarPopup extends EditorBasedWidget implem
       this.icon = icon;
     }
 
+    @Nls
     public String getText() {
       return text;
     }
 
-    public String getToolTip() {
+    public @Tooltip String getToolTip() {
       return toolTip;
     }
 

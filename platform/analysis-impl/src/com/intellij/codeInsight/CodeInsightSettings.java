@@ -106,12 +106,6 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   public boolean AUTOCOMPLETE_ON_CODE_COMPLETION = true;
   public boolean AUTOCOMPLETE_ON_SMART_TYPE_COMPLETION = true;
 
-  /**
-   * @deprecated unused
-   */
-  @Deprecated
-  public boolean AUTOCOMPLETE_COMMON_PREFIX = true;
-
   public boolean SHOW_FULL_SIGNATURES_IN_PARAMETER_INFO;
 
   @OptionTag("SMART_BACKSPACE") // explicit name makes it work also for obfuscated private field's name
@@ -202,9 +196,9 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   private void setDefaults() {
     try {
       ReflectionUtil.copyFields(CodeInsightSettings.class.getDeclaredFields(), new CodeInsightSettings(), this,
-                                new DifferenceFilter<Object>(null, null) {
+                                new DifferenceFilter<>(null, null) {
                                   @Override
-                                  public boolean isAccept(@NotNull Field field) {
+                                  public boolean test(@NotNull Field field) {
                                     return !field.getName().equals("EXCLUDED_PACKAGES");
                                   }
                                 });

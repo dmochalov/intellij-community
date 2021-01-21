@@ -3,6 +3,7 @@
 package com.intellij.psi.search.scope.packageSet;
 
 import com.intellij.codeInsight.CodeInsightBundle;
+import com.intellij.icons.AllIcons;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ServiceKt;
@@ -24,7 +25,7 @@ public class PackageSetFactoryImpl extends PackageSetFactory {
   private static final Logger LOG = Logger.getInstance(PackageSetFactoryImpl.class);
 
   public PackageSetFactoryImpl() {
-    PackageSetParserExtension.EP_NAME.addExtensionPointListener(new ExtensionPointListener<PackageSetParserExtension>() {
+    PackageSetParserExtension.EP_NAME.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull PackageSetParserExtension extension, @NotNull PluginDescriptor pluginDescriptor) {
         for (Project project : ProjectManager.getInstance().getOpenProjects()) {
@@ -46,7 +47,9 @@ public class PackageSetFactoryImpl extends PackageSetFactory {
               NamedScope scope = scopes[i];
               PackageSet value = scope.getValue();
               if (value != null && value.getClass().getClassLoader() == pluginClassLoader) {
-                scopes[i] = new NamedScope(scope.getName(), new InvalidPackageSet(value.getText()));
+                String presentableName = scope.getPresentableName();
+                scopes[i] = new NamedScope(scope.getScopeId(), () -> presentableName, AllIcons.Ide.LocalScope,
+                                           new InvalidPackageSet(value.getText()));
                 changed = true;
               }
             }

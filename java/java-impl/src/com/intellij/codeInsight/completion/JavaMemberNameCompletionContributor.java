@@ -8,6 +8,7 @@ import com.intellij.codeInsight.lookup.*;
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl;
 import com.intellij.featureStatistics.FeatureUsageTracker;
 import com.intellij.lang.ASTNode;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.patterns.ElementPattern;
@@ -45,7 +46,7 @@ import static com.intellij.patterns.StandardPatterns.or;
 /**
  * @author peter
  */
-public class JavaMemberNameCompletionContributor extends CompletionContributor {
+public class JavaMemberNameCompletionContributor extends CompletionContributor implements DumbAware {
   public static final ElementPattern<PsiElement> INSIDE_TYPE_PARAMS_PATTERN = psiElement().
     afterLeaf(psiElement().withText("?").andOr(
       psiElement().afterLeaf("<", ","),
@@ -82,7 +83,12 @@ public class JavaMemberNameCompletionContributor extends CompletionContributor {
       completeFieldName(lookupSet, variable, result.getPrefixMatcher(), parameters.getInvocationCount() >= 1);
     }
 
-    if (PsiJavaPatterns.psiElement().nameIdentifierOf(PsiJavaPatterns.psiMethod().withParent(PsiClass.class)).accepts(position)) {
+    if (psiElement(PsiIdentifier.class).withParent(PsiRecordComponent.class).andNot(INSIDE_TYPE_PARAMS_PATTERN).accepts(position)) {
+      PsiRecordComponent component = (PsiRecordComponent)parameters.getPosition().getParent();
+      completeComponentName(lookupSet, component, result.getPrefixMatcher());
+    }
+
+      if (PsiJavaPatterns.psiElement().nameIdentifierOf(PsiJavaPatterns.psiMethod().withParent(PsiClass.class)).accepts(position)) {
       completeMethodName(lookupSet, parameters.getPosition().getParent(), result.getPrefixMatcher());
     }
 
@@ -277,6 +283,17 @@ public class JavaMemberNameCompletionContributor extends CompletionContributor {
     return ArrayUtilRt.toStringArray(unresolvedRefs);
   }
 
+  private static void completeComponentName(Set<LookupElement> set, PsiRecordComponent var, final PrefixMatcher matcher) {
+    FeatureUsageTracker.getInstance().triggerFeatureUsed("editing.completion.variable.name");
+
+    Project project = var.getProject();
+    JavaCodeStyleManager codeStyleManager = JavaCodeStyleManager.getInstance(project);
+    
+    SuggestedNameInfo suggestedNameInfo = codeStyleManager.suggestVariableName(VariableKind.PARAMETER, null, null, var.getType());
+    final String[] suggestedNames = suggestedNameInfo.names;
+    addLookupItems(set, suggestedNameInfo, matcher, project, suggestedNames);
+  }
+  
   private static void completeFieldName(Set<LookupElement> set, PsiField var, final PrefixMatcher matcher, boolean includeOverlapped) {
     FeatureUsageTracker.getInstance().triggerFeatureUsed("editing.completion.variable.name");
 
@@ -462,7 +479,7 @@ public class JavaMemberNameCompletionContributor extends CompletionContributor {
   }
 
   private static LookupElementDecorator<LookupElement> withInsertHandler(final SuggestedNameInfo callback, LookupElement element) {
-    return LookupElementDecorator.withInsertHandler(element, new InsertHandler<LookupElementDecorator<LookupElement>>() {
+    return LookupElementDecorator.withInsertHandler(element, new InsertHandler<>() {
       @Override
       public void handleInsert(@NotNull InsertionContext context, @NotNull LookupElementDecorator<LookupElement> item) {
         TailType tailType = LookupItem.getDefaultTailType(context.getCompletionChar());

@@ -6,6 +6,7 @@ import com.intellij.codeInsight.CodeInsightSettings;
 import com.intellij.codeInsight.completion.CodeCompletionFeatures;
 import com.intellij.codeInsight.completion.ShowHideIntentionIconLookupAction;
 import com.intellij.codeInsight.hint.HintManagerImpl;
+import com.intellij.util.ui.Advertiser;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementAction;
 import com.intellij.featureStatistics.FeatureUsageTracker;
@@ -129,6 +130,11 @@ class LookupUi {
         myHintAlarm.cancelAllRequests();
         updateHint();
       }
+    });
+
+    myScrollPane.getVerticalScrollBar().addAdjustmentListener(e -> {
+      if (myLookup.myUpdating || myLookup.isLookupDisposed()) return;
+      myLookup.myCellRenderer.scheduleUpdateLookupWidthFromVisibleItems();
     });
   }
 
@@ -337,25 +343,21 @@ class LookupUi {
   }
 
   private final class ChangeSortingAction extends DumbAwareAction implements HintManagerImpl.ActionToIgnore {
-    private boolean sortByName = UISettings.getInstance().getSortLookupElementsLexicographically();
     private ChangeSortingAction() {
       super(ActionsBundle.messagePointer("action.ChangeSortingAction.text"));
     }
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
-      if (e.getPlace() == ActionPlaces.EDITOR_POPUP) {
-        sortByName = !sortByName;
-
-        FeatureUsageTracker.getInstance().triggerFeatureUsed(CodeCompletionFeatures.EDITING_COMPLETION_CHANGE_SORTING);
-        UISettings.getInstance().setSortLookupElementsLexicographically(sortByName);
-        myLookup.resort(false);
-      }
+      FeatureUsageTracker.getInstance().triggerFeatureUsed(CodeCompletionFeatures.EDITING_COMPLETION_CHANGE_SORTING);
+      UISettings settings = UISettings.getInstance();
+      settings.setSortLookupElementsLexicographically(!settings.getSortLookupElementsLexicographically());
+      myLookup.resort(false);
     }
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-      e.getPresentation().setIcon(sortByName ? PlatformIcons.CHECK_ICON : null);
+      e.getPresentation().setIcon(UISettings.getInstance().getSortLookupElementsLexicographically() ? PlatformIcons.CHECK_ICON : null);
     }
   }
 
@@ -369,9 +371,7 @@ class LookupUi {
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
-      if (e.getPlace() == ActionPlaces.EDITOR_POPUP) {
-        delegateAction.actionPerformed(e);
-      }
+      delegateAction.actionPerformed(e);
     }
   }
 

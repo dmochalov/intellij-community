@@ -2,6 +2,7 @@
 package com.intellij.openapi.actionSystem.ex;
 
 import com.intellij.ide.DataManager;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.actions.ActionsCollector;
 import com.intellij.ide.lightEdit.LightEdit;
 import com.intellij.openapi.Disposable;
@@ -21,7 +22,6 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.util.ObjectUtils;
-import com.intellij.util.PausesStat;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
@@ -32,15 +32,11 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.event.InputEvent;
-import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
-
-import static java.awt.event.InputEvent.ALT_DOWN_MASK;
-import static java.awt.event.InputEvent.CTRL_DOWN_MASK;
 
 public final class ActionUtil {
   private static final Logger LOG = Logger.getInstance(ActionUtil.class);
@@ -79,7 +75,7 @@ public final class ActionUtil {
   }
 
   @NotNull
-  private static String getActionUnavailableMessage(@NotNull List<String> actionNames) {
+  private static @NlsContexts.PopupContent String getActionUnavailableMessage(@NotNull List<String> actionNames) {
     String message;
     if (actionNames.isEmpty()) {
       message = getUnavailableMessage("This action", false);
@@ -95,9 +91,11 @@ public final class ActionUtil {
   }
 
   @NotNull
-  public static String getUnavailableMessage(@NotNull String action, boolean plural) {
-    return action + (plural ? " are" : " is")
-           + " not available while " + ApplicationNamesInfo.getInstance().getProductName() + " is updating indices";
+  public static @NlsContexts.PopupContent String getUnavailableMessage(@NotNull String action, boolean plural) {
+    if (plural) {
+      return IdeBundle.message("popup.content.actions.not.available.while.updating.indices", action, ApplicationNamesInfo.getInstance().getProductName());
+    }
+    return IdeBundle.message("popup.content.action.not.available.while.updating.indices", action, ApplicationNamesInfo.getInstance().getProductName());
   }
 
   /**
@@ -134,7 +132,6 @@ public final class ActionUtil {
     ud.averageUpdateDurationMs = Math.round(spentMs*smoothAlpha + ud.averageUpdateDurationMs*smoothCoAlpha);
   }
 
-  private static int insidePerformDumbAwareUpdate;
   /**
    * @param action action
    * @param e action event
@@ -148,6 +145,8 @@ public final class ActionUtil {
     final Presentation presentation = e.getPresentation();
     if (LightEdit.owns(e.getProject()) && !LightEdit.isActionCompatible(action)) {
       presentation.setEnabledAndVisible(false);
+      presentation.putClientProperty(WOULD_BE_ENABLED_IF_NOT_DUMB_MODE, false);
+      presentation.putClientProperty(WOULD_BE_VISIBLE_IF_NOT_DUMB_MODE, false);
       return false;
     }
 
@@ -162,12 +161,6 @@ public final class ActionUtil {
 
     boolean allowed = (!dumbMode || action.isDumbAware()) &&
                       (!Registry.is("actionSystem.honor.modal.context") || !isInModalContext || action.isEnabledInModalContext());
-
-    String presentationText = presentation.getText();
-    boolean edt = ApplicationManager.getApplication().isDispatchThread();
-    if (edt && insidePerformDumbAwareUpdate++ == 0) {
-      ActionPauses.STAT.started();
-    }
 
     action.applyTextOverride(e);
 
@@ -188,9 +181,6 @@ public final class ActionUtil {
       throw e1;
     }
     finally {
-      if (edt && --insidePerformDumbAwareUpdate == 0) {
-        ActionPauses.STAT.finished(presentationText + " action update (" + action.getClass() + ")");
-      }
       if (!allowed) {
         if (wasEnabledBefore == null) {
           presentation.putClientProperty(WAS_ENABLED_BEFORE_DUMB, enabledBeforeUpdate);
@@ -225,10 +215,6 @@ public final class ActionUtil {
     ThrowableComputable<T, RuntimeException> prioritizedRunnable = () -> ProgressManager.getInstance().computePrioritized(inReadAction);
     ThrowableComputable<T, RuntimeException> process = useAlternativeResolve ? () -> dumbService.computeWithAlternativeResolveEnabled(prioritizedRunnable) : prioritizedRunnable;
     return ProgressManager.getInstance().runProcessWithProgressSynchronously(process, progressTitle, true, project);
-  }
-
-  public static final class ActionPauses {
-    public static final PausesStat STAT = new PausesStat("AnAction.update()");
   }
 
   /**
@@ -315,7 +301,6 @@ public final class ActionUtil {
       if (actionIndex != -1 && targetIndex != -1) {
         if (actionIndex < targetIndex) targetIndex--;
         AnAction anAction = list.remove(actionIndex);
-        assert targetIndex >= 0;
         list.add(before ? targetIndex : targetIndex + 1, anAction);
         return;
       }

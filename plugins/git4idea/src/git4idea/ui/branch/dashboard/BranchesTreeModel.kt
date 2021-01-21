@@ -5,10 +5,13 @@ import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.util.ThreeState
 import git4idea.i18n.GitBundle.message
 import git4idea.repo.GitRepository
+import org.jetbrains.annotations.Nls
 import java.util.*
 import javax.swing.tree.DefaultMutableTreeNode
 
 internal val GIT_BRANCHES = DataKey.create<Set<BranchInfo>>("GitBranchKey")
+internal val GIT_BRANCH_FILTERS = DataKey.create<List<String>>("GitBranchFilterKey")
+internal val GIT_REMOTES = DataKey.create<Set<String>>("GitRemoteKey")
 
 internal data class BranchInfo(val branchName: String,
                                val isLocal: Boolean,
@@ -32,16 +35,17 @@ internal data class BranchNodeDescriptor(val type: NodeType,
 }
 
 internal enum class NodeType {
-  ROOT, LOCAL_ROOT, REMOTE_ROOT, BRANCH, GROUP_NODE
+  ROOT, LOCAL_ROOT, REMOTE_ROOT, BRANCH, GROUP_NODE, HEAD_NODE
 }
 
 internal class BranchTreeNode(nodeDescriptor: BranchNodeDescriptor) : DefaultMutableTreeNode(nodeDescriptor) {
 
-  fun getTextRepresentation(): String {
+  fun getTextRepresentation(): @Nls String {
     val nodeDescriptor = userObject as? BranchNodeDescriptor ?: return super.toString()
     return when (nodeDescriptor.type) {
       NodeType.LOCAL_ROOT -> message("group.Git.Local.Branch.title")
       NodeType.REMOTE_ROOT -> message("group.Git.Remote.Branch.title")
+      NodeType.HEAD_NODE -> message("group.Git.HEAD.Branch.Filter.title")
       else -> nodeDescriptor.getDisplayText() ?: super.toString()
     }
   }

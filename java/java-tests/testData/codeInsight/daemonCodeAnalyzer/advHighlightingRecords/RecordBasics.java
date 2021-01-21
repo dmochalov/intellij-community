@@ -1,6 +1,6 @@
 import java.lang.annotation.*;
 
-class <error descr="'record' is a restricted identifier and cannot be used for type declarations">record</error> {
+class <error descr="'record' is a contextual keyword and cannot be used for type declarations">record</error> {
   void x(<error descr="Illegal reference to restricted type 'record'">record</error> r) {}
 }
 record <error descr="Record has no header declared">NoComponentList</error> {}
@@ -55,7 +55,7 @@ record AnnotatedComponents(
 class Outer {
   record NestedRecord() {}
   class Inner {
-    <error descr="Inner classes cannot have static declarations">record InnerRecord()</error> {}
+    <error descr="Static declarations in inner classes are not supported at language level '15'">record InnerRecord()</error> {}
   }
 }
 
@@ -70,3 +70,8 @@ record ProhibitedMembers() {
 record StaticFieldCollides(int i) {
   static int <error descr="Variable 'i' is already defined in the scope">i</error>;
 }
+record Incomplete(@<error descr="Class reference expected">i</error>nt a) {}
+record CStyle(int a<error descr="C-style record component declaration is not allowed">[]</error>) {}
+record CStyle2(int[] a<error descr="C-style record component declaration is not allowed">[] []</error> ) {}
+record JavaStyle(int[] [] a) {}
+record SafeVarargComponent(<error descr="@SafeVarargs annotation cannot be applied for a record component">@SafeVarargs</error> int... component) {}

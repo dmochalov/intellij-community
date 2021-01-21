@@ -77,6 +77,7 @@ public final class ClassLoadingUtils {
   public static ClassType getHelperClass(Class<?> cls, EvaluationContext evaluationContext) throws EvaluateException {
     // TODO [egor]: cache and load in bootstrap class loader
     String name = cls.getName();
+    evaluationContext = ((EvaluationContextImpl)evaluationContext).withAutoLoadClasses(true);
     DebugProcess process = evaluationContext.getDebugProcess();
     try {
       return (ClassType)process.findClass(evaluationContext, name, evaluationContext.getClassLoader());
@@ -86,9 +87,9 @@ public final class ClassLoadingUtils {
         if ("java.lang.ClassNotFoundException".equals(((InvocationException)cause).exception().type().name())) {
           // need to define
           ClassLoaderReference classLoader = getClassLoader(evaluationContext, process);
-          try (InputStream stream = cls.getResourceAsStream("/" + name.replaceAll("[.]", "/") + ".class")) {
+          try (InputStream stream = cls.getResourceAsStream('/' + name.replace('.', '/') + ".class")) {
             if (stream == null) return null;
-            defineClass(name, StreamUtil.loadFromStream(stream), evaluationContext, process, classLoader);
+            defineClass(name, StreamUtil.readBytes(stream), evaluationContext, process, classLoader);
             ((EvaluationContextImpl)evaluationContext).setClassLoader(classLoader);
             return (ClassType)process.findClass(evaluationContext, name, classLoader);
           }

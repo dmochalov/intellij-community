@@ -33,22 +33,10 @@ public final class HighlightNamesUtil {
   private static final Logger LOG = Logger.getInstance(HighlightNamesUtil.class);
 
   @Nullable
-  static HighlightInfo highlightMethodName(@NotNull PsiMethod method,
+  static HighlightInfo highlightMethodName(@NotNull PsiMember methodOrClass,
                                            @NotNull PsiElement elementToHighlight,
                                            final boolean isDeclaration,
                                            @NotNull TextAttributesScheme colorsScheme) {
-    return highlightMethodName(method, elementToHighlight, elementToHighlight.getTextRange(), colorsScheme, isDeclaration);
-  }
-
-  /**
-   * @param methodOrClass method to highlight; class is passed instead of implicit constructor
-   */
-  @Nullable
-  static HighlightInfo highlightMethodName(@NotNull PsiMember methodOrClass,
-                                           @NotNull PsiElement elementToHighlight,
-                                           @NotNull TextRange range,
-                                           @NotNull TextAttributesScheme colorsScheme,
-                                           final boolean isDeclaration) {
     boolean isInherited = false;
     boolean isStaticallyImported = false;
 
@@ -70,7 +58,7 @@ public final class HighlightNamesUtil {
                                                                 : JavaHighlightInfoTypes.CONSTRUCTOR_CALL;
     if (type != null) {
       TextAttributes attributes = mergeWithScopeAttributes(methodOrClass, type, colorsScheme);
-      HighlightInfo.Builder builder = HighlightInfo.newHighlightInfo(type).range(range);
+      HighlightInfo.Builder builder = HighlightInfo.newHighlightInfo(type).range(elementToHighlight.getTextRange());
       if (attributes != null) {
         builder.textAttributes(attributes);
       }
@@ -237,7 +225,7 @@ public final class HighlightNamesUtil {
     List<Pair<NamedScope,NamedScopesHolder>> scopes = validationManager.getScopeBasedHighlightingCachedScopes();
     for (Pair<NamedScope, NamedScopesHolder> scope : scopes) {
       final NamedScope namedScope = scope.getFirst();
-      final TextAttributesKey scopeKey = ScopeAttributesUtil.getScopeTextAttributeKey(namedScope.getName());
+      final TextAttributesKey scopeKey = ScopeAttributesUtil.getScopeTextAttributeKey(namedScope.getScopeId());
       final TextAttributes attributes = colorsScheme.getAttributes(scopeKey);
       if (attributes == null || attributes.isEmpty()) {
         continue;

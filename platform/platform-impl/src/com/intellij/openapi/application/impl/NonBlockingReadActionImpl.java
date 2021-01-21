@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.application.impl;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -10,7 +10,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.NonBlockingReadAction;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.constraints.BaseConstrainedExecution;
 import com.intellij.openapi.application.constraints.ConstrainedExecution.ContextConstraint;
 import com.intellij.openapi.application.ex.ApplicationEx;
@@ -46,10 +45,7 @@ import org.jetbrains.concurrency.CancellablePromise;
 import org.jetbrains.concurrency.Promises;
 
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -58,7 +54,7 @@ import java.util.function.Consumer;
  * @author peter
  */
 @VisibleForTesting
-public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
+public final class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
   private static final Logger LOG = Logger.getInstance(NonBlockingReadActionImpl.class);
   private static final Executor SYNC_DUMMY_EXECUTOR = __ -> {
     throw new UnsupportedOperationException();
@@ -74,8 +70,8 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
   private final @Nullable ProgressIndicator myProgressIndicator;
   private final Callable<? extends T> myComputation;
 
-  private static final Set<NonBlockingReadActionImpl<?>.Submission> ourTasks = ContainerUtil.newConcurrentSet();
-  private static final Map<List<?>, NonBlockingReadActionImpl<?>.Submission> ourTasksByEquality = new HashMap<>();
+  private static final Set<Submission<?>> ourTasks = ContainerUtil.newConcurrentSet();
+  private static final Map<List<?>, Submission<?>> ourTasksByEquality = new HashMap<>();
   private static final SubmissionTracker ourUnboundedSubmissionTracker = new SubmissionTracker();
 
   NonBlockingReadActionImpl(@NotNull Callable<? extends T> computation) {
@@ -161,7 +157,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       throw new IllegalArgumentException("Equality should be unique: passing " + equality[0] + " is likely to interfere with unrelated computations from different places");
     }
     return new NonBlockingReadActionImpl<>(myComputation, myModalityState, myUiThreadAction, myConstraints, myCancellationConditions, myDisposables,
-                                           ContainerUtil.newArrayList(equality), myProgressIndicator);
+                                           new ArrayList<>(Arrays.asList(equality)), myProgressIndicator);
   }
 
   private static boolean isTooCommon(Object o) {
@@ -187,12 +183,12 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
 
     ProgressIndicator outerIndicator = myProgressIndicator != null ? myProgressIndicator
                                                                    : ProgressIndicatorProvider.getGlobalProgressIndicator();
-    return new Submission(SYNC_DUMMY_EXECUTOR, outerIndicator).executeSynchronously();
+    return new Submission<T>(this, SYNC_DUMMY_EXECUTOR, outerIndicator).executeSynchronously();
   }
 
   @Override
   public @NotNull CancellablePromise<T> submit(@NotNull Executor backgroundThreadExecutor) {
-    Submission submission = new Submission(backgroundThreadExecutor, myProgressIndicator);
+    Submission<T> submission = new Submission<>(this, backgroundThreadExecutor, myProgressIndicator);
     if (myCoalesceEquality == null) {
       submission.transferToBgThread();
     }
@@ -202,13 +198,14 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
     return submission;
   }
 
-  private class Submission extends AsyncPromise<T> {
+  private static final class Submission<T> extends AsyncPromise<T> {
     @NotNull private final Executor backendExecutor;
     private @Nullable final String myStartTrace;
     private volatile ProgressIndicator currentIndicator;
     private final ModalityState creationModality = ModalityState.defaultModalityState();
-    @Nullable private NonBlockingReadActionImpl<?>.Submission myReplacement;
+    @Nullable private Submission<?> myReplacement;
     @Nullable private final ProgressIndicator myProgressIndicator;
+    @NotNull private final NonBlockingReadActionImpl<T> builder;
 
     // a sum composed of: 1 for non-done promise, 1 for each currently running thread
     // so 0 means that the process is marked completed or canceled, and it has no running not-yet-finished threads
@@ -217,9 +214,12 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
     private final AtomicBoolean myCleaned = new AtomicBoolean();
     private final List<Disposable> myExpirationDisposables = new ArrayList<>();
 
-    Submission(@NotNull Executor backgroundThreadExecutor, @Nullable ProgressIndicator outerIndicator) {
+    Submission(@NotNull NonBlockingReadActionImpl<T> builder,
+               @NotNull Executor backgroundThreadExecutor,
+               @Nullable ProgressIndicator outerIndicator) {
       backendExecutor = backgroundThreadExecutor;
-      if (myCoalesceEquality != null) {
+      this.builder = builder;
+      if (builder.myCoalesceEquality != null) {
         acquire();
       }
       myProgressIndicator = outerIndicator;
@@ -232,8 +232,8 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       if (shouldTrackInTests()) {
         ourTasks.add(this);
       }
-      if (!myDisposables.isEmpty()) {
-        ReadAction.run(() -> expireWithDisposables(myDisposables));
+      if (!builder.myDisposables.isEmpty()) {
+        ApplicationManager.getApplication().runReadAction(() -> expireWithDisposables(this.builder.myDisposables));
       }
     }
 
@@ -251,7 +251,10 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
         };
         //noinspection TestOnlyProblems
         Disposable parentDisposable = parent instanceof ProjectImpl && ((ProjectEx)parent).isLight() ? ((ProjectImpl)parent).getEarlyDisposable() : parent;
-        Disposer.register(parentDisposable, child);
+        if (!Disposer.tryRegister(parentDisposable, child)) {
+          cancel();
+          break;
+        }
         myExpirationDisposables.add(child);
       }
     }
@@ -303,7 +306,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       if (indicator != null) {
         indicator.cancel();
       }
-      if (myCoalesceEquality != null) {
+      if (builder.myCoalesceEquality != null) {
         release();
       }
       for (Disposable disposable : myExpirationDisposables) {
@@ -318,16 +321,16 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
     }
 
     private void acquire() {
-      assert myCoalesceEquality != null;
+      assert builder.myCoalesceEquality != null;
       synchronized (ourTasksByEquality) {
         myUseCount++;
       }
     }
 
     private void release() {
-      assert myCoalesceEquality != null;
+      assert builder.myCoalesceEquality != null;
       synchronized (ourTasksByEquality) {
-        if (--myUseCount == 0 && ourTasksByEquality.get(myCoalesceEquality) == this) {
+        if (--myUseCount == 0 && ourTasksByEquality.get(builder.myCoalesceEquality) == this) {
           scheduleReplacementIfAny();
         }
       }
@@ -335,10 +338,10 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
 
     private void scheduleReplacementIfAny() {
       if (myReplacement == null || myReplacement.isDone()) {
-        ourTasksByEquality.remove(myCoalesceEquality, this);
+        ourTasksByEquality.remove(builder.myCoalesceEquality, this);
       }
       else {
-        ourTasksByEquality.put(myCoalesceEquality, myReplacement);
+        ourTasksByEquality.put(builder.myCoalesceEquality, myReplacement);
         myReplacement.transferToBgThread();
       }
     }
@@ -347,7 +350,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       synchronized (ourTasksByEquality) {
         if (isDone()) return;
 
-        NonBlockingReadActionImpl<?>.Submission current = ourTasksByEquality.get(coalesceEquality);
+        Submission<?> current = ourTasksByEquality.get(coalesceEquality);
         if (current == null) {
           ourTasksByEquality.put(coalesceEquality, this);
           transferToBgThread();
@@ -366,7 +369,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       }
     }
 
-    private void reportCoalescingConflict(@NotNull NonBlockingReadActionImpl<?>.Submission current) {
+    private void reportCoalescingConflict(@NotNull Submission<?> current) {
       ourTasks.remove(this); // the next line will throw in tests and leave this submission hanging forever
       LOG.error("Same coalesceBy arguments are already used by " + current.getComputationOrigin() + " so they can cancel each other. " +
                 "Please make them more unique.");
@@ -374,7 +377,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
 
     @NotNull
     private String getComputationOrigin() {
-      Object computation = myComputation;
+      Object computation = builder.myComputation;
       if (computation instanceof RunnableCallable) {
         computation = ((RunnableCallable)computation).getDelegate();
       }
@@ -389,12 +392,12 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
       }
       ApplicationEx app = ApplicationManagerEx.getApplicationEx();
       if (app.isWriteActionInProgress() || app.isWriteActionPending() ||
-          app.isReadAccessAllowed() && findUnsatisfiedConstraint() != null) {
+          app.isReadAccessAllowed() && builder.findUnsatisfiedConstraint() != null) {
         rescheduleLater();
         return;
       }
 
-      if (myCoalesceEquality != null) {
+      if (builder.myCoalesceEquality != null) {
         acquire();
       }
       backendExecutor.execute(ClientId.decorateRunnable(() -> {
@@ -407,7 +410,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
           }
         }
         finally {
-          if (myCoalesceEquality != null) {
+          if (builder.myCoalesceEquality != null) {
             release();
           }
         }
@@ -436,7 +439,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
             semaphore.up();
           }
           else {
-            BaseConstrainedExecution.scheduleWithinConstraints(semaphore::up, null, myConstraints);
+            BaseConstrainedExecution.scheduleWithinConstraints(semaphore::up, null, builder.myConstraints);
           }
         });
         ProgressIndicatorUtils.awaitWithCheckCanceled(semaphore, myProgressIndicator);
@@ -500,7 +503,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
         if (LOG.isTraceEnabled()) {
           LOG.trace("Rescheduling " + this);
         }
-        BaseConstrainedExecution.scheduleWithinConstraints(() -> transferToBgThread(), null, myConstraints);
+        BaseConstrainedExecution.scheduleWithinConstraints(() -> transferToBgThread(), null, builder.myConstraints);
       }
     }
 
@@ -509,15 +512,15 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
         if (checkObsolete()) {
           return;
         }
-        ContextConstraint constraint = findUnsatisfiedConstraint();
+        ContextConstraint constraint = builder.findUnsatisfiedConstraint();
         if (constraint != null) {
           outUnsatisfiedConstraint.set(constraint);
           return;
         }
 
-        T result = myComputation.call();
+        T result = builder.myComputation.call();
 
-        if (myModalityState != null) {
+        if (builder.myModalityState != null) {
           safeTransferToEdt(result);
         }
         else {
@@ -540,7 +543,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
 
     private boolean checkObsolete() {
       if (Promises.isRejected(this)) return true;
-      for (BooleanSupplier condition : myCancellationConditions) {
+      for (BooleanSupplier condition : builder.myCancellationConditions) {
         if (condition.getAsBoolean()) {
           cancel();
           return true;
@@ -571,14 +574,14 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
         setResult(result);
 
         if (isSucceeded()) { // in case another thread managed to cancel it just before `setResult`
-          myUiThreadAction.accept(result);
+          builder.myUiThreadAction.accept(result);
         }
-      }, myModalityState);
+      }, builder.myModalityState);
     }
 
     @Override
     public String toString() {
-      return "Submission{" + myComputation + ", " + getState() + "}";
+      return "Submission{" + builder.myComputation + ", " + getState() + "}";
     }
   }
 
@@ -587,16 +590,27 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
     return ContainerUtil.find(myConstraints, t -> !t.isCorrectContext());
   }
 
+  /**
+   * Waits and pumps UI events until all submitted non-blocking read actions have completed. But only if they have chance to:
+   * in dumb mode, submissions with {@link #inSmartMode} are ignored, because dumbness works differently in tests,
+   * and a test might never switch to the smart mode at all.
+   */
   @TestOnly
   public static void waitForAsyncTaskCompletion() {
     assert !ApplicationManager.getApplication().isWriteAccessAllowed();
-    for (NonBlockingReadActionImpl<?>.Submission task : ourTasks) {
+    for (Submission<?> task : ourTasks) {
       waitForTask(task);
     }
   }
 
   @TestOnly
-  private static void waitForTask(@NotNull NonBlockingReadActionImpl<?>.Submission task) {
+  private static void waitForTask(@NotNull Submission<?> task) {
+    for (ContextConstraint constraint : task.builder.myConstraints) {
+      if (constraint instanceof InSmartMode && !constraint.isCorrectContext()) {
+        return;
+      }
+    }
+
     int iteration = 0;
     while (!task.isDone() && iteration++ < 60_000) {
       UIUtil.dispatchAllInvocationEvents();
@@ -618,7 +632,7 @@ public class NonBlockingReadActionImpl<T> implements NonBlockingReadAction<T> {
   }
 
   @TestOnly
-  static @NotNull Map<List<?>, NonBlockingReadActionImpl<?>.Submission> getTasksByEquality() {
+  static @NotNull Map<List<?>, Submission<?>> getTasksByEquality() {
     return ourTasksByEquality;
   }
 }

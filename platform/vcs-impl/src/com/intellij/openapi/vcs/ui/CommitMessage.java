@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.ui;
 
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
@@ -17,14 +17,15 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.SpellCheckingEditorCustomizationProvider;
+import com.intellij.openapi.editor.actions.IncrementalFindAction;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.impl.EditorMarkupModelImpl;
-import com.intellij.openapi.editor.markup.UIController;
 import com.intellij.openapi.fileTypes.FileTypes;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.vcs.CommitMessageI;
 import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsDataKeys;
@@ -34,12 +35,16 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.ui.*;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
+import com.intellij.util.concurrency.annotations.RequiresReadLock;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.vcs.commit.CommitMessageUi;
 import com.intellij.vcs.commit.message.BodyLimitSettings;
 import com.intellij.vcs.commit.message.CommitMessageInspectionProfile;
-import org.jetbrains.annotations.*;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -61,10 +66,12 @@ import static javax.swing.BorderFactory.createEmptyBorder;
 public class CommitMessage extends JPanel implements Disposable, DataProvider, CommitMessageUi, CommitMessageI, LafManagerListener {
   public static final Key<CommitMessage> DATA_KEY = Key.create("Vcs.CommitMessage.Panel");
 
-  private static final EditorCustomization COLOR_SCHEME_FOR_CURRENT_UI_THEME_CUSTOMIZATION = editor -> {
+  private static final @NotNull EditorCustomization COLOR_SCHEME_FOR_CURRENT_UI_THEME_CUSTOMIZATION = editor -> {
     editor.setBackgroundColor(null); // to use background from set color scheme
     editor.setColorsScheme(getCommitMessageColorScheme());
   };
+  private static final @NotNull EditorCustomization DISABLE_FIND_REPLACE_ACTIONS = editor ->
+    editor.putUserData(IncrementalFindAction.SEARCH_DISABLED, true);
 
   @NotNull
   private static EditorColorsScheme getCommitMessageColorScheme() {
@@ -148,7 +155,7 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
     return null;
   }
 
-  public void setSeparatorText(@NotNull String text) {
+  public void setSeparatorText(@NotNull @NlsContexts.Separator String text) {
     if (mySeparator != null) {
       mySeparator.setText(text);
     }
@@ -177,6 +184,7 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
     features.add(SoftWrapsEditorCustomization.ENABLED);
     features.add(AdditionalPageAtBottomEditorCustomization.DISABLED);
     features.add(COLOR_SCHEME_FOR_CURRENT_UI_THEME_CUSTOMIZATION);
+    features.add(DISABLE_FIND_REPLACE_ACTIONS);
     if (runInspections) {
       features.add(ErrorStripeEditorCustomization.ENABLED);
       features.add(new InspectionCustomization(project));
@@ -247,19 +255,19 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
     myEditorField.getDocument().putUserData(DATA_KEY, null);
   }
 
-  @CalledInAwt
+  @RequiresEdt
   public synchronized void setChangeList(@NotNull ChangeList value) {
     setChangeLists(singletonList(value));
   }
 
-  @CalledInAwt
+  @RequiresEdt
   public synchronized void setChangeLists(@NotNull List<ChangeList> value) {
     ApplicationManager.getApplication().assertIsDispatchThread();
     myChangeLists = newUnmodifiableList(value);
   }
 
   @NotNull
-  @CalledWithReadLock
+  @RequiresReadLock
   public synchronized List<ChangeList> getChangeLists() {
     return myChangeLists;
   }
@@ -328,12 +336,6 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
         }
       }
       return false;
-    }
-
-    @Override
-    @NotNull
-    protected UIController createUIController(@NotNull Editor editor) {
-      return new SimplifiedUIController();
     }
   }
 }

@@ -10,7 +10,6 @@ import com.intellij.execution.ui.NestedGroupFragment;
 import com.intellij.execution.ui.SettingsEditorFragment;
 import com.intellij.openapi.actionSystem.ActionToolbarPosition;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
-import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.ui.LabeledComponent;
 import com.intellij.openapi.ui.TextComponentAccessor;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
@@ -39,7 +38,10 @@ public final class LogsFragment<T extends RunConfigurationBase<?>> extends Neste
   private final ListTableModel<LogFileOptions> myModel;
 
   public LogsFragment() {
-    super("log.monitor", DiagnosticBundle.message("log.monitor.fragment.name"), DiagnosticBundle.message("log.monitor.fragment.group"), t -> !t.getLogFiles().isEmpty());
+    super("log.monitor",
+          DiagnosticBundle.message("log.monitor.fragment.name"), DiagnosticBundle.message("log.monitor.fragment.group"),
+          t -> !t.getLogFiles().isEmpty());
+    setActionHint(ExecutionBundle.message("the.ide.will.display.the.selected.logs.in.the.run.tool.window"));
 
     ColumnInfo<LogFileOptions, String> TAB_NAME = new TabNameColumnInfo();
     ColumnInfo<LogFileOptions, String> FILE = new FileColumnInfo();
@@ -151,7 +153,7 @@ public final class LogsFragment<T extends RunConfigurationBase<?>> extends Neste
   }
 
   @Override
-  protected void applyEditorTo(@NotNull T configuration) throws ConfigurationException {
+  protected void applyEditorTo(@NotNull T configuration) {
     super.applyEditorTo(configuration);
     configuration.removeAllLogFiles();
     configuration.removeAllPredefinedLogFiles();
@@ -198,17 +200,20 @@ public final class LogsFragment<T extends RunConfigurationBase<?>> extends Neste
                                      t.setSaveOutputToFile(StringUtil.isNotEmpty(component.getComponent().getText()));
                                    },
                                    t -> t.isSaveOutputToFile());
+    fragment.setActionHint(ExecutionBundle.message("write.the.output.of.the.application.to.a.file.for.later.inspection"));
     SettingsEditorFragment<T, ?> stdOut = SettingsEditorFragment
       .createTag("logs.stdout", DiagnosticBundle.message("log.monitor.fragment.stdout"), null, t -> t.isShowConsoleOnStdOut(),
                  (t, value) -> t.setShowConsoleOnStdOut(value));
+    stdOut.setActionHint(ExecutionBundle.message("activate.the.console.when.the.application.writes.to.the.standard.output.stream"));
     SettingsEditorFragment<T, ?> stdErr = SettingsEditorFragment
       .createTag("logs.stderr", DiagnosticBundle.message("log.monitor.fragment.stderr"), null, t -> t.isShowConsoleOnStdErr(),
                  (t, value) -> t.setShowConsoleOnStdErr(value));
+    stdErr.setActionHint(ExecutionBundle.message("activate.the.console.when.the.application.writes.to.the.standard.error.stream"));
     return Arrays.asList(fragment, stdOut, stdErr);
   }
 
   @Override
-  public @Nullable String getChildrenGroupName() {
+  public String getChildrenGroupName() {
     return DiagnosticBundle.message("log.monitor.fragment.settings");
   }
 

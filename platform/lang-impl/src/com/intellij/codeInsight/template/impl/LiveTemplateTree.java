@@ -2,6 +2,7 @@
 package com.intellij.codeInsight.template.impl;
 
 import com.intellij.ide.CopyProvider;
+import com.intellij.ide.DeleteProvider;
 import com.intellij.ide.PasteProvider;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.DataProvider;
@@ -14,7 +15,6 @@ import com.intellij.ui.CheckboxTree;
 import com.intellij.ui.CheckedTreeNode;
 import com.intellij.ui.SpeedSearchComparator;
 import com.intellij.ui.TreeSpeedSearch;
-import com.intellij.util.SystemProperties;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -30,7 +30,7 @@ import java.util.Set;
 /**
  * @author peter
  */
-class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvider, PasteProvider {
+class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvider, PasteProvider, DeleteProvider {
   private final TemplateListPanel myConfigurable;
 
   LiveTemplateTree(final CheckboxTreeCellRenderer renderer, final CheckedTreeNode root, TemplateListPanel configurable) {
@@ -70,7 +70,9 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
   @Nullable
   @Override
   public Object getData(@NotNull @NonNls String dataId) {
-    if (PlatformDataKeys.COPY_PROVIDER.is(dataId) || PlatformDataKeys.PASTE_PROVIDER.is(dataId)) {
+    if (PlatformDataKeys.COPY_PROVIDER.is(dataId) ||
+        PlatformDataKeys.PASTE_PROVIDER.is(dataId) ||
+        PlatformDataKeys.DELETE_ELEMENT_PROVIDER.is(dataId)) {
       return this;
     }
     return null;
@@ -85,7 +87,7 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
       new StringSelection(StringUtil.join(templates,
                                           template -> JDOMUtil.writeElement(
                                             TemplateSettings.serializeTemplate(template, templateSettings.getDefaultTemplate(template), TemplateContext.getIdToType())),
-                                          SystemProperties.getLineSeparator())));
+                                          System.lineSeparator())));
 
   }
 
@@ -134,6 +136,16 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
     }
     catch (Exception ignore) {
     }
+  }
+
+  @Override
+  public void deleteElement(@NotNull DataContext dataContext) {
+    myConfigurable.removeRows();
+  }
+
+  @Override
+  public boolean canDeleteElement(@NotNull DataContext dataContext) {
+    return !myConfigurable.getSelectedTemplates().isEmpty();
   }
 
   private static class SubstringSpeedSearchComparator extends SpeedSearchComparator {

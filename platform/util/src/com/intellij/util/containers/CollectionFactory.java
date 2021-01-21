@@ -2,14 +2,10 @@
 package com.intellij.util.containers;
 
 import com.intellij.openapi.util.SystemInfoRt;
-import com.intellij.openapi.util.io.FileUtil;
-import gnu.trove.TObjectHashingStrategy;
-import it.unimi.dsi.fastutil.Hash;
 import it.unimi.dsi.fastutil.objects.*;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.*;
@@ -17,49 +13,73 @@ import java.util.concurrent.ConcurrentMap;
 
 // ContainerUtil requires trove in classpath
 public final class CollectionFactory {
-  private static final Hash.Strategy<File> FILE_HASH_STRATEGY = new Hash.Strategy<File>() {
-    @Override
-    public int hashCode(File o) {
-      return FileUtil.fileHashCode(o);
-    }
-
-    @Override
-    public boolean equals(File a, File b) {
-      return FileUtil.filesEqual(a, b);
-    }
-  };
-
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakMap() {
     return new ConcurrentWeakHashMap<>(0.75f);
   }
 
   @Contract(value = " -> new", pure = true)
+  public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakValueMap() {
+    return new ConcurrentWeakValueHashMap<>();
+  }
+
+  @Contract(value = " -> new", pure = true)
+  public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentSoftValueMap() {
+    return new ConcurrentSoftValueHashMap<>();
+  }
+
+  @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakIdentityMap() {
-    //noinspection unchecked
-    return new ConcurrentWeakHashMap<>((TObjectHashingStrategy<K>)TObjectHashingStrategy.IDENTITY);
+    return new ConcurrentWeakHashMap<>(HashingStrategy.identity());
   }
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> Map<K, V> createWeakMap() {
-    return ContainerUtil.createWeakMap();
+    //noinspection deprecation
+    return new WeakHashMap<>(4, 0.8f, HashingStrategy.canonical());
+  }
+
+  @Contract(value = "_,_,_ -> new", pure = true)
+  public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakKeySoftValueIdentityMap(int initialCapacity,
+                                                                                                float loadFactor,
+                                                                                                int concurrencyLevel) {
+    //noinspection deprecation
+    return new ConcurrentWeakKeySoftValueHashMap<>(initialCapacity, loadFactor, concurrencyLevel, HashingStrategy.identity());
+  }
+
+  public static @NotNull <K, V> Map<K, V> createWeakIdentityMap(int initialCapacity, float loadFactor) {
+    //noinspection deprecation
+    return new WeakHashMap<>(initialCapacity, loadFactor, HashingStrategy.identity());
   }
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakKeyWeakValueMap() {
-    return ContainerUtil.createConcurrentWeakKeyWeakValueMap(ContainerUtil.canonicalStrategy());
+    return new ConcurrentWeakKeyWeakValueHashMap<>(100, 0.75f, Runtime.getRuntime().availableProcessors(), HashingStrategy.canonical());
+  }
+
+  @Contract(value = " -> new", pure = true)
+  public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakKeyWeakValueIdentityMap() {
+    return new ConcurrentWeakKeyWeakValueHashMap<>(100, 0.75f, Runtime.getRuntime().availableProcessors(), HashingStrategy.identity());
   }
 
   @Contract(value = "_,_,_ -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakMap(int initialCapacity,
                                                                             float loadFactor,
                                                                             int concurrencyLevel) {
-    return new ConcurrentWeakHashMap<>(initialCapacity, loadFactor, concurrencyLevel, ContainerUtil.canonicalStrategy());
+    return new ConcurrentWeakHashMap<>(initialCapacity, loadFactor, concurrencyLevel, HashingStrategy.canonical());
   }
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakKeySoftValueMap() {
-    return ContainerUtil.createConcurrentWeakKeySoftValueMap();
+    return createConcurrentWeakKeySoftValueMap(100, 0.75f, Runtime.getRuntime().availableProcessors());
+  }
+
+  @Contract(value = "_,_,_,-> new", pure = true)
+  public static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentWeakKeySoftValueMap(int initialCapacity,
+                                                                                        float loadFactor,
+                                                                                        int concurrencyLevel) {
+    //noinspection deprecation
+    return new ConcurrentWeakKeySoftValueHashMap<>(initialCapacity, loadFactor, concurrencyLevel, HashingStrategy.canonical());
   }
 
   public static @NotNull <T> Map<CharSequence, T> createCharSequenceMap(boolean caseSensitive, int expectedSize, float loadFactor) {
@@ -68,6 +88,10 @@ public final class CollectionFactory {
 
   public static @NotNull Set<CharSequence> createCharSequenceSet(boolean caseSensitive, int expectedSize, float loadFactor) {
     return new ObjectOpenCustomHashSet<>(expectedSize, loadFactor, FastUtilHashingStrategies.getCharSequenceStrategy(caseSensitive));
+  }
+
+  public static @NotNull Set<CharSequence> createCharSequenceSet(List<CharSequence> items) {
+    return new ObjectOpenCustomHashSet<>(items, FastUtilHashingStrategies.getCharSequenceStrategy(true));
   }
 
   public static @NotNull Set<CharSequence> createCharSequenceSet(boolean caseSensitive, int expectedSize) {
@@ -90,7 +114,7 @@ public final class CollectionFactory {
     return new ObjectOpenCustomHashSet<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
-  public static @NotNull Set<String> createCaseInsensitiveStringSet(@NotNull Set<String> items) {
+  public static @NotNull Set<String> createCaseInsensitiveStringSet(@NotNull Collection<String> items) {
     return new ObjectOpenCustomHashSet<>(items, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
@@ -98,13 +122,28 @@ public final class CollectionFactory {
     return new Object2ObjectOpenCustomHashMap<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
+  public static <V> @NotNull Map<String, V> createCaseInsensitiveStringMap(@NotNull Map<String, V> source) {
+    return new Object2ObjectOpenCustomHashMap<>(source, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
+  }
+
+  @Contract(value = "_,_,_ -> new", pure = true)
+  @SuppressWarnings("SameParameterValue")
+  static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentSoftKeySoftValueMap(int initialCapacity,
+                                                                                 float loadFactor,
+                                                                                 int concurrencyLevel) {
+    return new ConcurrentSoftKeySoftValueHashMap<>(initialCapacity, loadFactor, concurrencyLevel, HashingStrategy.canonical());
+  }
+
+  @Contract(value = "_,_,_ -> new", pure = true)
+  @SuppressWarnings("SameParameterValue")
+  static @NotNull <K, V> ConcurrentMap<K, V> createConcurrentSoftKeySoftValueIdentityMap(int initialCapacity,
+                                                                                         float loadFactor,
+                                                                                         int concurrencyLevel) {
+    return new ConcurrentSoftKeySoftValueHashMap<>(initialCapacity, loadFactor, concurrencyLevel, HashingStrategy.identity());
+  }
+
   public static @NotNull Set<String> createFilePathSet() {
-    if (SystemInfoRt.isFileSystemCaseSensitive) {
-      return new HashSet<>();
-    }
-    else {
-      return createCaseInsensitiveStringSet();
-    }
+    return SystemInfoRt.isFileSystemCaseSensitive ? new HashSet<>() : createCaseInsensitiveStringSet();
   }
 
   public static @NotNull Set<String> createFilePathSet(int expectedSize) {
@@ -112,30 +151,22 @@ public final class CollectionFactory {
   }
 
   public static @NotNull Set<String> createFilePathSet(int expectedSize, boolean isFileSystemCaseSensitive) {
-    if (isFileSystemCaseSensitive) {
-      return new HashSet<>(expectedSize);
-    }
-    else {
-      return new ObjectOpenCustomHashSet<>(expectedSize, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
+    return isFileSystemCaseSensitive
+           ? new HashSet<>(expectedSize)
+           : new ObjectOpenCustomHashSet<>(expectedSize, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   public static @NotNull Set<String> createFilePathSet(@NotNull Collection<String> paths, boolean isFileSystemCaseSensitive) {
-    if (isFileSystemCaseSensitive) {
-      return new HashSet<>(paths);
-    }
-    else {
-      return new ObjectOpenCustomHashSet<>(paths, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
+    return isFileSystemCaseSensitive
+           ? new HashSet<>(paths)
+           : new ObjectOpenCustomHashSet<>(paths, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   public static @NotNull Set<String> createFilePathSet(String @NotNull[] paths, boolean isFileSystemCaseSensitive) {
-    if (isFileSystemCaseSensitive) {
-      return new HashSet<>(Arrays.asList(paths));
-    }
-    else {
-      return new ObjectOpenCustomHashSet<>(paths, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
+    //noinspection SSBasedInspection
+    return isFileSystemCaseSensitive
+           ? new HashSet<>(Arrays.asList(paths))
+           : new ObjectOpenCustomHashSet<>(paths, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   public static @NotNull Set<String> createFilePathSet(@NotNull Collection<String> paths) {
@@ -143,12 +174,7 @@ public final class CollectionFactory {
   }
 
   public static @NotNull <V> Map<String, V> createFilePathMap() {
-    if (SystemInfoRt.isFileSystemCaseSensitive) {
-      return new HashMap<>();
-    }
-    else {
-      return createCaseInsensitiveStringMap();
-    }
+    return SystemInfoRt.isFileSystemCaseSensitive ? new HashMap<>() : createCaseInsensitiveStringMap();
   }
 
   public static @NotNull <V> Map<String, V> createFilePathMap(int expectedSize) {
@@ -156,86 +182,30 @@ public final class CollectionFactory {
   }
 
   public static @NotNull <V> Map<String, V> createFilePathMap(int expectedSize, boolean isFileSystemCaseSensitive) {
-    if (isFileSystemCaseSensitive) {
-      return new HashMap<>(expectedSize);
-    }
-    else {
-      return new Object2ObjectOpenCustomHashMap<>(expectedSize, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
-  }
-
-  public static @NotNull <V> Map<File, V> createFileMap() {
-    return new Object2ObjectOpenCustomHashMap<>(FILE_HASH_STRATEGY);
-  }
-
-  public static @NotNull Set<File> createFileSet() {
-    return new ObjectOpenCustomHashSet<>(FILE_HASH_STRATEGY);
-  }
-
-  public static @NotNull Set<File> createFileLinkedSet() {
-    return new ObjectLinkedOpenCustomHashSet<>(FILE_HASH_STRATEGY);
+    return isFileSystemCaseSensitive
+           ? new HashMap<>(expectedSize)
+           : new Object2ObjectOpenCustomHashMap<>(expectedSize, FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   public static @NotNull Set<String> createFilePathLinkedSet() {
-    if (SystemInfoRt.isFileSystemCaseSensitive) {
-      return new ObjectLinkedOpenHashSet<>();
-    }
-    else {
-      return new ObjectLinkedOpenCustomHashSet<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
+    return SystemInfoRt.isFileSystemCaseSensitive
+           ? createSmallMemoryFootprintLinkedSet()
+           : new ObjectLinkedOpenCustomHashSet<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   /**
    * Create linked map with key hash strategy according to file system path case sensitivity.
    */
   public static @NotNull <V> Map<String, V> createFilePathLinkedMap() {
-    if (SystemInfoRt.isFileSystemCaseSensitive) {
-      return createSmallMemoryFootprintLinkedMap();
-    }
-    else {
-      return new Object2ObjectLinkedOpenCustomHashMap<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
-    }
+    return SystemInfoRt.isFileSystemCaseSensitive
+           ? createSmallMemoryFootprintLinkedMap()
+           : new Object2ObjectLinkedOpenCustomHashMap<>(FastUtilHashingStrategies.getCaseInsensitiveStringStrategy());
   }
 
   /**
-   * Create linked map with canonicalized key hash strategy.
-   */
-  public static @NotNull <V> Map<String, V> createCanonicalFilePathLinkedMap() {
-    return new Object2ObjectLinkedOpenCustomHashMap<>(new Hash.Strategy<String>() {
-      @Override
-      public int hashCode(String value) {
-        return FileUtil.pathHashCode(value);
-      }
-
-      @Override
-      public boolean equals(String val1, String val2) {
-        return FileUtil.pathsEqual(val1, val2);
-      }
-    });
-  }
-
-  /**
-   * Create map with canonicalized key hash strategy.
-   */
-  public static @NotNull <V> Map<File, V> createCanonicalFileMap() {
-    return new Object2ObjectOpenCustomHashMap<>(new Hash.Strategy<File>() {
-      @Override
-      public int hashCode(File value) {
-        return FileUtil.fileHashCode(value);
-      }
-
-      @Override
-      public boolean equals(File val1, File val2) {
-        return FileUtil.filesEqual(val1, val2);
-      }
-    });
-  }
-
-  /**
-   * @return Map implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link LinkedHashMap} and with predictable iteration order.
-   * Null keys and values are permitted.
+   * Returns a {@link Map} implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint
+   * than {@link LinkedHashMap}, with predictable iteration order. Null keys and values are permitted.
    * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link LinkedHashMap}.
-   * @see LinkedHashMap
    */
   @Contract(value = "-> new", pure = true)
   public static <K, V> @NotNull Map<K, V> createSmallMemoryFootprintLinkedMap() {
@@ -244,9 +214,9 @@ public final class CollectionFactory {
   }
 
   /**
-   * @return Map implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashMap}.
-   * Null keys and values are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashMap}.
+   * Return a {@link Map} implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint
+   * than {@link HashMap}. Null keys and values are permitted. Use sparingly only when performance considerations are utterly important;
+   * in all other cases please prefer {@link HashMap}.
    */
   @Contract(value = "-> new", pure = true)
   public static <K, V> @NotNull Map<K, V> createSmallMemoryFootprintMap() {
@@ -254,33 +224,21 @@ public final class CollectionFactory {
     return new Object2ObjectOpenHashMap<>();
   }
 
-  /**
-   * @return Map implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashMap}.
-   * Null keys and values are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashMap}.
-   */
+  /** See {@link #createSmallMemoryFootprintMap()}. */
   @Contract(value = "_ -> new", pure = true)
   public static <K, V> @NotNull Map<K, V> createSmallMemoryFootprintMap(int expected) {
     //noinspection SSBasedInspection
     return new Object2ObjectOpenHashMap<>(expected);
   }
 
-  /**
-   * @return Map implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashMap}.
-   * Null keys and values are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashMap}.
-   */
+  /** See {@link #createSmallMemoryFootprintMap()}. */
   @Contract(value = "_ -> new", pure = true)
   public static <K, V> @NotNull Map<K, V> createSmallMemoryFootprintMap(@NotNull Map<? extends K, ? extends V> map) {
     //noinspection SSBasedInspection
     return new Object2ObjectOpenHashMap<>(map);
   }
 
-  /**
-   * @return Map implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashMap}.
-   * Null keys and values are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashMap}.
-   */
+  /** See {@link #createSmallMemoryFootprintMap()}. */
   @Contract(value = "_,_ -> new", pure = true)
   public static <K, V> @NotNull Map<K, V> createSmallMemoryFootprintMap(int expected, float loadFactor) {
     //noinspection SSBasedInspection
@@ -288,36 +246,66 @@ public final class CollectionFactory {
   }
 
   /**
-   * @return Set implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashSet}.
-   * Null keys are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashSet}.
-   * @see HashSet
+   * Returns a linked-keys (i.e. iteration order is the same as the insertion order) {@link Set} implementation with slightly faster access for very big collection (>100K keys) and a bit smaller memory footprint
+   * than {@link HashSet}. Null keys are permitted. Use sparingly only when performance considerations are utterly important;
+   * in all other cases please prefer {@link HashSet}.
+   */
+  @Contract(value = "-> new", pure = true)
+  public static <K> @NotNull Set<K> createSmallMemoryFootprintLinkedSet() {
+    //noinspection SSBasedInspection
+    return new ObjectLinkedOpenHashSet<>();
+  }
+
+  /**
+   * Returns a {@link Set} implementation with slightly faster access for very big collections (>100K keys) and a bit smaller memory footprint
+   * than {@link HashSet}. Null keys are permitted. Use sparingly only when performance considerations are utterly important;
+   * in all other cases please prefer {@link HashSet}.
    */
   @Contract(value = "-> new", pure = true)
   public static <K> @NotNull Set<K> createSmallMemoryFootprintSet() {
     //noinspection SSBasedInspection
     return new ObjectOpenHashSet<>();
   }
-  /**
-   * @return Set implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashSet}.
-   * Null keys are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashSet}.
-   * @see HashSet
-   */
+
+  /** See {@link #createSmallMemoryFootprintSet()}. */
   @Contract(value = "_-> new", pure = true)
   public static <K> @NotNull Set<K> createSmallMemoryFootprintSet(int expected) {
     //noinspection SSBasedInspection
     return new ObjectOpenHashSet<>(expected);
   }
-  /**
-   * @return Set implementation with slightly faster access for very big maps (>100K keys) and a bit smaller memory footprint than {@link HashSet}.
-   * Null keys are permitted.
-   * Use sparingly only when performance considerations are utterly important; in all other cases please prefer {@link HashSet}.
-   * @see HashSet
-   */
+
+  /** See {@link #createSmallMemoryFootprintSet()}. */
   @Contract(value = "_-> new", pure = true)
   public static <K> @NotNull Set<K> createSmallMemoryFootprintSet(@NotNull Collection<? extends K> collection) {
     //noinspection SSBasedInspection
     return new ObjectOpenHashSet<>(collection);
+  }
+
+  @Contract(value = " -> new", pure = true)
+  public static @NotNull <K,V> ConcurrentMap<K,V> createConcurrentSoftMap() {
+    return new ConcurrentSoftHashMap<>();
+  }
+
+  public static @NotNull <K, V> Map<K, V> createSoftIdentityMap() {
+    //noinspection deprecation
+    return new SoftHashMap<>(HashingStrategy.identity());
+  }
+
+  public static void trimMap(@NotNull Map<?, ?> map) {
+    if (map instanceof Object2ObjectOpenHashMap<?, ?>) {
+      ((Object2ObjectOpenHashMap<?, ?>)map).trim();
+    }
+    else if (map instanceof Object2ObjectOpenCustomHashMap) {
+      ((Object2ObjectOpenCustomHashMap<?, ?>)map).trim();
+    }
+  }
+
+  public static void trimSet(@NotNull Set<?> set) {
+    if (set instanceof ObjectOpenHashSet<?>) {
+      ((ObjectOpenHashSet<?>)set).trim();
+    }
+    else if (set instanceof ObjectOpenCustomHashSet) {
+      ((ObjectOpenCustomHashSet<?>)set).trim();
+    }
   }
 }

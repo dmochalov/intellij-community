@@ -43,13 +43,13 @@ import static com.intellij.vcsUtil.VcsFileUtilKt.isUnder;
 /**
  * <p>
  *   Stores files which are untracked by the Git repository.
- *   Should be updated by calling {@link #add(VirtualFile)} and {@link #remove(Collection)}
+ *   Should be updated by calling {@link #add(FilePath)} and {@link #remove(Collection)}
  *   whenever the list of unversioned files changes.
  *   Able to get the list of unversioned files from Git.
  * </p>
  *
  * <p>
- *   This class is used by {@link git4idea.status.GitNewChangesCollector}.
+ *   This class is used by {@link git4idea.status.GitChangesCollector}.
  *   By keeping track of unversioned files in the Git repository we may invoke
  *   {@code 'git status --porcelain --untracked-files=no'} which gives a significant speed boost: the command gets more than twice
  *   faster, because it doesn't need to seek for untracked files.
@@ -88,7 +88,6 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
   private final ChangeListManager myChangeListManager;
   private final VcsDirtyScopeManager myDirtyScopeManager;
   private final ProjectLevelVcsManager myVcsManager;
-  private final GitRepositoryFiles myRepositoryFiles;
   private final Git myGit;
 
   private final Set<FilePath> myDefinitelyUntrackedFiles = new HashSet<>();
@@ -97,7 +96,7 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
   private final Object LOCK = new Object();
   private final Object RESCAN_LOCK = new Object();
 
-  GitUntrackedFilesHolder(@NotNull GitRepository repository, @NotNull GitRepositoryFiles gitFiles) {
+  GitUntrackedFilesHolder(@NotNull GitRepository repository) {
     myProject = repository.getProject();
     myRepository = repository;
     myRoot = repository.getRoot();
@@ -106,8 +105,6 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
     myDirtyScopeManager = VcsDirtyScopeManager.getInstance(myProject);
     myGit = Git.getInstance();
     myVcsManager = ProjectLevelVcsManager.getInstance(myProject);
-
-    myRepositoryFiles = gitFiles;
   }
 
   void setupVfsListener(@NotNull Project project) {
@@ -219,15 +216,7 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
 
     Set<FilePath> untrackedFiles = myGit.untrackedFilePaths(myProject, myRoot, suspiciousFiles);
 
-    untrackedFiles.removeIf(it -> {
-      VirtualFile root = myVcsManager.getVcsRootFor(it);
-      if (!myRoot.equals(root)) {
-        LOG.warn(String.format("Ignoring untracked file under another root: %s; root: %s; mapped root: %s", it, myRoot, root));
-        return true;
-      }
-      return false;
-    });
-
+    removePathsUnderOtherRoots(untrackedFiles);
 
     synchronized (LOCK) {
       if (suspiciousFiles != null) {
@@ -240,6 +229,28 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
         myDefinitelyUntrackedFiles.addAll(untrackedFiles);
         myReady = true;
       }
+    }
+  }
+
+  private void removePathsUnderOtherRoots(@NotNull Collection<FilePath> untrackedFiles) {
+    int removedFiles = 0;
+    int maxFilesToReport = 10;
+
+    Iterator<FilePath> it = untrackedFiles.iterator();
+    while (it.hasNext()) {
+      FilePath filePath = it.next();
+      VirtualFile root = myVcsManager.getVcsRootFor(filePath);
+      if (myRoot.equals(root)) continue;
+
+      it.remove();
+      removedFiles++;
+      if (removedFiles < maxFilesToReport) {
+        LOG.warn(String.format("Ignoring untracked file under another root: %s; root: %s; mapped root: %s",
+                               filePath.getPresentableUrl(), myRoot.getPresentableUrl(), root != null ? root.getPresentableUrl() : "null"));
+      }
+    }
+    if (removedFiles >= maxFilesToReport) {
+      LOG.warn(String.format("Ignoring untracked file under another root: %s files total", removedFiles));
     }
   }
 
@@ -282,7 +293,7 @@ public class GitUntrackedFilesHolder implements Disposable, AsyncVfsEventsListen
     }
   }
 
-  public static boolean totalRefreshNeeded(@NotNull GitRepository repository, @NotNull String path) {
+  private static boolean totalRefreshNeeded(@NotNull GitRepository repository, @NotNull String path) {
     return indexChanged(repository, path) || externallyCommitted(repository, path) || headMoved(repository, path) ||
            headChanged(repository, path) || currentBranchChanged(repository, path) || gitignoreChanged(repository, path);
   }

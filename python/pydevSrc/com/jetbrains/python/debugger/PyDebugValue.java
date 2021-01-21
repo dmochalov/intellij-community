@@ -1,3 +1,4 @@
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.debugger;
 
 import com.google.common.base.Strings;
@@ -6,10 +7,12 @@ import com.google.common.collect.Maps;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.frame.presentation.XRegularValuePresentation;
 import com.jetbrains.python.debugger.pydev.PyDebugCallback;
 import com.jetbrains.python.debugger.render.PyNodeRenderer;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -51,7 +54,7 @@ public class PyDebugValue extends XNamedValue {
   private @Nullable String myId = null;
   private ValuesPolicy myLoadValuePolicy;
   private @NotNull PyFrameAccessor myFrameAccessor;
-  private volatile @Nullable XValueNode myLastNode = null;
+  private @NotNull final List<XValueNode> myValueNodes = new ArrayList<>();
   private final boolean myErrorOnEval;
   private int myOffset;
   private int myCollectionLength = -1;
@@ -157,7 +160,7 @@ public class PyDebugValue extends XNamedValue {
   }
 
   @Nullable
-  public String getValue() {
+  public @NlsSafe String getValue() {
     return myValue;
   }
 
@@ -204,9 +207,9 @@ public class PyDebugValue extends XNamedValue {
     myLoadValuePolicy = loadValueAsync;
   }
 
-  @Nullable
-  public XValueNode getLastNode() {
-    return myLastNode;
+  @NotNull
+  public List<XValueNode> getValueNodes() {
+    return myValueNodes;
   }
 
   @NotNull
@@ -252,6 +255,7 @@ public class PyDebugValue extends XNamedValue {
    *
    * @return full variable name at runtime
    */
+  @NlsSafe
   @NotNull
   public String getFullName() {
     return wrapWithPrefix(getName());
@@ -349,7 +353,7 @@ public class PyDebugValue extends XNamedValue {
 
   public void updateNodeValueAfterLoading(@NotNull XValueNode node,
                                           @NotNull String value,
-                                          @NotNull String linkText,
+                                          @NotNull @Nls String linkText,
                                           @Nullable String errorMessage) {
     if (errorMessage != null) {
       node.setPresentation(getValueIcon(), new XRegularValuePresentation(value, myType) {
@@ -368,15 +372,10 @@ public class PyDebugValue extends XNamedValue {
       node.setFullValueEvaluator(new PyFullValueEvaluator(myFrameAccessor, getEvaluationExpression()));
     }
     else {
-      node.setFullValueEvaluator(new XFullValueEvaluator() {
+      node.setFullValueEvaluator(new XFullValueEvaluator(linkText) {
         @Override
         public void startEvaluation(@NotNull XFullValueEvaluationCallback callback) {
           callback.evaluated(value);
-        }
-
-        @Override
-        public String getLinkText() {
-          return linkText;
         }
 
         @Override
@@ -389,14 +388,15 @@ public class PyDebugValue extends XNamedValue {
 
   @NotNull
   public PyDebugCallback<String> createDebugValueCallback() {
-    return new PyDebugCallback<String>() {
+    return new PyDebugCallback<>() {
       @Override
       public void ok(String value) {
         myLoadValuePolicy = ValuesPolicy.SYNC;
         myValue = value;
-        XValueNode node = myLastNode;
-        if (node != null && !node.isObsolete()) {
-          updateNodeValueAfterLoading(node, value, "", null);
+        for (XValueNode node : myValueNodes) {
+          if (node != null && !node.isObsolete()) {
+            updateNodeValueAfterLoading(node, value, "", null);
+          }
         }
       }
 
@@ -441,7 +441,7 @@ public class PyDebugValue extends XNamedValue {
   private void setFullValueEvaluator(@NotNull XValueNode node, @NotNull String value) {
     String treeName = getEvaluationExpression();
     String postfix = EVALUATOR_POSTFIXES.get(myType);
-    myLastNode = node;
+    myValueNodes.add(node);
     if (postfix == null) {
       if (value.length() >= MAX_VALUE) {
         node.setFullValueEvaluator(new PyFullValueEvaluator(myFrameAccessor, treeName));

@@ -21,6 +21,7 @@ import com.intellij.openapi.ui.showOkCancelDialog
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame
 import com.intellij.psi.PsiManager
@@ -29,6 +30,7 @@ import com.intellij.util.LineSeparator
 import com.intellij.util.io.exists
 import com.intellij.util.io.systemIndependentPath
 import com.intellij.util.io.write
+import org.jetbrains.annotations.NonNls
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -38,7 +40,7 @@ import javax.swing.ScrollPaneConstants
 
 abstract class EditCustomSettingsAction : DumbAwareAction() {
   protected abstract fun file(): Path?
-  protected abstract fun template(): String
+  @NonNls protected abstract fun template(): String
 
   override fun update(e: AnActionEvent) {
     e.presentation.isEnabled = (e.project != null || WelcomeFrame.getInstance() != null) && file() != null
@@ -125,7 +127,7 @@ abstract class EditCustomSettingsAction : DumbAwareAction() {
 
 class EditCustomPropertiesAction : EditCustomSettingsAction() {
   private companion object {
-    val file = lazy {
+    val file: Lazy<Path?> = lazy {
       val dir = PathManager.getCustomOptionsDirectory()
       return@lazy if (dir != null) Paths.get(dir, PathManager.PROPERTIES_FILE_NAME) else null
     }
@@ -135,13 +137,14 @@ class EditCustomPropertiesAction : EditCustomSettingsAction() {
   override fun template(): String = "# custom ${ApplicationNamesInfo.getInstance().fullProductName} properties\n\n"
 
   class AccessExtension : NonProjectFileWritingAccessExtension {
-    override fun isWritable(file: VirtualFile): Boolean = FileUtil.pathsEqual(file.path, EditCustomPropertiesAction.file.value?.systemIndependentPath)
+    override fun isWritable(file: VirtualFile): Boolean = if (EditCustomPropertiesAction.file.value == null) false else VfsUtilCore.pathEqualsTo(
+      file, EditCustomPropertiesAction.file.value!!.systemIndependentPath)
   }
 }
 
 class EditCustomVmOptionsAction : EditCustomSettingsAction() {
   private companion object {
-    val file = lazy { VMOptions.getWriteFile() }
+    val file: Lazy<Path?> = lazy { VMOptions.getWriteFile() }
   }
 
   override fun file(): Path? = file.value
@@ -150,6 +153,7 @@ class EditCustomVmOptionsAction : EditCustomSettingsAction() {
   fun isEnabled(): Boolean = file() != null
 
   class AccessExtension : NonProjectFileWritingAccessExtension {
-    override fun isWritable(file: VirtualFile): Boolean = FileUtil.pathsEqual(file.path, EditCustomVmOptionsAction.file.value?.systemIndependentPath)
+    override fun isWritable(file: VirtualFile): Boolean = if (EditCustomVmOptionsAction.file.value == null) false else VfsUtilCore.pathEqualsTo(
+      file, EditCustomVmOptionsAction.file.value!!.systemIndependentPath)
   }
 }

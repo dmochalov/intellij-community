@@ -4,7 +4,6 @@ package org.jetbrains.plugins.github;
 import com.intellij.dvcs.ui.CompareBranchesDialog;
 import com.intellij.dvcs.util.CommitCompareInfo;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
@@ -13,6 +12,7 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Couple;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.changes.Change;
@@ -72,7 +72,7 @@ public final class GithubCreatePullRequestWorker {
   @NotNull private final GHRepositoryPath myPath;
   @NotNull private final String myRemoteName;
   @NotNull private final String myRemoteUrl;
-  @NotNull private final String myCurrentBranch;
+  @NlsSafe @NotNull private final String myCurrentBranch;
 
   @SuppressWarnings("NullableProblems")
   @NotNull private GHRepositoryPath mySource;
@@ -134,7 +134,9 @@ public final class GithubCreatePullRequestWorker {
       fork.setRemoteName(path.getOwner());
     }
     catch (VcsException e) {
-      GithubNotifications.showError(myProject, GithubBundle.message("pull.request.cannot.add.remote"),
+      GithubNotifications.showError(myProject,
+                                    GithubNotificationIdsHolder.PULL_REQUEST_FAILED_TO_ADD_REMOTE,
+                                    GithubBundle.message("pull.request.cannot.add.remote"),
                                     GithubBundle.message("pull.request.create.add.remote.failed", url, e.getMessage()));
     }
   }
@@ -162,7 +164,10 @@ public final class GithubCreatePullRequestWorker {
       }
     }
     catch (IOException e) {
-      GithubNotifications.showWarning(myProject, GithubBundle.message("pull.request.cannot.load.branches", path), e);
+      GithubNotifications.showWarning(myProject,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_LOAD_BRANCHES,
+                                      GithubBundle.message("pull.request.cannot.load.branches", path),
+                                      e);
     }
   }
 
@@ -184,7 +189,10 @@ public final class GithubCreatePullRequestWorker {
       return fork;
     }
     catch (IOException e) {
-      GithubNotifications.showWarning(myProject, GithubBundle.message("pull.request.cannot.load.branches", path), e);
+      GithubNotifications.showWarning(myProject,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_LOAD_BRANCHES,
+                                      GithubBundle.message("pull.request.cannot.load.branches", path),
+                                      e);
       return null;
     }
   }
@@ -338,7 +346,10 @@ public final class GithubCreatePullRequestWorker {
                                   .create(myServer, forkPath.getOwner(), forkPath.getRepository(), title, description, head, base));
     }
     catch (IOException e) {
-      GithubNotifications.showError(myProject, GithubBundle.message("pull.request.cannot.create"), e);
+      GithubNotifications.showError(myProject,
+                                    GithubNotificationIdsHolder.PULL_REQUEST_CREATION_ERROR,
+                                    GithubBundle.message("pull.request.cannot.create"),
+                                    e);
       return null;
     }
   }
@@ -377,7 +388,10 @@ public final class GithubCreatePullRequestWorker {
         return getSimpleDefaultDescriptionMessage(branch);
       }
       catch (VcsException e) {
-        GithubNotifications.showWarning(myProject, GithubBundle.message("cannot.collect.additional.data"), e);
+        GithubNotifications.showWarning(myProject,
+                                        GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_COLLECT_ADDITIONAL_DATA,
+                                        GithubBundle.message("cannot.collect.additional.data"),
+                                        e);
         return getSimpleDefaultDescriptionMessage(branch);
       }
     }, GithubBundle.message("pull.request.create.collect.commits.process.title"), true, myProject);
@@ -404,7 +418,10 @@ public final class GithubCreatePullRequestWorker {
         GithubBundle.message("pull.request.create.collect.diff.data.process.title"), false, myProject);
     }
     catch (IOException e) {
-      GithubNotifications.showError(myProject, GithubBundle.message("cannot.collect.diff.data"), e);
+      GithubNotifications.showError(myProject,
+                                    GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_COLLECT_DIFF_DATA,
+                                    GithubBundle.message("cannot.collect.diff.data"),
+                                    e);
       return true;
     }
     if (info == null) {
@@ -439,7 +456,9 @@ public final class GithubCreatePullRequestWorker {
         indicator.setText(GithubBundle.message("pull.request.push.branch.process.title"));
         GitCommandResult result = myGit.push(myGitRepository, myRemoteName, myRemoteUrl, myCurrentBranch, true);
         if (!result.success()) {
-          GithubNotifications.showError(GithubCreatePullRequestWorker.this.myProject, GithubBundle.message("pull.request.cannot.create"),
+          GithubNotifications.showError(GithubCreatePullRequestWorker.this.myProject,
+                                        GithubNotificationIdsHolder.PULL_REQUEST_PUSH_FAILED,
+                                        GithubBundle.message("pull.request.cannot.create"),
                                         GithubBundle.message("pull.request.push.failed", result.getErrorOutputAsHtmlString()));
           return;
         }
@@ -451,9 +470,11 @@ public final class GithubCreatePullRequestWorker {
           return;
         }
 
-        GithubNotifications
-          .showInfoURL(GithubCreatePullRequestWorker.this.myProject, GithubBundle.message("pull.request.successfully.created"),
-                       GithubBundle.message("pull.request.num", request.getNumber()), request.getHtmlUrl());
+        GithubNotifications.showInfoURL(GithubCreatePullRequestWorker.this.myProject,
+                                        GithubNotificationIdsHolder.PULL_REQUEST_CREATED,
+                                        GithubBundle.message("pull.request.successfully.created"),
+                                        GithubBundle.message("pull.request.num", request.getNumber()),
+                                        request.getHtmlUrl());
       }
     }.queue();
   }
@@ -468,7 +489,10 @@ public final class GithubCreatePullRequestWorker {
       return forkPaths;
     }
     catch (IOException e) {
-      GithubNotifications.showWarning(myProject, GithubBundle.message("pull.request.cannot.load.forks"), e);
+      GithubNotifications.showWarning(myProject,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_LOAD_FORKS,
+                                      GithubBundle.message("pull.request.cannot.load.forks"),
+                                      e);
       return null;
     }
   }
@@ -486,7 +510,10 @@ public final class GithubCreatePullRequestWorker {
         GithubBundle.message("pull.request.create.collect.diff.data.process.title"), true, myProject);
     }
     catch (IOException e) {
-      GithubNotifications.showError(myProject, GithubBundle.message("cannot.collect.diff.data"), e);
+      GithubNotifications.showError(myProject,
+                                    GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_COLLECT_DIFF_DATA,
+                                    GithubBundle.message("cannot.collect.diff.data"),
+                                    e);
       return;
     }
     if (info == null) {
@@ -549,7 +576,10 @@ public final class GithubCreatePullRequestWorker {
       return doAddFork(repo, indicator);
     }
     catch (IOException e) {
-      GithubNotifications.showError(myProject, GithubBundle.message("cannot.find.repository"), e);
+      GithubNotifications.showError(myProject,
+                                    GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_FIND_REPO,
+                                    GithubBundle.message("cannot.find.repository"),
+                                    e);
       return null;
     }
   }
@@ -563,19 +593,23 @@ public final class GithubCreatePullRequestWorker {
                                                      @NotNull GithubServerPath server) {
     ProgressManager progressManager = ProgressManager.getInstance();
     return progressManager.runProcessWithProgressSynchronously(() -> {
-      Git git = ServiceManager.getService(Git.class);
+      Git git = ApplicationManager.getApplication().getService(Git.class);
 
       GHRepositoryPath path = GithubUrlUtil.getUserAndRepositoryFromRemoteUrl(remoteUrl);
       if (path == null) {
-        GithubNotifications
-          .showError(project, GithubBundle.message("pull.request.cannot.create"), GithubBundle.message("cannot.process.remote", remoteUrl));
+        GithubNotifications.showError(project,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_CANNOT_PROCESS_REMOTE,
+                                      GithubBundle.message("pull.request.cannot.create"),
+                                      GithubBundle.message("cannot.process.remote", remoteUrl));
         return null;
       }
 
       GitLocalBranch currentBranch = gitRepository.getCurrentBranch();
       if (currentBranch == null) {
-        GithubNotifications.showError(project, GithubBundle.message("pull.request.cannot.create"), GithubBundle.message(
-          "pull.request.create.error.no.current.branch"));
+        GithubNotifications.showError(project,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_NO_CURRENT_BRANCH,
+                                      GithubBundle.message("pull.request.cannot.create"),
+                                      GithubBundle.message("pull.request.create.error.no.current.branch"));
         return null;
       }
 
@@ -588,7 +622,10 @@ public final class GithubCreatePullRequestWorker {
         worker.initForks(progressManager.getProgressIndicator());
       }
       catch (IOException e) {
-        GithubNotifications.showError(project, GithubBundle.message("pull.request.cannot.create"), e);
+        GithubNotifications.showError(project,
+                                      GithubNotificationIdsHolder.PULL_REQUEST_CREATION_ERROR,
+                                      GithubBundle.message("pull.request.cannot.create"),
+                                      e);
         return null;
       }
 

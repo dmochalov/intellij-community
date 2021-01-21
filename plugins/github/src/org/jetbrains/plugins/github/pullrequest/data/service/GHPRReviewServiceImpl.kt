@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.github.pullrequest.data.service
 
+import com.intellij.diff.util.Side
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -14,6 +15,7 @@ import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestReview
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestReviewCommentWithPendingReview
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestReviewThread
 import org.jetbrains.plugins.github.api.data.request.GHPullRequestDraftReviewComment
+import org.jetbrains.plugins.github.api.data.request.GHPullRequestDraftReviewThread
 import org.jetbrains.plugins.github.api.util.SimpleGHGQLPagesLoader
 import org.jetbrains.plugins.github.pullrequest.data.GHPRIdentifier
 import org.jetbrains.plugins.github.pullrequest.data.service.GHServiceUtil.logError
@@ -45,11 +47,12 @@ class GHPRReviewServiceImpl(private val progressManager: ProgressManager,
                             event: GHPullRequestReviewEvent?,
                             body: String?,
                             commitSha: String?,
-                            comments: List<GHPullRequestDraftReviewComment>?): CompletableFuture<GHPullRequestPendingReview> =
+                            comments: List<GHPullRequestDraftReviewComment>?,
+                            threads: List<GHPullRequestDraftReviewThread>?): CompletableFuture<GHPullRequestPendingReview> =
     progressManager.submitIOTask(progressIndicator) {
       requestExecutor.execute(progressIndicator,
                               GHGQLRequests.PullRequest.Review.create(repository.serverPath, pullRequestId.id, event, body,
-                                                                      commitSha, comments))
+                                                                      commitSha, comments, threads))
     }.logError(LOG, "Error occurred while creating review")
 
   override fun submitReview(progressIndicator: ProgressIndicator,
@@ -111,6 +114,12 @@ class GHPRReviewServiceImpl(private val progressManager: ProgressManager,
     progressManager.submitIOTask(progressIndicator) {
       requestExecutor.execute(GHGQLRequests.PullRequest.Review.updateComment(repository.serverPath, commentId, newText))
     }.logError(LOG, "Error occurred while updating review comment")
+
+  override fun addThread(progressIndicator: ProgressIndicator, reviewId: String, body: String,
+                         line: Int, side: Side, startLine: Int, fileName: String): CompletableFuture<GHPullRequestReviewThread> =
+    progressManager.submitIOTask(progressIndicator) {
+      requestExecutor.execute(GHGQLRequests.PullRequest.Review.addThread(repository.serverPath, reviewId, body, line, side, startLine, fileName))
+    }.logError(LOG, "Error occurred while adding review thread")
 
   override fun resolveThread(progressIndicator: ProgressIndicator,
                              pullRequestId: GHPRIdentifier,

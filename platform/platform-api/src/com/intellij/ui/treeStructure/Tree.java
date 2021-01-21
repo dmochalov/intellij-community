@@ -479,7 +479,7 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
           }
         }
 
-        if (first == null || last == null) continue;
+        if (first == null) continue;
         Rectangle firstBounds = getPathBounds(getPath(first));
 
         if (isExpanded(getPath(last))) {
@@ -770,7 +770,7 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
   }
 
   @Override
-  public void putInfo(@NotNull Map<String, String> info) {
+  public void putInfo(@NotNull Map<? super String, ? super String> info) {
     TreePath[] selection = getSelectionPaths();
     if (selection == null) return;
 
@@ -856,6 +856,7 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
         Rectangle bounds = getPathBounds(path);
         if (bounds != null) {
           component.setBounds(bounds); // initialize size to layout complex renderer
+          component.doLayout();
           return SwingUtilities.getDeepestComponentAt(component, x - bounds.x, y - bounds.y);
         }
       }

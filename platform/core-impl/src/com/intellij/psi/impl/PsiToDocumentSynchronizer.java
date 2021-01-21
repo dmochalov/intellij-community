@@ -14,6 +14,7 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.pom.core.impl.PomModelImpl;
 import com.intellij.pom.tree.events.impl.ChangeInfoImpl;
 import com.intellij.pom.tree.events.impl.TreeChangeEventImpl;
 import com.intellij.pom.tree.events.impl.TreeChangeImpl;
@@ -185,7 +186,7 @@ public class PsiToDocumentSynchronizer {
       fakeEvent.setFile(changeScope);
       checkPsiModificationAllowed(fakeEvent);
       doSync(fakeEvent, (document1, event) -> doCommitTransaction(document1, documentChangeTransaction));
-      if (changeScope.isPhysical()) {
+      if (PomModelImpl.shouldFirePhysicalPsiEvents(changeScope)) {
         myBus.syncPublisher(PsiDocumentTransactionListener.TOPIC).transactionCompleted(document, changeScope);
       }
     }
@@ -247,7 +248,7 @@ public class PsiToDocumentSynchronizer {
       int parentStart = change.getChangedParent().getStartOffset();
       for (ASTNode child : change.getAffectedChildren()) {
         ChangeInfoImpl info = change.getChangeByChild(child);
-        TreeElement newChild = info.getNewChild();
+        ASTNode newChild = info.getNewChild();
         PsiElement newPsi = newChild == null ? null : newChild.getPsi();
         if (!(newPsi instanceof ForeignLeafPsiElement)) {
           transaction.replace(info.getOffsetInParent() + parentStart, info.getOldLength(), newChild == null ? "" : newChild.getText(), newPsi);
@@ -326,18 +327,6 @@ public class PsiToDocumentSynchronizer {
       start += psiStart;
       end += psiStart;
 
-      //[mike] dirty hack for xml:
-      //make sure that deletion of <t> in: <tag><t/><tag> doesn't remove t/><
-      //which is perfectly valid but invalidates range markers
-      final CharSequence charsSequence = myPsiText;
-      while (start < charsSequence.length() && end < charsSequence.length() && start > 0 &&
-             charsSequence.subSequence(start, end).toString().endsWith("><") && charsSequence.charAt(start - 1) == '<') {
-        start--;
-        newStartInReplace--;
-        end--;
-        newEndInReplace--;
-      }
-
       updateFragments(start, end, replace.substring(newStartInReplace, newEndInReplace));
     }
 
@@ -348,7 +337,7 @@ public class PsiToDocumentSynchronizer {
       TextRange startRange = findFragment(docStart);
       TextRange endRange = findFragment(docEnd);
 
-      myPsiText = myPsiText.delete(start, end).insert(start, replace);
+      myPsiText = myPsiText.replace(start, end, replace);
 
       TextRange newFragment = new TextRange(startRange != null ? startRange.getStartOffset() : docStart,
                                             endRange != null ? endRange.getEndOffset() : docEnd);

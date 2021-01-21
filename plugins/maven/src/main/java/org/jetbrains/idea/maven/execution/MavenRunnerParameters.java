@@ -1,11 +1,9 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.maven.execution;
 
-import com.google.common.base.Predicates;
-import com.google.common.collect.Maps;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.xmlb.annotations.MapAnnotation;
 import com.intellij.util.xmlb.annotations.OptionTag;
-import com.intellij.util.xmlb.annotations.Transient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.model.MavenConstants;
@@ -48,17 +46,6 @@ public final class MavenRunnerParameters implements Cloneable {
                                @Nullable List<String> goals,
                                @Nullable Collection<String> explicitEnabledProfiles) {
     this(isPomExecution, workingDirPath, pomFileName, goals, explicitEnabledProfiles, null);
-  }
-
-  /**
-   * @deprecated use {@link MavenRunnerParameters#MavenRunnerParameters(boolean, String, String, List, MavenExplicitProfiles)}
-   */
-  @Deprecated
-  public MavenRunnerParameters(boolean isPomExecution,
-                               @NotNull String workingDirPath,
-                               @Nullable List<String> goals,
-                               @NotNull MavenExplicitProfiles explicitProfiles) {
-    this(isPomExecution, workingDirPath, null, goals, explicitProfiles);
   }
 
   public MavenRunnerParameters(boolean isPomExecution,
@@ -125,11 +112,12 @@ public final class MavenRunnerParameters implements Cloneable {
   }
 
   @NotNull
+  @NlsSafe
   public String getWorkingDirPath() {
     return myWorkingDirPath.getPath();
   }
 
-  public void setWorkingDirPath(@NotNull String workingDirPath) {
+  public void setWorkingDirPath(@NotNull @NlsSafe String workingDirPath) {
     myWorkingDirPath = new Path(workingDirPath);
   }
 
@@ -142,6 +130,7 @@ public final class MavenRunnerParameters implements Cloneable {
     myPomFileName = pomFileName;
   }
 
+  @NlsSafe
   public String getPomFileName() {
     return myPomFileName;
   }
@@ -204,31 +193,6 @@ public final class MavenRunnerParameters implements Cloneable {
     for (Map.Entry<String, Boolean> entry : profilesMap.entrySet()) {
       if (entry.getValue() != null) {
         myProfilesMap.put(entry.getKey(), entry.getValue());
-      }
-    }
-  }
-
-  /**
-   * Was left for compatibility with old plugins.
-   * @deprecated use getProfileMap()
-   * @return
-   */
-  @Deprecated
-  @Transient
-  public Collection<String> getProfiles() {
-    return Maps.filterValues(myProfilesMap, Predicates.equalTo(true)).keySet();
-  }
-
-  /**
-   * Was left for compatibility with old plugins.
-   * @deprecated use getProfileMap()
-   * @param profiles
-   */
-  @Deprecated
-  public void setProfiles(@Nullable Collection<String> profiles) {
-    if (profiles != null) {
-      for (String profile : profiles) {
-        myProfilesMap.put(profile, true);
       }
     }
   }

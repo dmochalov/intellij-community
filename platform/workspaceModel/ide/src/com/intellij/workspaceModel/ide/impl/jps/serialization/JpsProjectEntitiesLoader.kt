@@ -12,9 +12,12 @@ import com.intellij.openapi.util.text.Strings
 import com.intellij.workspaceModel.ide.*
 import com.intellij.workspaceModel.storage.*
 import com.intellij.workspaceModel.storage.bridgeEntities.LibraryTableId
+import com.intellij.workspaceModel.storage.url.VirtualFileUrl
+import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
+import com.intellij.workspaceModel.storage.impl.url.toVirtualFileUrl
 import org.jdom.Element
 import org.jetbrains.annotations.TestOnly
-import java.io.File
+import org.jetbrains.jps.model.serialization.library.JpsLibraryTableSerializer
 import java.nio.file.Path
 
 object JpsProjectEntitiesLoader {
@@ -34,26 +37,29 @@ object JpsProjectEntitiesLoader {
 
   @TestOnly
   fun loadProject(configLocation: JpsProjectConfigLocation, builder: WorkspaceEntityStorageBuilder,
-                  externalStoragePath: Path, virtualFileManager: VirtualFileUrlManager): JpsProjectSerializers {
+                  externalStoragePath: Path, errorReporter: ErrorReporter, virtualFileManager: VirtualFileUrlManager): JpsProjectSerializers {
     val reader = CachingJpsFileContentReader(configLocation.baseDirectoryUrlString)
     val data = createProjectEntitiesSerializers(configLocation, reader, externalStoragePath, true, virtualFileManager)
-    data.loadAll(reader, builder)
+    data.loadAll(reader, builder, errorReporter)
     return data
   }
 
-  fun loadModule(moduleFile: Path, configLocation: JpsProjectConfigLocation, builder: WorkspaceEntityStorageBuilder, virtualFileManager: VirtualFileUrlManager) {
+  fun loadModule(moduleFile: Path, configLocation: JpsProjectConfigLocation, builder: WorkspaceEntityStorageBuilder,
+                 errorReporter: ErrorReporter, virtualFileManager: VirtualFileUrlManager) {
     val source = JpsFileEntitySource.FileInDirectory(moduleFile.parent.toVirtualFileUrl(virtualFileManager), configLocation)
-    loadModule(moduleFile, source, configLocation, builder, virtualFileManager)
+    loadModule(moduleFile, source, configLocation, builder, errorReporter, virtualFileManager)
   }
 
   internal fun loadModule(moduleFile: Path,
                           source: JpsFileEntitySource.FileInDirectory,
                           configLocation: JpsProjectConfigLocation,
                           builder: WorkspaceEntityStorageBuilder,
+                          errorReporter: ErrorReporter,
                           virtualFileManager: VirtualFileUrlManager) {
     val reader = CachingJpsFileContentReader(configLocation.baseDirectoryUrlString)
-    val serializer = ModuleListSerializerImpl.createModuleEntitiesSerializer(moduleFile.toVirtualFileUrl(virtualFileManager), source)
-    serializer.loadEntities(builder, reader, virtualFileManager)
+    val serializer = ModuleListSerializerImpl.createModuleEntitiesSerializer(moduleFile.toVirtualFileUrl(virtualFileManager), null, source,
+                                                                             virtualFileManager)
+    serializer.loadEntities(builder, reader, errorReporter, virtualFileManager)
   }
 
   private fun createProjectEntitiesSerializers(configLocation: JpsProjectConfigLocation,
@@ -63,7 +69,7 @@ object JpsProjectEntitiesLoader {
                                                virtualFileManager: VirtualFileUrlManager,
                                                externalStorageConfigurationManager: ExternalStorageConfigurationManager? = null): JpsProjectSerializers {
     val externalStorageRoot = externalStoragePath.toVirtualFileUrl(virtualFileManager)
-    val externalStorageMapping = JpsExternalStorageMappingImpl(externalStorageRoot, configLocation)
+    val externalStorageMapping = JpsExternalStorageMappingImpl(externalStorageRoot, virtualFileManager, configLocation)
     return when (configLocation) {
       is JpsProjectConfigLocation.FileBased -> createIprProjectSerializers(configLocation, reader, externalStorageMapping, serializeArtifacts, virtualFileManager)
       is JpsProjectConfigLocation.DirectoryBased -> createDirectoryProjectSerializers(configLocation, reader, externalStorageMapping,
@@ -88,13 +94,15 @@ object JpsProjectEntitiesLoader {
     val externalStorageRoot = externalStorageMapping.externalStorageRoot
     val internalLibrariesDirUrl = virtualFileManager.fromUrl(librariesDirectoryUrl)
     val externalStorageEnabled = isExternalStorageEnabled(reader, projectDirUrl)
-    val librariesExternalStorageFile = JpsFileEntitySource.ExactFile(externalStorageRoot.append("project/libraries.xml"), configLocation)
-    val externalModuleListSerializer = ExternalModuleListSerializer(externalStorageRoot)
+    val librariesExternalStorageFile = JpsFileEntitySource.ExactFile(externalStorageRoot.append("project/libraries.xml", virtualFileManager),
+                                                                     configLocation)
+    val externalModuleListSerializer = ExternalModuleListSerializer(externalStorageRoot, virtualFileManager)
     return JpsProjectSerializers.createSerializers(
       entityTypeSerializers = listOf(JpsLibrariesExternalFileSerializer(librariesExternalStorageFile, internalLibrariesDirUrl)),
       directorySerializersFactories = directorySerializersFactories,
       moduleListSerializers = listOf(
-        ModuleListSerializerImpl("$projectDirUrl/.idea/modules.xml", externalModuleListSerializer, externalStorageConfigurationManager),
+        ModuleListSerializerImpl("$projectDirUrl/.idea/modules.xml", virtualFileManager, externalModuleListSerializer,
+                                 externalStorageConfigurationManager),
         externalModuleListSerializer
       ),
       configLocation = configLocation,
@@ -125,7 +133,7 @@ object JpsProjectEntitiesLoader {
     return JpsProjectSerializers.createSerializers(
       entityTypeSerializers = entityTypeSerializers,
       directorySerializersFactories = emptyList(),
-      moduleListSerializers = listOf(ModuleListSerializerImpl(projectFileUrl.url)),
+      moduleListSerializers = listOf(ModuleListSerializerImpl(projectFileUrl.url, virtualFileManager)),
       configLocation = configLocation,
       reader = reader,
       virtualFileManager = virtualFileManager,
@@ -143,13 +151,16 @@ object JpsProjectEntitiesLoader {
 
   fun createEntitySourceForProjectLibrary(project: Project, externalSource: ProjectModelExternalSource?): EntitySource {
     val location = project.configLocation ?: return NonPersistentEntitySource
-    val internalFile = createJpsEntitySourceForProjectLibrary(location)
+    val virtualFileUrlManager = VirtualFileUrlManager.getInstance(project)
+    val internalFile = createJpsEntitySourceForProjectLibrary(location, virtualFileUrlManager)
     if (externalSource == null) return internalFile
     return JpsImportedEntitySource(internalFile, externalSource.id, project.isExternalStorageEnabled)
   }
 
-  fun createJpsEntitySourceForProjectLibrary(configLocation: JpsProjectConfigLocation) = when (configLocation) {
-    is JpsProjectConfigLocation.DirectoryBased -> JpsFileEntitySource.FileInDirectory(configLocation.projectDir.append(".idea/libraries"), configLocation)
+  fun createJpsEntitySourceForProjectLibrary(configLocation: JpsProjectConfigLocation,
+                                             virtualFileUrlManager: VirtualFileUrlManager) = when (configLocation) {
+    is JpsProjectConfigLocation.DirectoryBased ->
+      JpsFileEntitySource.FileInDirectory(configLocation.projectDir.append(".idea/libraries", virtualFileUrlManager), configLocation)
     is JpsProjectConfigLocation.FileBased -> JpsFileEntitySource.ExactFile(configLocation.iprFile, configLocation)
   }
 }
@@ -168,4 +179,10 @@ internal fun loadStorageFile(xmlFile: Path, pathMacroManager: PathMacroManager):
     rootElement.addContent(optionElement)
   }
   return FileStorageCoreUtil.load(rootElement, pathMacroManager, true)
+}
+
+fun levelToLibraryTableId(level: String) = when (level) {
+  JpsLibraryTableSerializer.MODULE_LEVEL -> error("this method isn't supposed to be used for module-level libraries")
+  JpsLibraryTableSerializer.PROJECT_LEVEL -> LibraryTableId.ProjectLibraryTableId
+  else -> LibraryTableId.GlobalLibraryTableId(level)
 }

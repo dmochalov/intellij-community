@@ -11,6 +11,7 @@ import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.ui.components.labels.LinkLabel
 import com.intellij.ui.components.panels.Wrapper
 import com.intellij.ui.layout.*
+import org.jetbrains.annotations.Nls
 import org.jetbrains.plugins.github.api.GithubApiRequestExecutor
 import org.jetbrains.plugins.github.api.GithubServerPath
 import org.jetbrains.plugins.github.i18n.GithubBundle.message
@@ -60,14 +61,16 @@ internal class GithubLoginPanel(
     tokenAcquisitionError = null
   }
 
-  fun createSwitchUiLink(): LinkLabel<*> {
-    fun switchUiText(): String = if (currentUi == passwordUi) message("login.use.token") else message("login.use.credentials")
-    fun nextUi(): GHCredentialsUi = if (currentUi == passwordUi) tokenUi else passwordUi
+  @Nls
+  private fun switchUiText(): String {
+    return if (currentUi == passwordUi) message("login.use.token") else message("login.use.credentials")
+  }
 
-    return LinkLabel<Any?>(switchUiText(), null) { link, _ ->
-      applyUi(nextUi())
-      link.text = switchUiText()
-    }
+  private fun nextUi(): GHCredentialsUi = if (currentUi == passwordUi) tokenUi else passwordUi
+
+  fun createSwitchUiLink() = LinkLabel<Any?>(switchUiText(), null) { link, _ ->
+    applyUi(nextUi())
+    link.text = switchUiText()
   }
 
   fun getPreferredFocusableComponent(): JComponent? =
@@ -127,8 +130,8 @@ internal class GithubLoginPanel(
   fun setPassword(password: String?) = passwordUi.setPassword(password.orEmpty())
   fun setToken(token: String?) = tokenUi.setToken(token.orEmpty())
 
-  fun setError(exception: Throwable) {
-    tokenAcquisitionError = currentUi.handleAcquireError(exception)
+  fun setError(exception: Throwable?) {
+    tokenAcquisitionError = exception?.let { currentUi.handleAcquireError(it) }
   }
 
   fun setOAuthUi() = applyUi(oauthUi)

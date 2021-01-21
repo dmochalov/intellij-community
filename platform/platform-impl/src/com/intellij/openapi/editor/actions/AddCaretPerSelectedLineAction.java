@@ -10,28 +10,22 @@ import com.intellij.openapi.editor.actionSystem.EditorAction;
 import com.intellij.openapi.editor.actionSystem.EditorActionHandler;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public class AddCaretPerSelectedLineAction extends EditorAction {
   public AddCaretPerSelectedLineAction() {
     super(new Handler());
   }
 
-  private static final class Handler extends EditorActionHandler {
-    private Handler() {
-      super(true);
-    }
-
+  private static final class Handler extends EditorActionHandler.ForEachCaret {
     @Override
-    protected void doExecute(@NotNull Editor editor, @Nullable Caret caret, DataContext dataContext) {
-      assert caret != null;
-
+    protected void doExecute(@NotNull Editor editor, @NotNull Caret caret, DataContext dataContext) {
       CaretModel caretModel = editor.getCaretModel();
       Document document = editor.getDocument();
       int selectionStart = caret.getSelectionStart();
       int startLine = document.getLineNumber(selectionStart);
       int selectionEnd = caret.getSelectionEnd();
       int endLine = document.getLineNumber(selectionEnd);
+      if (endLine > startLine && selectionEnd == document.getLineStartOffset(endLine)) endLine--;
 
       if (caretModel.getCaretCount() + endLine - startLine > caretModel.getMaxCaretCount()) {
         EditorUtil.notifyMaxCarets(editor);
@@ -42,16 +36,7 @@ public class AddCaretPerSelectedLineAction extends EditorAction {
 
       boolean primary = caret.getOffset() != selectionStart;
       for (int i = startLine; i <= endLine; i++) {
-        int targetOffset;
-        if (i < endLine) {
-          targetOffset = document.getLineEndOffset(i);
-        }
-        else {
-          targetOffset = selectionEnd;
-          if (i != startLine && targetOffset == document.getLineStartOffset(i)) {
-            continue;
-          }
-        }
+        int targetOffset = document.getLineEndOffset(i);
 
         if (targetOffset == caret.getOffset()) {
           // move caret away, so that it doesn't prevent creating a new one

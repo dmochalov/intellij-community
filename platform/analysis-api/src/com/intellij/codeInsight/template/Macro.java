@@ -4,6 +4,7 @@ package com.intellij.codeInsight.template;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupFocusDegree;
 import com.intellij.openapi.extensions.ExtensionPointName;
+import com.intellij.openapi.util.NlsSafe;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -21,8 +22,11 @@ public abstract class Macro {
 
   /**
    * @return a presentable string that will be shown in the combobox in <em>Edit Template Variables</em> dialog
+   * Default implementation returns a macro name with parentheses. Override it if parameters should be passed to the macro.
    */
-  public abstract String getPresentableName();
+  public @NlsSafe String getPresentableName() {
+    return getName() + "()";
+  }
 
   @NonNls
   @NotNull

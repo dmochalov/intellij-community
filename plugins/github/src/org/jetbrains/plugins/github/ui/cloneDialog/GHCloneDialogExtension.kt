@@ -30,8 +30,7 @@ import org.jetbrains.plugins.github.authentication.accounts.GithubAccountManager
 import org.jetbrains.plugins.github.authentication.accounts.isGHAccount
 import org.jetbrains.plugins.github.authentication.isOAuthEnabled
 import org.jetbrains.plugins.github.i18n.GithubBundle.message
-import org.jetbrains.plugins.github.util.CachingGithubUserAvatarLoader
-import org.jetbrains.plugins.github.util.GithubImageResizer
+import org.jetbrains.plugins.github.util.CachingGHUserAvatarLoader
 import org.jetbrains.plugins.github.util.GithubUtil
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -54,8 +53,7 @@ private class GHCloneDialogExtensionComponent(project: Project) : GHCloneDialogE
   GithubAuthenticationManager.getInstance(),
   GithubApiRequestExecutorManager.getInstance(),
   GithubAccountInformationProvider.getInstance(),
-  CachingGithubUserAvatarLoader.getInstance(),
-  GithubImageResizer.getInstance()
+  CachingGHUserAvatarLoader.getInstance()
 ) {
 
   init {
@@ -132,7 +130,11 @@ private class GHCloneDialogLoginPanel(account: GithubAccount?) :
       add(JBLabel(message("label.login.option.separator")).apply { border = empty(0, 6, 0, 4) })
       add(useTokenLink)
     }
-  val loginPanel = CloneDialogLoginPanel(account).apply { setServer(GithubServerPath.DEFAULT_HOST, false) }
+  val loginPanel = CloneDialogLoginPanel(account).apply {
+    Disposer.register(this@GHCloneDialogLoginPanel, this)
+
+    setServer(GithubServerPath.DEFAULT_HOST, false)
+  }
 
   init {
     add(titlePanel.apply { border = JBEmptyBorder(getRegularPanelInsets().apply { bottom = 0 }) })

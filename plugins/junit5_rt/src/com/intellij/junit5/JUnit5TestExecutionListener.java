@@ -82,6 +82,7 @@ public class JUnit5TestExecutionListener implements TestExecutionListener {
     StringBuilder builder = new StringBuilder();
     builder.append("timestamp = ").append(entry.getTimestamp());
     entry.getKeyValuePairs().forEach((key, value) -> builder.append(", ").append(key).append(" = ").append(value));
+    builder.append("\n");
     myPrintStream.println("##teamcity[testStdOut" + idAndName(testIdentifier) + " out = '" + escapeName(builder.toString()) + "']");
   }
 
@@ -356,8 +357,17 @@ public class JUnit5TestExecutionListener implements TestExecutionListener {
 
   private static String getMetainfo(TestIdentifier root) {
     return root.getSource()
-      .filter(testSource -> testSource instanceof MethodSource)
-      .map(testSource -> " metainfo='" + ((MethodSource)testSource).getMethodParameterTypes() + "'")
+      .map(testSource -> {
+        if (testSource instanceof MethodSource) {
+          return " metainfo='" + ((MethodSource)testSource).getMethodParameterTypes() + "'";
+        }
+        if (testSource instanceof ClassSource) {
+          return ((ClassSource)testSource).getPosition()
+            .map(position -> " metainfo='" + position.getLine() + ":" + position.getColumn() + "'")
+            .orElse(NO_LOCATION_HINT);
+        }
+        return NO_LOCATION_HINT;
+      })
       .orElse(NO_LOCATION_HINT);
   }
   
