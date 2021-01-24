@@ -167,7 +167,7 @@ public final class ClassPath {
     allUrlsWereProcessed = false;
   }
 
-  public @Nullable Class<?> findClass(@NotNull String className) {
+  public @Nullable Class<?> findClass(@NotNull String className) throws IOException {
     long start = classLoading.startTiming();
     try {
       String fileName = className.replace('.', '/') + CLASS_EXTENSION;
@@ -206,10 +206,6 @@ public final class ClassPath {
           return result;
         }
       }
-    }
-    catch (IOException e) {
-      LoggerRt.getInstance(ClassPath.class).error("Cannot load class " + className, e);
-      return null;
     }
     finally {
       classLoading.record(start, className);
@@ -285,6 +281,9 @@ public final class ClassPath {
   }
 
   public @NotNull Enumeration<URL> getResources(@NotNull String name) {
+    if (name.endsWith("/")) {
+      name = name.substring(0, name.length() - 1);
+    }
     if (useCache && allUrlsWereProcessed) {
       Loader[] loaders = cache.getLoadersByName(name);
       return loaders == null || loaders.length == 0 ? Collections.emptyEnumeration() : new ResourceEnumeration(name, loaders);
